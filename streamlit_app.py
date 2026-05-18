@@ -964,54 +964,91 @@ elif page == "Documents":
 # ════════════════════════════════════════════════════════════════════════════
 
 elif page == "Upload Statement":
-    st.title("📄 Upload Bank Statement")
-    st.caption("PDF or scanned image → auto-extracted transactions → import to Forensic Ledger")
+    st.title("📸 Evidence Capture")
+    st.caption("Take a photo, upload a file, or drop in a PDF — OCR runs automatically")
 
-    upload_type = st.radio("File type", ["PDF (digital)", "Image / Scan (OCR)"], horizontal=True)
-    uploaded = st.file_uploader(
-        "Drop your bank statement here",
-        type=["pdf"] if "PDF" in upload_type else ["png", "jpg", "jpeg", "tiff", "bmp"],
+    # ── Input mode selector ───────────────────────────────────────────────────
+    mode = st.radio(
+        "Input method",
+        ["📷 Camera (phone/tablet)", "🖼️ Upload Image", "📄 Upload PDF"],
+        horizontal=True,
     )
 
-    if uploaded:
-        raw_bytes = uploaded.read()
+    raw_bytes = None
+    is_pdf = False
 
-        with st.spinner("Extracting transactions..."):
-            if "PDF" in upload_type:
+    if mode == "📷 Camera (phone/tablet)":
+        st.markdown(
+            "Point your camera at the statement or receipt and tap the shutter. "
+            "Works on any phone — no scanning app needed."
+        )
+        photo = st.camera_input("Take a photo")
+        if photo:
+            raw_bytes = photo.getvalue()
+
+    elif mode == "🖼️ Upload Image":
+        uploaded = st.file_uploader(
+            "Select image file",
+            type=["png", "jpg", "jpeg", "tiff", "bmp", "webp"],
+        )
+        if uploaded:
+            raw_bytes = uploaded.read()
+
+    else:  # PDF
+        uploaded = st.file_uploader("Select PDF file", type=["pdf"])
+        if uploaded:
+            raw_bytes = uploaded.read()
+            is_pdf = True
+
+    # ── Processing ────────────────────────────────────────────────────────────
+    if raw_bytes:
+        with st.spinner("Running OCR extraction..."):
+            if is_pdf:
                 institution = ocr.detect_institution(raw_bytes)
                 transactions = ocr.process_pdf_bytes(raw_bytes)
             else:
-                institution = "Scanned Document"
+                institution = "Photo Capture"
                 transactions = ocr.process_image_bytes(raw_bytes)
 
         if not transactions:
-            st.warning("No transactions detected. Try the other file type, or check that the PDF is not image-only.")
+            st.warning(
+                "No transactions detected. Tips:\n"
+                "- Make sure the text is in focus and well-lit\n"
+                "- Lay the document flat before photographing\n"
+                "- For digital PDFs use the Upload PDF option instead"
+            )
         else:
             summ = ocr.summary(transactions)
-            st.success(f"Detected institution: **{institution}**")
+            if institution != "Photo Capture":
+                st.success(f"Institution detected: **{institution}**")
 
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Transactions Found", summ["count"])
+            c1.metric("Rows Extracted", summ["count"])
             c2.metric("Date Range", summ["date_range"])
             c3.metric("Total Amount", f"${summ['total']:,.2f}")
             c4.metric("Avg Confidence", f"{summ['avg_confidence']:.0%}")
 
             st.divider()
             st.markdown("#### Review & Flag Before Import")
-            st.caption("Check the box to flag a row as **Marital Dissipation**. Edit description/category as needed.")
+            st.caption(
+                "Green = high confidence · Yellow = review · Red = check manually. "
+                "Tick **Dissipation** to flag for court."
+            )
 
             edited_rows = []
             for i, t in enumerate(transactions):
                 conf_color = "🟢" if t.confidence >= 0.8 else ("🟡" if t.confidence >= 0.5 else "🔴")
                 with st.expander(
-                    f"{conf_color} {t.date}  ·  ${t.amount:,.2f}  ·  {t.description[:50]}",
-                    expanded=False,
+                    f"{conf_color}  {t.date}  ·  ${t.amount:,.2f}  ·  {t.description[:50]}",
+                    expanded=(t.confidence < 0.5),   # auto-open low-confidence rows
                 ):
-                    c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
+                    c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
                     new_desc = c1.text_input("Description", value=t.description, key=f"desc_{i}")
                     new_cat  = c2.text_input("Category", value="Uncategorised", key=f"cat_{i}")
                     new_amt  = c3.number_input("Amount ($)", value=float(t.amount), format="%.2f", key=f"amt_{i}")
                     is_dis   = c4.checkbox("Dissipation", key=f"dis_{i}")
+                    if t.confidence < 0.8:
+                        st.caption(f"Raw line: `{t.raw_line}`")
                     edited_rows.append({
                         "effective_date": t.date,
                         "amount": new_amt,
@@ -1023,21 +1060,22 @@ elif page == "Upload Statement":
             st.divider()
             col_imp, col_exp = st.columns(2)
 
-            if col_imp.button("⬆️ Import All to Forensic Ledger", use_container_width=True):
+            if col_imp.button("⬆️ Import All to Forensic Ledger", use_container_width=True, type="primary"):
                 from coletti_os import Transaction as CTransaction
-                imported = 0
                 for row in edited_rows:
                     sys.forensics.transactions.append(CTransaction(**row))
-                    imported += 1
-                st.success(f"{imported} transactions imported into the Forensic Ledger.")
+                st.success(f"{len(edited_rows)} transactions imported into the Forensic Ledger.")
                 st.rerun()
 
             json_bytes = json.dumps(
                 [{"effective_date": r["effective_date"], "amount": r["amount"],
                   "description": r["description"], "category": r["category"],
-                  "transaction_type": "withdrawal" if t.transaction_type == "withdrawal" else "deposit"}
-                 for r, t in zip(edited_rows, transactions)],
-                indent=2
+                  "transaction_type": next(
+                      (t.transaction_type for t in transactions
+                       if t.description[:30] == r["description"][:30]), "withdrawal"
+                  )}
+                 for r in edited_rows],
+                indent=2,
             )
             col_exp.download_button(
                 "⬇️ Export as JSON (exhibit_raw_data.json)",
