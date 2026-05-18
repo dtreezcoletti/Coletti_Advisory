@@ -13,6 +13,8 @@ from document_engine import (
     build_docket_summary, build_forensic_report, build_client_brief, build_master_report
 )
 from forensic_engine import ForensicEngine
+from forensic_ocr import ForensicOCREngine
+from excel_export import ExcelExporter
 
 # ── Page config ───────────────────────────────────────────────────────────────
 
@@ -70,9 +72,12 @@ if "os" not in st.session_state:
     st.session_state["os"] = ColettiOS()
 if "fe" not in st.session_state:
     st.session_state["fe"] = ForensicEngine()
+if "ocr" not in st.session_state:
+    st.session_state["ocr"] = ForensicOCREngine()
 
 sys: ColettiOS = st.session_state["os"]
 fe: ForensicEngine = st.session_state["fe"]
+ocr: ForensicOCREngine = st.session_state["ocr"]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -120,7 +125,8 @@ with st.sidebar:
     page = st.radio(
         "Navigation",
         ["Dashboard", "Litigation Command", "Forensic Accounting", "Income Disparity",
-         "Case Valuation", "Forensic Engine", "Enterprise Ops", "Documents", "Data Export"],
+         "Case Valuation", "Forensic Engine", "Enterprise Ops", "Documents",
+         "Upload Statement", "Export to Excel", "Data Export"],
         label_visibility="collapsed",
     )
 
@@ -950,6 +956,146 @@ elif page == "Documents":
     st.info(
         "All documents are stamped CONFIDENTIAL — ATTORNEY WORK PRODUCT and include page numbers, "
         "firm header, and generation timestamp. Print via your browser's PDF viewer for best results."
+    )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: UPLOAD STATEMENT
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Upload Statement":
+    st.title("📄 Upload Bank Statement")
+    st.caption("PDF or scanned image → auto-extracted transactions → import to Forensic Ledger")
+
+    upload_type = st.radio("File type", ["PDF (digital)", "Image / Scan (OCR)"], horizontal=True)
+    uploaded = st.file_uploader(
+        "Drop your bank statement here",
+        type=["pdf"] if "PDF" in upload_type else ["png", "jpg", "jpeg", "tiff", "bmp"],
+    )
+
+    if uploaded:
+        raw_bytes = uploaded.read()
+
+        with st.spinner("Extracting transactions..."):
+            if "PDF" in upload_type:
+                institution = ocr.detect_institution(raw_bytes)
+                transactions = ocr.process_pdf_bytes(raw_bytes)
+            else:
+                institution = "Scanned Document"
+                transactions = ocr.process_image_bytes(raw_bytes)
+
+        if not transactions:
+            st.warning("No transactions detected. Try the other file type, or check that the PDF is not image-only.")
+        else:
+            summ = ocr.summary(transactions)
+            st.success(f"Detected institution: **{institution}**")
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Transactions Found", summ["count"])
+            c2.metric("Date Range", summ["date_range"])
+            c3.metric("Total Amount", f"${summ['total']:,.2f}")
+            c4.metric("Avg Confidence", f"{summ['avg_confidence']:.0%}")
+
+            st.divider()
+            st.markdown("#### Review & Flag Before Import")
+            st.caption("Check the box to flag a row as **Marital Dissipation**. Edit description/category as needed.")
+
+            edited_rows = []
+            for i, t in enumerate(transactions):
+                conf_color = "🟢" if t.confidence >= 0.8 else ("🟡" if t.confidence >= 0.5 else "🔴")
+                with st.expander(
+                    f"{conf_color} {t.date}  ·  ${t.amount:,.2f}  ·  {t.description[:50]}",
+                    expanded=False,
+                ):
+                    c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
+                    new_desc = c1.text_input("Description", value=t.description, key=f"desc_{i}")
+                    new_cat  = c2.text_input("Category", value="Uncategorised", key=f"cat_{i}")
+                    new_amt  = c3.number_input("Amount ($)", value=float(t.amount), format="%.2f", key=f"amt_{i}")
+                    is_dis   = c4.checkbox("Dissipation", key=f"dis_{i}")
+                    edited_rows.append({
+                        "effective_date": t.date,
+                        "amount": new_amt,
+                        "description": new_desc,
+                        "category": new_cat,
+                        "is_marital_dissipation": is_dis,
+                    })
+
+            st.divider()
+            col_imp, col_exp = st.columns(2)
+
+            if col_imp.button("⬆️ Import All to Forensic Ledger", use_container_width=True):
+                from coletti_os import Transaction as CTransaction
+                imported = 0
+                for row in edited_rows:
+                    sys.forensics.transactions.append(CTransaction(**row))
+                    imported += 1
+                st.success(f"{imported} transactions imported into the Forensic Ledger.")
+                st.rerun()
+
+            json_bytes = json.dumps(
+                [{"effective_date": r["effective_date"], "amount": r["amount"],
+                  "description": r["description"], "category": r["category"],
+                  "transaction_type": "withdrawal" if t.transaction_type == "withdrawal" else "deposit"}
+                 for r, t in zip(edited_rows, transactions)],
+                indent=2
+            )
+            col_exp.download_button(
+                "⬇️ Export as JSON (exhibit_raw_data.json)",
+                data=json_bytes,
+                file_name=f"exhibit_raw_data_{date.today().isoformat()}.json",
+                mime="application/json",
+                use_container_width=True,
+            )
+    else:
+        st.info("Upload a bank statement PDF or scanned image to begin extraction.")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: EXPORT TO EXCEL
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Export to Excel":
+    st.title("📊 Export to Excel")
+    st.caption("Court-ready .xlsx workbook — 6 sheets covering the full forensic evidence package")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Transactions in Ledger", len(sys.forensics.transactions))
+    c2.metric("Dissipation Flagged",
+              sum(1 for t in sys.forensics.transactions if t.is_marital_dissipation))
+    c3.metric("Total Dissipation",
+              f"${sys.forensics.calculate_dissipation():,.2f}")
+
+    st.divider()
+    st.markdown("**Workbook contents:**")
+    st.markdown("""
+| Sheet | Contents |
+|---|---|
+| **Cover** | Case metadata, firm stamp, CONFIDENTIAL header |
+| **Transaction Ledger** | Full ledger with dissipation rows highlighted red |
+| **Dissipation Analysis** | Category breakdown + bar chart |
+| **Income Fraud** | Sworn vs. verified income table, concealment highlighted |
+| **Case Valuation** | Tier 1 / 2 / 3 damage breakdown with subtotals |
+| **Forensic Summary** | Income disparity metrics and shielded capital totals |
+""")
+
+    st.divider()
+    if st.button("Build Excel Workbook", use_container_width=True, type="primary"):
+        with st.spinner("Building workbook..."):
+            xlsx_bytes = ExcelExporter().export(sys)
+        st.success(f"Workbook ready — {len(xlsx_bytes):,} bytes")
+        st.download_button(
+            label="⬇️ Download Court Evidence Package (.xlsx)",
+            data=xlsx_bytes,
+            file_name=f"coletti_evidence_{date.today().isoformat()}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+
+    st.divider()
+    st.info(
+        "Open in Microsoft Excel or Google Sheets. "
+        "The Transaction Ledger sheet is pre-formatted for printing — "
+        "File → Print → Fit to Page works out of the box."
     )
 
 

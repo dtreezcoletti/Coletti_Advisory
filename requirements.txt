@@ -8,5 +8,7 @@ openpyxl==3.1.2      # To export your ledgers directly into Excel for the Judge
 
 # DOCUMENT & EVIDENCE PROCESSING
 PyPDF2==3.0.1        # To automatically scrape data from PDF bank statements
-pymupdf==1.27.2.3    # Advanced extraction for court dockets and financial tables (replaces pdfplumber — cffi conflict in env)
+pymupdf==1.27.2.3    # Advanced extraction for court dockets and financial tables
 Pillow==10.3.0       # For image processing of scanned receipts and checks
+pytesseract          # OCR wrapper for Tesseract — reads scanned images/receipts
+                     # Requires: apt-get install tesseract-ocr (pre-installed in this env)
