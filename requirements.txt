@@ -1,5 +1,6 @@
 streamlit
 reportlab
+plotly
 
 # CORE FORENSIC & DATA ANALYSIS
 pandas==2.2.2        # For crunching massive banking ledgers

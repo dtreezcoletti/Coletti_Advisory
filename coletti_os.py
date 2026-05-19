@@ -555,6 +555,115 @@ class ColettiOS:
             "dissipation_housing_withheld": 7858.62,
         }
 
+
+    def decree_barometer(self) -> dict:
+        """
+        Composite favorability score toward a final decree.
+
+        Five pillars, 20 pts each = 100 pts max.
+        Returns the score breakdown and a verdict label.
+        """
+        scores = {}
+
+        # ── 1. Procedural Dominance (20 pts) ─────────────────────────────────
+        proc = 0
+        if self.litigation.rule_36_days_default >= 89:
+            proc += 12   # full default established
+        elif self.litigation.rule_36_days_default > 30:
+            proc += 6
+        active_motions = sum(
+            1 for m in self.litigation.motions
+            if m.status.lower() in ("active", "pending judicial signature")
+        )
+        proc += min(active_motions * 3, 8)   # up to 8 pts for filed motions
+        scores["Procedural Dominance"] = min(proc, 20)
+
+        # ── 2. Financial Evidence (20 pts) ────────────────────────────────────
+        fin = 0
+        fin += min(len(self.forensics.transactions) * 2, 8)  # up to 8 for volume
+        dis_rate = self.forensics.dissipation_rate()
+        if dis_rate >= 60:
+            fin += 8
+        elif dis_rate >= 30:
+            fin += 4
+        fin += min(len(self.litigation.active_subpoenas) * 2, 4)
+        scores["Financial Evidence"] = min(fin, 20)
+
+        # ── 3. Income Fraud Proof (20 pts) ───────────────────────────────────
+        idp = self.income_disparity
+        inc = 0
+        if idp.understatement_pct() >= 100:
+            inc += 12
+        elif idp.understatement_pct() >= 50:
+            inc += 7
+        if idp.tracking_months >= 18:
+            inc += 5
+        elif idp.tracking_months >= 6:
+            inc += 2
+        if idp.sequestered_hard_assets > 100_000:
+            inc += 3
+        scores["Income Fraud Proof"] = min(inc, 20)
+
+        # ── 4. Asset & Damages Quantification (20 pts) ───────────────────────
+        cv = self.case_valuation
+        dam = 0
+        if cv.tier1.subtotal > 0:
+            dam += 5
+        if cv.tier2.subtotal > 0:
+            dam += 8
+        if cv.tier3.total > 0:
+            dam += 4
+        if cv.premeditation_score >= 0.8:
+            dam += 3
+        scores["Damages Quantified"] = min(dam, 20)
+
+        # ── 5. Strategic Position (20 pts) ───────────────────────────────────
+        strat = 0
+        # Counsel disqualification motion is a major leverage multiplier
+        disq = any(
+            "disqualification" in m.title.lower()
+            for m in self.litigation.motions
+        )
+        if disq:
+            strat += 8
+        # Active enterprise (shows financial independence)
+        if len(self.enterprise.active_portfolios) > 0:
+            strat += 4
+        # Ceasefire expired = no settlement = forcing judicial resolution
+        ts = getattr(self, "tactical_status", {})
+        if ts.get("ceasefire_expired"):
+            strat += 4
+        if self.litigation.evaluate_docket_leverage() >= 140:
+            strat += 4
+        scores["Strategic Position"] = min(strat, 20)
+
+        total = sum(scores.values())
+
+        if total >= 90:
+            verdict = "DECREE IMMINENT"
+            color   = "#3fb950"
+        elif total >= 75:
+            verdict = "DOMINANT POSITION"
+            color   = "#58a6ff"
+        elif total >= 55:
+            verdict = "STRONG ADVANTAGE"
+            color   = "#d29922"
+        elif total >= 35:
+            verdict = "BUILDING LEVERAGE"
+            color   = "#f0883e"
+        else:
+            verdict = "EARLY STAGE"
+            color   = "#f85149"
+
+        return {
+            "total": total,
+            "max": 100,
+            "pct": total,
+            "verdict": verdict,
+            "color": color,
+            "pillars": scores,
+        }
+
     # ── Serialisation ─────────────────────────────────────────────────────────
 
     def to_dict(self) -> dict:

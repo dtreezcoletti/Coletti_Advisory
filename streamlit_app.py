@@ -126,6 +126,7 @@ with st.sidebar:
         "Navigation",
         [
             "Dashboard",
+            "Decree Barometer",
             "Litigation Docket",
             "Forensic Ops (Evidence)",
             "Income Disparity",
@@ -143,11 +144,25 @@ with st.sidebar:
     )
 
     st.markdown("<hr style='border-color:#30363d; margin:16px 0 12px;'>", unsafe_allow_html=True)
+
+    # Decree Barometer mini-widget
+    _baro = sys.decree_barometer()
+    st.markdown(f"""
+    <div style="text-align:center;">
+        <div style="font-size:10px; color:#8b949e; letter-spacing:1px; text-transform:uppercase; margin-bottom:4px;">Decree Barometer</div>
+        <div style="font-size:38px; font-weight:900; color:{_baro['color']};">{_baro['total']}<span style="font-size:16px; color:#8b949e;">/100</span></div>
+        <div style="font-size:11px; font-weight:700; color:{_baro['color']}; letter-spacing:1px;">{_baro['verdict']}</div>
+    </div>
+    """, unsafe_allow_html=True)
+    st.progress(_baro["total"] / 100)
+
+    st.markdown("<hr style='border-color:#30363d; margin:12px 0;'>", unsafe_allow_html=True)
+
     leverage = sys.litigation.evaluate_docket_leverage()
     st.markdown(f"""
     <div style="text-align:center;">
         <div style="font-size:11px; color:#8b949e; letter-spacing:1px; text-transform:uppercase;">Docket Leverage</div>
-        <div style="font-size:36px; font-weight:700; color:{'#3fb950' if leverage >= 100 else '#f85149'};">{leverage}</div>
+        <div style="font-size:28px; font-weight:700; color:{'#3fb950' if leverage >= 100 else '#f85149'};">{leverage}</div>
         <div style="font-size:11px; color:#8b949e;">/ 260 max score</div>
     </div>
     """, unsafe_allow_html=True)
@@ -285,6 +300,140 @@ if page == "Dashboard":
         cols[1].markdown(m.date_filed)
         cols[2].markdown(m.hearing_date or "TBD")
         cols[3].markdown(status_tag(m.status), unsafe_allow_html=True)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: DECREE BAROMETER
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Decree Barometer":
+    import plotly.graph_objects as go
+
+    baro = sys.decree_barometer()
+
+    st.markdown(f"""
+    <div class="hud-header">
+    ══════════════════════════════════════════════════════<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DECREE BAROMETER &nbsp;·&nbsp; CASE 24D-1003<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Coletti v. Brown &nbsp;·&nbsp; Davidson County Fourth Circuit<br>
+    ══════════════════════════════════════════════════════
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Gauge ─────────────────────────────────────────────────────────────────
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number+delta",
+        value=baro["total"],
+        delta={"reference": 50, "increasing": {"color": "#3fb950"}, "decreasing": {"color": "#f85149"}},
+        number={"suffix": " / 100", "font": {"size": 42, "color": baro["color"]}},
+        title={"text": f"<b>{baro['verdict']}</b>", "font": {"size": 20, "color": baro["color"]}},
+        gauge={
+            "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "#8b949e",
+                     "tickfont": {"color": "#8b949e"}},
+            "bar": {"color": baro["color"], "thickness": 0.3},
+            "bgcolor": "#161b22",
+            "borderwidth": 0,
+            "steps": [
+                {"range": [0,  35], "color": "#2d1116"},
+                {"range": [35, 55], "color": "#2d1f0a"},
+                {"range": [55, 75], "color": "#1a2a1a"},
+                {"range": [75, 90], "color": "#0d2233"},
+                {"range": [90, 100], "color": "#0d2b1a"},
+            ],
+            "threshold": {
+                "line": {"color": "#f0f6fc", "width": 3},
+                "thickness": 0.85,
+                "value": baro["total"],
+            },
+        },
+    ))
+    fig.update_layout(
+        paper_bgcolor="#0d1117",
+        font={"color": "#c9d1d9"},
+        height=360,
+        margin={"t": 60, "b": 20, "l": 40, "r": 40},
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ── Verdict banner ────────────────────────────────────────────────────────
+    verdict_desc = {
+        "DECREE IMMINENT":   "All five pillars are locked. The evidentiary and procedural record is overwhelming. The Court has everything it needs to issue a favorable final decree.",
+        "DOMINANT POSITION": "Commanding advantage across most pillars. Continue building the remaining gaps and the decree will follow.",
+        "STRONG ADVANTAGE":  "Clear edge in multiple categories. Focus on the lower-scoring pillars to push into dominant territory.",
+        "BUILDING LEVERAGE": "Foundational evidence is being established. Keep logging transactions, filing motions, and returning subpoenas.",
+        "EARLY STAGE":       "Work is underway. Each new piece of evidence and each motion filed moves the needle.",
+    }
+    st.markdown(f"""
+    <div class="metric-card" style="border-left: 4px solid {baro['color']}; margin-top: 8px;">
+        <div class="metric-value" style="color:{baro['color']}; font-size:22px;">{baro['verdict']}</div>
+        <div class="metric-sub" style="color:#c9d1d9; font-size:14px; margin-top:8px;">
+            {verdict_desc.get(baro['verdict'], '')}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.divider()
+
+    # ── Five pillars breakdown ────────────────────────────────────────────────
+    st.markdown("<div class='section-header'>[ PILLAR BREAKDOWN ]</div>", unsafe_allow_html=True)
+
+    PILLAR_DESC = {
+        "Procedural Dominance": {
+            "icon": "⚖️",
+            "detail": "Rule 36 default days, active motions filed, pending judicial signatures.",
+            "how": "File the remaining motions. Confirm the Rule 36 admissions at the May 29 hearing.",
+        },
+        "Financial Evidence": {
+            "icon": "🔎",
+            "detail": "Transactions logged in the forensic ledger, dissipation rate, active subpoenas.",
+            "how": "Return the FFCU and Dreamliner subpoenas. Log every transaction as it arrives.",
+        },
+        "Income Fraud Proof": {
+            "icon": "📊",
+            "detail": "Concealment percentage, tracking months, sequestered hard assets.",
+            "how": "The W-2 and 1099 data is confirmed. Add the 22-month tracking period to the ledger.",
+        },
+        "Damages Quantified": {
+            "icon": "💰",
+            "detail": "Tier 1/2/3 damage tiers built out, premeditation score.",
+            "how": "All three tiers are populated. Premeditation score is maxed. This pillar is strong.",
+        },
+        "Strategic Position": {
+            "icon": "♟️",
+            "detail": "Disqualification motion, enterprise activity, ceasefire status, docket leverage.",
+            "how": "Ceasefire expired. Disqualification motion active. Enterprise growing. Hold the line.",
+        },
+    }
+
+    for pillar, pts in baro["pillars"].items():
+        pct = pts / 20
+        bar_color = "#3fb950" if pct >= 0.85 else ("#58a6ff" if pct >= 0.6 else ("#d29922" if pct >= 0.4 else "#f85149"))
+        info = PILLAR_DESC.get(pillar, {})
+
+        with st.container():
+            c1, c2 = st.columns([1, 4])
+            c1.markdown(f"<div style='font-size:32px; text-align:center; padding-top:8px;'>{info.get('icon','')}</div>", unsafe_allow_html=True)
+            with c2:
+                st.markdown(f"""
+                <div style="margin-bottom:2px;">
+                    <span style="font-weight:700; color:#f0f6fc; font-size:14px;">{pillar}</span>
+                    <span style="float:right; font-weight:900; color:{bar_color}; font-size:18px;">{pts}<span style="font-size:11px; color:#8b949e;"> / 20</span></span>
+                </div>
+                """, unsafe_allow_html=True)
+                st.progress(pct)
+                st.caption(f"{info.get('detail', '')}  ·  **Next move:** {info.get('how', '')}")
+        st.markdown("<div style='margin-bottom:6px;'></div>", unsafe_allow_html=True)
+
+    st.divider()
+
+    # ── What moves the needle most ────────────────────────────────────────────
+    st.markdown("<div class='section-header'>[ TOP ACTIONS TO INCREASE SCORE ]</div>", unsafe_allow_html=True)
+
+    gaps = sorted(baro["pillars"].items(), key=lambda x: x[1])
+    for pillar, pts in gaps:
+        gap = 20 - pts
+        if gap > 0:
+            st.markdown(f"- **+{gap} pts available** — {pillar}: {PILLAR_DESC.get(pillar, {}).get('how', '')}")
 
 
 # ════════════════════════════════════════════════════════════════════════════
