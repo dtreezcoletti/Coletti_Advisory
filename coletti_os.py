@@ -31,6 +31,7 @@ class Transaction:
     description: str
     category: str
     is_marital_dissipation: bool = False
+    balance_after: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -39,6 +40,7 @@ class Transaction:
             "description": self.description,
             "category": self.category,
             "is_marital_dissipation": self.is_marital_dissipation,
+            "balance_after": self.balance_after,
         }
 
     @classmethod
@@ -493,6 +495,65 @@ class ColettiOS:
             "Dreamliner HQ – Payroll Manifests",
             "First Florida Credit Union – Unredacted Ledgers",
         ]
+
+        # Pre-loaded FFCU ledger — confirmed transactions from subpoena returns
+        self.forensics.transactions = [
+            Transaction(
+                effective_date="2023-05-12",
+                amount=700.00,
+                description="Lyons HR LLC Payroll",
+                category="income",
+                is_marital_dissipation=False,
+                balance_after=2959.37,
+            ),
+            Transaction(
+                effective_date="2023-05-29",
+                amount=3498.90,
+                description="PayPal *ColettiAndBrown",
+                category="coletti_brown_entity",
+                is_marital_dissipation=True,   # funds diverted to joint entity without consent
+                balance_after=314.52,
+            ),
+            Transaction(
+                effective_date="2023-10-27",
+                amount=700.00,
+                description="Lyons HR LLC Payroll",
+                category="income",
+                is_marital_dissipation=False,
+                balance_after=3005.46,
+            ),
+            Transaction(
+                effective_date="2023-11-28",
+                amount=50.00,
+                description="Capital One Auto",
+                category="vehicle",
+                is_marital_dissipation=True,   # personal vehicle during withholding period
+                balance_after=2902.92,
+            ),
+            Transaction(
+                effective_date="2024-01-09",
+                amount=2961.12,
+                description="American Homes 4 Rent",
+                category="housing",
+                is_marital_dissipation=True,   # housing paid while withholding court-ordered support
+                balance_after=14.21,
+            ),
+        ]
+
+        # Tactical status — updated after ceasefire expiry May 18, 2026
+        self.tactical_status = {
+            "ceasefire_expired": True,
+            "ceasefire_date": "2026-05-18",
+            "ceasefire_time": "4:30 PM CST",
+            "active_strategy": "Full evidentiary preparation for May 29th hearing.",
+            "counter_measure": (
+                "Starvation tactics by opposing counsel neutralized. "
+                "No further settlement negotiations. Proceeding with "
+                "Disqualification Motion and Rule 36 Default confirmation."
+            ),
+            "dissipation_payroll_diverted": 11125.00,
+            "dissipation_housing_withheld": 7858.62,
+        }
 
     # ── Serialisation ─────────────────────────────────────────────────────────
 

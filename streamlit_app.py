@@ -235,7 +235,37 @@ if page == "Dashboard":
                     f"${idp.total_concealed_value():,.2f}",
                     f"Over {idp.tracking_months} months + hard assets", "#f85149")
 
-    # Upcoming motions
+    # Tactical Reality
+    ts = getattr(sys, "tactical_status", {})
+    if ts:
+        st.markdown("<div class='section-header'>[ CURRENT TACTICAL REALITY ]</div>", unsafe_allow_html=True)
+        ceasefire_color = "#f85149" if ts.get("ceasefire_expired") else "#3fb950"
+        ceasefire_label = (
+            f"EXPIRED — {ts['ceasefire_date']} @ {ts['ceasefire_time']}"
+            if ts.get("ceasefire_expired") else "ACTIVE"
+        )
+        st.markdown(f"""
+        <div class="metric-card" style="border-left: 4px solid {ceasefire_color};">
+            <div class="metric-label">Ceasefire Status</div>
+            <div class="metric-value" style="color:{ceasefire_color}; font-size:18px;">{ceasefire_label}</div>
+            <div class="metric-sub" style="color:#c9d1d9; margin-top:8px;">
+                <strong>Active Strategy:</strong> {ts.get('active_strategy', '')}<br>
+                <strong>Counter-Measure:</strong> {ts.get('counter_measure', '')}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        c1, c2 = st.columns(2)
+        with c1:
+            metric_card("Payroll Diverted to 3rd Parties",
+                        f"${ts.get('dissipation_payroll_diverted', 0):,.2f}",
+                        "Confirmed from FFCU ledger", "#f85149")
+        with c2:
+            metric_card("Housing Paid While Withholding Support",
+                        f"${ts.get('dissipation_housing_withheld', 0):,.2f}",
+                        "Confirmed from FFCU ledger", "#f85149")
+
+    # Motion queue
     st.markdown("<div class='section-header'>[ MOTION QUEUE ]</div>", unsafe_allow_html=True)
     for m in sorted(sys.litigation.motions, key=lambda x: x.hearing_date or "9999"):
         cols = st.columns([3, 2, 2, 3])
@@ -384,13 +414,31 @@ elif page == "Forensic Accounting":
 
             st.markdown(f"**{len(txns)} records displayed**")
 
+            # Flat pandas table view
+            import pandas as pd
+            rows = []
+            for t in txns:
+                rows.append({
+                    "Date": t.effective_date,
+                    "Description": t.description,
+                    "Category": t.category,
+                    "Amount ($)": t.amount,
+                    "Balance After ($)": t.balance_after if t.balance_after else "—",
+                    "Dissipation": "🔴 YES" if t.is_marital_dissipation else "⚪ No",
+                })
+            df = pd.DataFrame(rows)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+
+            st.markdown("---")
+            st.markdown("**Expand individual entries to remove or inspect:**")
             for i, t in enumerate(txns):
                 flag = "🔴" if t.is_marital_dissipation else "⚪"
                 with st.expander(f"{flag} {t.effective_date} · ${t.amount:,.2f} · {t.description}"):
-                    c1, c2, c3 = st.columns(3)
+                    c1, c2, c3, c4 = st.columns(4)
                     c1.markdown(f"**Category:** {t.category}")
                     c2.markdown(f"**Amount:** ${t.amount:,.2f}")
-                    c3.markdown(f"**Dissipation:** {'Yes ⚠️' if t.is_marital_dissipation else 'No'}")
+                    c3.markdown(f"**Balance After:** ${t.balance_after:,.2f}" if t.balance_after else "**Balance After:** —")
+                    c4.markdown(f"**Dissipation:** {'Yes ⚠️' if t.is_marital_dissipation else 'No'}")
 
                     if st.button("Remove Entry", key=f"del_txn_{i}"):
                         sys.forensics.transactions.pop(
@@ -403,9 +451,10 @@ elif page == "Forensic Accounting":
         st.markdown("#### Log New Transaction")
         with st.form("add_txn"):
             d = st.date_input("Effective Date", value=date.today())
-            c1, c2 = st.columns(2)
+            c1, c2, c3 = st.columns(3)
             amt = c1.number_input("Amount ($)", min_value=0.01, step=0.01, format="%.2f")
             cat = c2.text_input("Category", placeholder="e.g. Transfer, Cash Withdrawal, Luxury")
+            bal = c3.number_input("Balance After ($)", min_value=0.00, step=0.01, format="%.2f")
             desc = st.text_input("Description")
             is_dis = st.checkbox("Flag as Marital Dissipation")
 
@@ -417,6 +466,7 @@ elif page == "Forensic Accounting":
                         description=desc,
                         category=cat,
                         is_marital_dissipation=is_dis,
+                        balance_after=float(bal),
                     ))
                     st.success(f"Transaction logged: ${amt:,.2f} — {desc}")
                     st.rerun()
