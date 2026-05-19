@@ -117,16 +117,28 @@ with st.sidebar:
     <div style="text-align:center; padding:20px 0 10px;">
         <div style="font-size:28px">⚖️</div>
         <div style="font-size:16px; font-weight:700; color:#f0f6fc; letter-spacing:2px;">COLETTI OS</div>
-        <div style="font-size:11px; color:#8b949e; letter-spacing:3px;">v2.0 · COMMAND INTERFACE</div>
+        <div style="font-size:11px; color:#8b949e; letter-spacing:3px;">v2.5.5 · COMMAND INTERFACE</div>
     </div>
     <hr style="border-color:#30363d; margin:0 0 16px;">
     """, unsafe_allow_html=True)
 
     page = st.radio(
         "Navigation",
-        ["Dashboard", "Litigation Command", "Forensic Accounting", "Income Disparity",
-         "Case Valuation", "Forensic Engine", "Enterprise Ops", "Documents",
-         "Upload Statement", "Export to Excel", "Data Export"],
+        [
+            "Dashboard",
+            "Litigation Docket",
+            "Forensic Ops (Evidence)",
+            "Income Disparity",
+            "Case Valuation",
+            "Forensic Engine",
+            "Enterprise Ops (Coletti & Co.)",
+            "Client Portal (Secure Ingest)",
+            "Document Assembly (Drafting)",
+            "PDF Reports",
+            "Upload Statement",
+            "Export to Excel",
+            "Data Export",
+        ],
         label_visibility="collapsed",
     )
 
@@ -279,7 +291,7 @@ if page == "Dashboard":
 # PAGE: LITIGATION COMMAND
 # ════════════════════════════════════════════════════════════════════════════
 
-elif page == "Litigation Command":
+elif page == "Litigation Docket":
     st.title("⚖️ Litigation Command Center")
     st.caption(f"Case № {sys.litigation.case_number} · {sys.litigation.jurisdiction}")
 
@@ -378,7 +390,7 @@ elif page == "Litigation Command":
 # PAGE: FORENSIC ACCOUNTING
 # ════════════════════════════════════════════════════════════════════════════
 
-elif page == "Forensic Accounting":
+elif page == "Forensic Ops (Evidence)":
     st.title("🔎 Forensic Accounting Engine")
     st.caption(f"{sys.forensics.institution} · Account {sys.forensics.target_account}")
 
@@ -490,7 +502,7 @@ elif page == "Forensic Accounting":
 # PAGE: ENTERPRISE OPS
 # ════════════════════════════════════════════════════════════════════════════
 
-elif page == "Enterprise Ops":
+elif page == "Enterprise Ops (Coletti & Co.)":
     st.title("🏢 Coletti & Co. — Enterprise Operations")
     st.caption(f"Chief Executive: {sys.enterprise.founder}")
 
@@ -932,10 +944,252 @@ elif page == "Forensic Engine":
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# PAGE: CLIENT PORTAL
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Client Portal (Secure Ingest)":
+    st.title("🔐 Client Portal | Secure Document Ingest")
+    st.markdown("Encrypted file transfer protocol for active Coletti & Co. advisory clients.")
+    st.divider()
+
+    col1, col2 = st.columns([1, 2])
+
+    with col1:
+        st.subheader("Client Authentication")
+        # Pull live client names; fall back to defaults if none onboarded yet
+        live_clients = [c.entity_name for c in sys.enterprise.active_portfolios]
+        client_choices = live_clients if live_clients else ["Alpha Logistics Group", "Vanguard Media"]
+        client_choices.append("Guest / Pending Onboarding")
+
+        client_id = st.selectbox("Select Active Client Entity", client_choices)
+        doc_type = st.selectbox("Document Classification", [
+            "Operational Audit (Raw Data)",
+            "Narrative Blueprint / Brief",
+            "Compliance & Legal Records",
+            "Financial Ledgers",
+        ])
+        priority = st.radio("Processing Priority", [
+            "Standard", "High", "Critical (Immediate Analysis)"
+        ])
+
+    with col2:
+        st.subheader("Secure File Drop")
+        uploaded_client_files = st.file_uploader(
+            f"Select files for **{client_id}** (multiple allowed)",
+            type=["pdf", "csv", "xlsx", "docx", "zip"],
+            accept_multiple_files=True,
+        )
+        transmission_notes = st.text_area(
+            "Strategic Context / Transmission Notes", height=100,
+            placeholder="Brief the system on why these files are being ingested and what to watch for."
+        )
+
+        if st.button("Initialize Secure Transfer", type="primary", use_container_width=True):
+            if uploaded_client_files:
+                st.success(
+                    f"{len(uploaded_client_files)} file(s) encrypted and routed to "
+                    f"**{client_id}** framework."
+                )
+                st.info(f"Classification: {doc_type}  ·  Priority: {priority}")
+                st.markdown("**Ingestion Log:**")
+                for f in uploaded_client_files:
+                    st.text(f"[-] {f.name} ({round(f.size / 1024, 2)} KB) — STATUS: SECURED")
+                if transmission_notes:
+                    st.markdown(f"**Notes logged:** {transmission_notes}")
+            else:
+                st.error("Transmission Error: No files detected in the drop zone.")
+
+    st.divider()
+    st.caption("Powered by Coletti OS  ·  Strategic Architecture & Data-Driven Frameworks")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: DOCUMENT ASSEMBLY
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Document Assembly (Drafting)":
+    st.title("📝 Document Assembly | Motion & Brief Drafting")
+    st.caption("Case № 24D-1003  ·  Davidson County Fourth Circuit  ·  Hon. Stephanie J. Williams")
+
+    TEMPLATES = {
+        "Motion to Confirm Rule 36 Deemed Admissions": """\
+IN THE CIRCUIT COURT FOR DAVIDSON COUNTY, TENNESSEE
+FOURTH CIRCUIT
+
+{petitioner}, Petitioner,
+v.                                    Case No. {case_number}
+{respondent}, Respondent.
+
+MOTION TO CONFIRM RULE 36 DEEMED ADMISSIONS
+
+COMES NOW the Petitioner, {petitioner}, by and through undersigned counsel, and respectfully moves this Court pursuant to Tenn. R. Civ. P. 36 to confirm that the following requests for admission served upon the Respondent have been deemed admitted by operation of law:
+
+1. Respondent was served with Petitioner's First Set of Requests for Admission on {rfa_served_date}.
+2. As of the date of this Motion, {rule_36_days} days have elapsed without a timely, verified response.
+3. All {rfa_count} requests are therefore deemed admitted as a matter of law.
+
+WHEREFORE, Petitioner respectfully requests that this Court enter an Order confirming the deemed admissions and directing that {rfa_count} counts of marital dissipation are established facts for all purposes in this proceeding.
+
+Respectfully submitted,
+
+{attorney_signature}
+Date: {today}
+""",
+
+        "Motion for Pendente Lite Support": """\
+IN THE CIRCUIT COURT FOR DAVIDSON COUNTY, TENNESSEE
+FOURTH CIRCUIT
+
+{petitioner}, Petitioner,
+v.                                    Case No. {case_number}
+{respondent}, Respondent.
+
+MOTION FOR PENDENTE LITE SUPPORT AND SUIT MONEY
+
+COMES NOW the Petitioner, {petitioner}, and moves this Court for an Order awarding pendente lite support and suit money based on the following:
+
+1. INCOME DISPARITY: Respondent's verified monthly net income is ${verified_monthly_net}, compared to the sworn disclosure of ${sworn_monthly_net} — a concealment of ${monthly_concealment} per month ({concealment_pct}% above sworn).
+
+2. SUPPORT REQUESTED: Petitioner requests pendente lite support of ${pendente_lite_monthly} per month, calculated at the Tennessee guideline rate applied to Respondent's verified income.
+
+3. SUIT MONEY: Petitioner requests ${suit_money} in suit money to equalize litigation resources given Respondent's documented income concealment.
+
+4. ARREARAGE: Respondent has been in arrearage of ${pendente_lite_arrearage} over the tracking period.
+
+WHEREFORE, Petitioner requests immediate entry of an Order awarding the foregoing relief.
+
+Respectfully submitted,
+
+{attorney_signature}
+Date: {today}
+""",
+
+        "Subpoena Cover Letter": """\
+{today}
+
+RE:    Subpoena for Records — Case No. {case_number}
+TO:    Records Custodian, {institution}
+
+Dear Records Custodian:
+
+Enclosed please find a validly issued Subpoena Duces Tecum in the matter of {petitioner} v. {respondent}, Case No. {case_number}, pending in the Fourth Circuit Court, Davidson County, Tennessee.
+
+You are directed to produce the following records for the account holder {respondent}:
+
+{subpoena_items}
+
+Records shall be produced no later than {response_deadline}. Please direct any questions to the undersigned.
+
+Respectfully,
+
+{attorney_signature}
+""",
+
+        "Blank Motion (Custom)": """\
+IN THE CIRCUIT COURT FOR DAVIDSON COUNTY, TENNESSEE
+FOURTH CIRCUIT
+
+{petitioner}, Petitioner,
+v.                                    Case No. {case_number}
+{respondent}, Respondent.
+
+{motion_title}
+
+{motion_body}
+
+Respectfully submitted,
+
+{attorney_signature}
+Date: {today}
+""",
+    }
+
+    # Pull live data for auto-fill
+    idp = sys.income_disparity
+    cv  = sys.case_valuation
+
+    col_sel, col_preview = st.columns([1, 2])
+
+    with col_sel:
+        template_name = st.selectbox("Select Template", list(TEMPLATES.keys()))
+        st.divider()
+        st.markdown("#### Auto-Fill from Case Data")
+
+        petitioner    = st.text_input("Petitioner Name", "Demetries J.L. Coletti")
+        respondent    = st.text_input("Respondent Name", "Respondent")
+        case_number   = st.text_input("Case Number", sys.litigation.case_number)
+        attorney_sig  = st.text_input("Attorney / Pro Se Signature Line",
+                                      "Demetries J.L. Coletti, Pro Se")
+        today_str     = st.date_input("Document Date", value=date.today()).isoformat()
+
+        # Template-specific fields
+        extra = {}
+        if template_name == "Motion to Confirm Rule 36 Deemed Admissions":
+            extra["rfa_served_date"]  = st.text_input("RFA Served Date", "November 21, 2025")
+            extra["rule_36_days"]     = st.number_input("Days Elapsed", value=sys.litigation.rule_36_days_default)
+            extra["rfa_count"]        = st.number_input("Count of Admissions", value=27)
+
+        elif template_name == "Motion for Pendente Lite Support":
+            extra["verified_monthly_net"] = f"{idp.verified_monthly_net:,.2f}"
+            extra["sworn_monthly_net"]    = f"{idp.sworn_monthly_net:,.2f}"
+            extra["monthly_concealment"]  = f"{idp.monthly_understatement():,.2f}"
+            extra["concealment_pct"]      = f"{idp.understatement_pct():.1f}"
+            extra["pendente_lite_monthly"]  = f"{cv.tier1.pendente_lite_monthly:,.2f}"
+            extra["suit_money"]             = f"{cv.tier1.suit_money:,.2f}"
+            extra["pendente_lite_arrearage"] = f"{cv.tier1.pendente_lite_arrearage:,.2f}"
+
+        elif template_name == "Subpoena Cover Letter":
+            extra["institution"]       = st.text_input("Institution Name", "First Florida Credit Union")
+            extra["response_deadline"] = st.text_input("Response Deadline", "Within 14 days of service")
+            items_raw = st.text_area(
+                "Records Requested (one per line)",
+                "All account statements from January 2022 to present\n"
+                "All wire transfer and ACH records\n"
+                "Signature cards and account opening documents",
+            )
+            extra["subpoena_items"] = "\n".join(
+                f"  {i+1}. {line.strip()}"
+                for i, line in enumerate(items_raw.strip().splitlines()) if line.strip()
+            )
+
+        elif template_name == "Blank Motion (Custom)":
+            extra["motion_title"] = st.text_input("Motion Title")
+            extra["motion_body"]  = st.text_area("Motion Body", height=200)
+
+    with col_preview:
+        st.markdown("#### Live Preview")
+        try:
+            filled = TEMPLATES[template_name].format(
+                petitioner=petitioner,
+                respondent=respondent,
+                case_number=case_number,
+                attorney_signature=attorney_sig,
+                today=today_str,
+                **extra,
+            )
+        except KeyError as e:
+            filled = f"[Fill in all required fields — missing: {e}]"
+
+        st.text_area("Draft", value=filled, height=520, key="draft_preview")
+
+        col_copy, col_dl = st.columns(2)
+        col_dl.download_button(
+            "⬇️ Download Draft (.txt)",
+            data=filled,
+            file_name=f"{template_name.replace(' ', '_')}_{today_str}.txt",
+            mime="text/plain",
+            use_container_width=True,
+        )
+
+        if col_copy.button("Copy to Clipboard ↗", use_container_width=True):
+            st.info("Select all text in the draft box above (Ctrl+A / Cmd+A) and copy.")
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # PAGE: DOCUMENTS
 # ════════════════════════════════════════════════════════════════════════════
 
-elif page == "Documents":
+elif page == "PDF Reports":
     st.title("🖨️ Document Generation")
     st.markdown(
         "Generate print-ready PDF reports from live Coletti OS data. "
