@@ -15,6 +15,7 @@ from document_engine import (
 from forensic_engine import ForensicEngine
 from forensic_ocr import ForensicOCREngine
 from excel_export import ExcelExporter
+from ingestion_engine import DataIngestionEngine, DocumentRecord, ExhibitRecord
 
 # ── Page config ───────────────────────────────────────────────────────────────
 
@@ -2667,128 +2668,204 @@ elif page == "PDF Reports":
 # ════════════════════════════════════════════════════════════════════════════
 
 elif page == "Upload Statement":
-    st.title("📸 Evidence Capture")
-    st.caption("Take a photo, upload a file, or drop in a PDF — OCR runs automatically")
-
-    # ── Input mode selector ───────────────────────────────────────────────────
-    mode = st.radio(
-        "Input method",
-        ["📷 Camera (phone/tablet)", "🖼️ Upload Image", "📄 Upload PDF"],
-        horizontal=True,
+    st.markdown(
+        """
+    <div class="hud-header">
+        <h1 class="hud-title">📂 EVIDENCE CAPTURE</h1>
+        <p class="hud-subtitle">BATCH DOCUMENT INGESTION — SUBPOENA RETURNS & BANK STATEMENTS</p>
+    </div>
+    """,
+        unsafe_allow_html=True,
     )
 
-    raw_bytes = None
-    is_pdf = False
+    # ── Batch file uploader ───────────────────────────────────────────────────
+    st.markdown("#### Drop Files or Browse — Multiple Files Supported")
+    st.caption(
+        "Accepts PDFs (bank statements, subpoena returns, court filings), "
+        "images (scans, phone photos, receipts), and CSV exports. "
+        "Upload as many as you like — each file gets its own Document Record and Exhibit."
+    )
 
-    if mode == "📷 Camera (phone/tablet)":
-        st.markdown(
-            "Point your camera at the statement or receipt and tap the shutter. "
-            "Works on any phone — no scanning app needed."
+    _uf_col1, _uf_col2 = st.columns([3, 1])
+    with _uf_col1:
+        batch_uploads = st.file_uploader(
+            "Drag & drop files here (PDF, image, or CSV)",
+            type=["pdf", "png", "jpg", "jpeg", "tiff", "bmp", "webp", "csv"],
+            accept_multiple_files=True,
+            label_visibility="collapsed",
         )
+    with _uf_col2:
+        source_name = st.text_input(
+            "Source / Institution",
+            value="First Florida Credit Union",
+            help="Label for the DocumentRecord — e.g. 'Wells Fargo', 'R.E. Garrison'",
+        )
+
+    # ── Camera fallback ───────────────────────────────────────────────────────
+    with st.expander("📷 Use Phone Camera Instead"):
+        st.caption("Point at statement or receipt — OCR runs automatically on capture.")
         photo = st.camera_input("Take a photo")
         if photo:
-            raw_bytes = photo.getvalue()
+            batch_uploads = batch_uploads or []
+            batch_uploads = list(batch_uploads) + [photo]
 
-    elif mode == "🖼️ Upload Image":
-        uploaded = st.file_uploader(
-            "Select image file",
-            type=["png", "jpg", "jpeg", "tiff", "bmp", "webp"],
-        )
-        if uploaded:
-            raw_bytes = uploaded.read()
+    # ── Session state: accumulated exhibits ───────────────────────────────────
+    if "ingest_exhibits" not in st.session_state:
+        st.session_state.ingest_exhibits = []   # list of (DocumentRecord, ExhibitRecord, ocr_transactions)
+    if "ingest_all_rows" not in st.session_state:
+        st.session_state.ingest_all_rows = []
 
-    else:  # PDF
-        uploaded = st.file_uploader("Select PDF file", type=["pdf"])
-        if uploaded:
-            raw_bytes = uploaded.read()
-            is_pdf = True
+    # ── Process uploaded files ────────────────────────────────────────────────
+    if batch_uploads:
+        st.divider()
+        st.markdown(f"#### Processing {len(batch_uploads)} file(s)…")
 
-    # ── Processing ────────────────────────────────────────────────────────────
-    if raw_bytes:
-        with st.spinner("Running OCR extraction..."):
-            if is_pdf:
-                institution = ocr.detect_institution(raw_bytes)
-                transactions = ocr.process_pdf_bytes(raw_bytes)
-            else:
-                institution = "Photo Capture"
-                transactions = ocr.process_image_bytes(raw_bytes)
+        _engine = DataIngestionEngine(source_name=source_name)
+        _new_exhibits = []
 
-        if not transactions:
-            st.warning(
-                "No transactions detected. Tips:\n"
-                "- Make sure the text is in focus and well-lit\n"
-                "- Lay the document flat before photographing\n"
-                "- For digital PDFs use the Upload PDF option instead"
-            )
-        else:
-            summ = ocr.summary(transactions)
-            if institution != "Photo Capture":
-                st.success(f"Institution detected: **{institution}**")
+        for _uf in batch_uploads:
+            _fname = getattr(_uf, "name", "camera_capture.jpg")
+            _ext = _fname.rsplit(".", 1)[-1].lower() if "." in _fname else "jpg"
+            _raw = _uf.getvalue() if hasattr(_uf, "getvalue") else _uf.read()
 
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Rows Extracted", summ["count"])
-            c2.metric("Date Range", summ["date_range"])
-            c3.metric("Total Amount", f"${summ['total']:,.2f}")
-            c4.metric("Avg Confidence", f"{summ['avg_confidence']:.0%}")
+            with st.spinner(f"Ingesting {_fname}…"):
+                if _ext == "csv":
+                    _doc, _exhibit = _engine.run_ingestion_wizard(_raw, _fname, file_type="csv")
+                    _ocr_txns = []
+                elif _ext == "pdf":
+                    _doc, _exhibit = _engine.run_ingestion_wizard(_raw, _fname, file_type="pdf")
+                    _ocr_txns = ocr.process_pdf_bytes(_raw)
+                else:
+                    # Image — OCR only
+                    _ocr_txns = ocr.process_image_bytes(_raw)
+                    import io as _io
+                    _raw_text = "\n".join(t.description for t in _ocr_txns)
+                    _doc = DocumentRecord(
+                        doc_id=f"DOC_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                        source=source_name,
+                        doc_type="Scanned Image",
+                        raw_text=_raw_text,
+                        file_name=_fname,
+                    )
+                    import pandas as _pd_img
+                    _df_img = _pd_img.DataFrame([
+                        {"Date": t.date, "Description": t.description,
+                         "Amount": t.amount, "Type": t.transaction_type}
+                        for t in _ocr_txns
+                    ]) if _ocr_txns else _pd_img.DataFrame()
+                    _exhibit = ExhibitRecord(
+                        source_doc=_doc.doc_id,
+                        transactions=_df_img,
+                        total_value=sum(t.amount for t in _ocr_txns),
+                        deposit_total=sum(t.amount for t in _ocr_txns if t.transaction_type == "deposit"),
+                        withdrawal_total=sum(t.amount for t in _ocr_txns if t.transaction_type == "withdrawal"),
+                        transaction_count=len(_ocr_txns),
+                    )
 
-            st.divider()
-            st.markdown("#### Review & Flag Before Import")
-            st.caption(
-                "Green = high confidence · Yellow = review · Red = check manually. "
-                "Tick **Dissipation** to flag for court."
-            )
+            _new_exhibits.append((_doc, _exhibit, _ocr_txns, _fname, _ext))
 
-            edited_rows = []
-            for i, t in enumerate(transactions):
-                conf_color = "🟢" if t.confidence >= 0.8 else ("🟡" if t.confidence >= 0.5 else "🔴")
-                with st.expander(
-                    f"{conf_color}  {t.date}  ·  ${t.amount:,.2f}  ·  {t.description[:50]}",
-                    expanded=(t.confidence < 0.5),   # auto-open low-confidence rows
-                ):
-                    c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
-                    new_desc = c1.text_input("Description", value=t.description, key=f"desc_{i}")
-                    new_cat  = c2.text_input("Category", value="Uncategorised", key=f"cat_{i}")
-                    new_amt  = c3.number_input("Amount ($)", value=float(t.amount), format="%.2f", key=f"amt_{i}")
-                    is_dis   = c4.checkbox("Dissipation", key=f"dis_{i}")
-                    if t.confidence < 0.8:
-                        st.caption(f"Raw line: `{t.raw_line}`")
-                    edited_rows.append({
-                        "effective_date": t.date,
-                        "amount": new_amt,
-                        "description": new_desc,
-                        "category": new_cat,
-                        "is_marital_dissipation": is_dis,
-                    })
+        # ── Display Document Records ──────────────────────────────────────────
+        for _doc, _exhibit, _ocr_txns, _fname, _ext in _new_exhibits:
+            st.markdown(f"---")
+            _dcol1, _dcol2, _dcol3, _dcol4 = st.columns(4)
+            _dcol1.metric("Document ID", _doc.doc_id[-8:])
+            _dcol2.metric("Source", _doc.source[:18])
+            _dcol3.metric("Transactions Found", _exhibit.transaction_count)
+            _dcol4.metric("Total Value Parsed", f"${_exhibit.total_value:,.2f}")
 
-            st.divider()
-            col_imp, col_exp = st.columns(2)
+            with st.expander(f"📋  {_fname}  —  Document Record {_doc.doc_id}", expanded=True):
+                _tab_review, _tab_raw = st.tabs(["Review & Flag", "Raw Text"])
 
-            if col_imp.button("⬆️ Import All to Forensic Ledger", use_container_width=True, type="primary"):
-                from coletti_os import Transaction as CTransaction
-                for row in edited_rows:
-                    sys.forensics.transactions.append(CTransaction(**row))
-                st.success(f"{len(edited_rows)} transactions imported into the Forensic Ledger.")
-                st.rerun()
+                with _tab_review:
+                    # Use OCR transactions if available (richer confidence data), else DataFrame rows
+                    if _ocr_txns:
+                        _rows_to_show = _ocr_txns
+                        _use_ocr = True
+                    elif not _exhibit.transactions.empty:
+                        _rows_to_show = _exhibit.transactions.to_dict("records")
+                        _use_ocr = False
+                    else:
+                        _rows_to_show = []
+                        _use_ocr = False
 
-            json_bytes = json.dumps(
-                [{"effective_date": r["effective_date"], "amount": r["amount"],
-                  "description": r["description"], "category": r["category"],
-                  "transaction_type": next(
-                      (t.transaction_type for t in transactions
-                       if t.description[:30] == r["description"][:30]), "withdrawal"
-                  )}
-                 for r in edited_rows],
-                indent=2,
-            )
-            col_exp.download_button(
-                "⬇️ Export as JSON (exhibit_raw_data.json)",
-                data=json_bytes,
-                file_name=f"exhibit_raw_data_{date.today().isoformat()}.json",
-                mime="application/json",
-                use_container_width=True,
-            )
+                    if not _rows_to_show:
+                        st.warning(
+                            "No transactions auto-detected. "
+                            "Check that the PDF has selectable text, or re-upload as an image for OCR."
+                        )
+                    else:
+                        st.caption(
+                            f"{len(_rows_to_show)} rows extracted · "
+                            "Green=high confidence · Yellow=review · Red=check manually. "
+                            "Check **Dissipation** to flag for court."
+                        )
+                        _doc_rows = []
+                        for _ri, _row in enumerate(_rows_to_show):
+                            _ukey = f"{_doc.doc_id}_{_ri}"
+                            if _use_ocr:
+                                _t = _row
+                                _conf = getattr(_t, "confidence", 1.0)
+                                _conf_icon = "🟢" if _conf >= 0.8 else ("🟡" if _conf >= 0.5 else "🔴")
+                                _label = f"{_conf_icon}  {_t.date}  ·  ${_t.amount:,.2f}  ·  {_t.description[:45]}"
+                                with st.expander(_label, expanded=(_conf < 0.5)):
+                                    _rc1, _rc2, _rc3, _rc4 = st.columns([3, 2, 2, 1])
+                                    _nd = _rc1.text_input("Description", value=_t.description, key=f"ud_{_ukey}")
+                                    _nc = _rc2.text_input("Category", value="Uncategorised", key=f"uc_{_ukey}")
+                                    _na = _rc3.number_input("Amount ($)", value=float(_t.amount), format="%.2f", key=f"ua_{_ukey}")
+                                    _nd2 = _rc4.checkbox("Dissipation", key=f"ux_{_ukey}")
+                                    if _conf < 0.8:
+                                        st.caption(f"Raw: `{_t.raw_line}`")
+                                    _doc_rows.append({
+                                        "effective_date": _t.date,
+                                        "amount": _na,
+                                        "description": _nd,
+                                        "category": _nc,
+                                        "is_marital_dissipation": _nd2,
+                                    })
+                            else:
+                                _row_d = _row
+                                with st.expander(f"Row {_ri+1}  ·  {str(_row_d.get('Date',''))[:10]}  ·  ${float(_row_d.get('Amount',0)):,.2f}"):
+                                    _rc1, _rc2, _rc3, _rc4 = st.columns([3, 2, 2, 1])
+                                    _nd = _rc1.text_input("Description", value=str(_row_d.get("Description", "")), key=f"ud_{_ukey}")
+                                    _nc = _rc2.text_input("Category", value="Uncategorised", key=f"uc_{_ukey}")
+                                    _na = _rc3.number_input("Amount ($)", value=float(_row_d.get("Amount", 0)), format="%.2f", key=f"ua_{_ukey}")
+                                    _nd2 = _rc4.checkbox("Dissipation", key=f"ux_{_ukey}")
+                                    _doc_rows.append({
+                                        "effective_date": str(_row_d.get("Date", "")),
+                                        "amount": _na,
+                                        "description": _nd,
+                                        "category": _nc,
+                                        "is_marital_dissipation": _nd2,
+                                    })
+
+                        _imp_btn, _skip_btn = st.columns(2)
+                        if _imp_btn.button(
+                            f"⬆️ Import {len(_doc_rows)} rows → Forensic Ledger",
+                            key=f"import_{_doc.doc_id}",
+                            type="primary",
+                            use_container_width=True,
+                        ):
+                            from coletti_os import Transaction as _CT
+                            for _dr in _doc_rows:
+                                sys.forensics.transactions.append(_CT(**_dr))
+                            st.success(f"{len(_doc_rows)} transactions added to Forensic Ledger from {_fname}.")
+                            st.rerun()
+
+                with _tab_raw:
+                    st.text_area(
+                        "Extracted text",
+                        value=_doc.raw_text[:8000] + ("…" if len(_doc.raw_text) > 8000 else ""),
+                        height=300,
+                        disabled=True,
+                        key=f"rawtext_{_doc.doc_id}",
+                    )
+
     else:
-        st.info("Upload a bank statement PDF or scanned image to begin extraction.")
+        st.info(
+            "Drop one or more files above to begin. "
+            "You can upload a whole month of statements at once — "
+            "each gets its own Document Record and Exhibit entry."
+        )
 
 
 # ════════════════════════════════════════════════════════════════════════════
