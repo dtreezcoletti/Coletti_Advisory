@@ -12,6 +12,7 @@ Note: Uses pymupdf (fitz) — pdfplumber is NOT available in this environment
 """
 
 import re
+import hashlib
 import fitz                        # pymupdf — replaces pdfplumber
 import pandas as pd
 from datetime import datetime
@@ -30,6 +31,8 @@ class DocumentRecord:
     date_processed: str = field(default_factory=lambda: datetime.now().isoformat())
     page_count: int = 0
     file_name: str = ""
+    evidence_id: str = ""          # EXH-YYYYMMDD-HHMMSS-<hash12> — chain of custody
+    sha256_hash: str = ""          # full SHA-256 of raw file bytes
 
 
 @dataclass
@@ -230,6 +233,7 @@ class DataIngestionEngine:
             withdrawals = float(df.loc[df["Type"] == "Withdrawal", "Amount"].sum()) if not df.empty else 0.0
 
         doc_id = f"DOC_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        evidence_id, sha256_hash = self.generate_evidence_id(file_bytes)
 
         doc = DocumentRecord(
             doc_id=doc_id,
@@ -238,6 +242,8 @@ class DataIngestionEngine:
             raw_text=raw_text,
             page_count=page_count,
             file_name=file_name,
+            evidence_id=evidence_id,
+            sha256_hash=sha256_hash,
         )
 
         exhibit = ExhibitRecord(
@@ -260,6 +266,19 @@ class DataIngestionEngine:
         print("-" * 50)
 
         return doc, exhibit
+
+    # ── Chain of Custody ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def generate_evidence_id(file_bytes: bytes) -> tuple[str, str]:
+        """
+        SHA-256 hash of raw file bytes → tamper-evident evidence ID.
+        Returns (evidence_id, full_hex_hash).
+        evidence_id format: EXH-YYYYMMDD-HHMMSS-<first 12 hex chars>
+        """
+        h = hashlib.sha256(file_bytes).hexdigest()
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        return f"EXH-{ts}-{h[:12]}", h
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

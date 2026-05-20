@@ -2768,10 +2768,18 @@ elif page == "Upload Statement":
         for _doc, _exhibit, _ocr_txns, _fname, _ext in _new_exhibits:
             st.markdown(f"---")
             _dcol1, _dcol2, _dcol3, _dcol4 = st.columns(4)
-            _dcol1.metric("Document ID", _doc.doc_id[-8:])
+            _dcol1.metric("Evidence ID", _doc.evidence_id.split("-", 1)[-1] if _doc.evidence_id else _doc.doc_id[-8:])
             _dcol2.metric("Source", _doc.source[:18])
             _dcol3.metric("Transactions Found", _exhibit.transaction_count)
             _dcol4.metric("Total Value Parsed", f"${_exhibit.total_value:,.2f}")
+            if _doc.evidence_id:
+                st.markdown(
+                    f'<div style="font-family:monospace;font-size:11px;color:#3fb950;'
+                    f'background:#0d1f0d;padding:6px 10px;border-radius:4px;margin-bottom:8px;">'
+                    f'🔒 <b>{_doc.evidence_id}</b> &nbsp;|&nbsp; '
+                    f'SHA-256: {_doc.sha256_hash[:32]}…</div>',
+                    unsafe_allow_html=True,
+                )
 
             with st.expander(f"📋  {_fname}  —  Document Record {_doc.doc_id}", expanded=True):
                 _tab_review, _tab_raw = st.tabs(["Review & Flag", "Raw Text"])
