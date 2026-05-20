@@ -16,6 +16,7 @@ from forensic_engine import ForensicEngine
 from forensic_ocr import ForensicOCREngine
 from excel_export import ExcelExporter
 from ingestion_engine import DataIngestionEngine, DocumentRecord, ExhibitRecord
+from coletti_os_core import ColettiOSCore
 
 # ── Page config ───────────────────────────────────────────────────────────────
 
@@ -75,10 +76,13 @@ if "fe" not in st.session_state:
     st.session_state["fe"] = ForensicEngine()
 if "ocr" not in st.session_state:
     st.session_state["ocr"] = ForensicOCREngine()
+if "core" not in st.session_state:
+    st.session_state["core"] = ColettiOSCore()
 
 sys: ColettiOS = st.session_state["os"]
 fe: ForensicEngine = st.session_state["fe"]
 ocr: ForensicOCREngine = st.session_state["ocr"]
+core: ColettiOSCore = st.session_state["core"]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -142,6 +146,7 @@ with st.sidebar:
             "PDF Reports",
             "Upload Statement",
             "Export to Excel",
+            "Court-Safe Translation",
             "Data Export",
         ],
         label_visibility="collapsed",
@@ -2922,6 +2927,106 @@ elif page == "Export to Excel":
         "Open in Microsoft Excel or Google Sheets. "
         "The Transaction Ledger sheet is pre-formatted for printing — "
         "File → Print → Fit to Page works out of the box."
+    )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: COURT-SAFE TRANSLATION
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Court-Safe Translation":
+    st.markdown(
+        """
+    <div class="hud-header">
+        <h1 class="hud-title">⚖️ COURT-SAFE TRANSLATION</h1>
+        <p class="hud-subtitle">COLETTI OS v2.6.0 — LANGUAGE SANITIZATION ENGINE</p>
+    </div>
+    """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        "Converts raw statements into court-appropriate language. "
+        "Removes inflammatory terms and replaces them with legally neutral equivalents "
+        "that convey the same factual point without giving opposing counsel grounds to object."
+    )
+
+    st.divider()
+
+    _ct_mode = st.radio(
+        "Output mode",
+        ["Judge", "Settlement", "Advisory", "Timeline"],
+        horizontal=True,
+        help=(
+            "Judge — formal submission phrasing · "
+            "Settlement — risk-framing language · "
+            "Advisory — internal operational flag · "
+            "Timeline — record note format"
+        ),
+    )
+
+    _ct_input = st.text_area(
+        "Enter raw statement(s) — one per line",
+        height=180,
+        placeholder=(
+            "They lied about income and hid money.\n"
+            "The car situation destroyed my ability to stabilize.\n"
+            "Discovery has been ignored and I need the court to intervene."
+        ),
+        key="court_safe_input",
+    )
+
+    if st.button("Translate", type="primary", use_container_width=True):
+        if _ct_input.strip():
+            _statements = [s.strip() for s in _ct_input.strip().splitlines() if s.strip()]
+            _result_df = core.translate_batch(_statements, mode=_ct_mode)
+
+            st.divider()
+            st.markdown(f"#### {len(_statements)} statement(s) translated — Mode: **{_ct_mode}**")
+
+            for _, row in _result_df.iterrows():
+                with st.expander(f"{int(row['Item'])}. {row['Raw_Statement'][:70]}", expanded=True):
+                    st.markdown(
+                        f'<div style="background:#0d1f0d;border-left:3px solid #3fb950;'
+                        f'padding:10px 14px;border-radius:4px;font-size:14px;color:#c9d1d9;">'
+                        f'{row["Court_Safe_Output"]}</div>',
+                        unsafe_allow_html=True,
+                    )
+
+            _csv = _result_df.to_csv(index=False).encode()
+            st.download_button(
+                "⬇️ Download as CSV",
+                data=_csv,
+                file_name=f"court_safe_{_ct_mode.lower()}_{date.today().isoformat()}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+        else:
+            st.warning("Enter at least one statement above.")
+
+    st.divider()
+    st.markdown("#### Replacement Reference")
+    st.caption("These substitutions are applied automatically.")
+
+    _replacements_display = [
+        ("fraud", "material discrepancy"),
+        ("fraudulent", "materially inconsistent"),
+        ("lied / lie", "inconsistent statement / made a statement inconsistent with the record"),
+        ("perjury", "sworn statement requiring judicial review"),
+        ("hidden / hiding", "not yet verified or disclosed"),
+        ("stole / theft", "retained or transferred value requiring verification"),
+        ("abuse", "coercive or destabilizing conduct alleged"),
+        ("destroyed", "materially impaired"),
+        ("weaponized", "used in a manner that affected litigation stability"),
+        ("slam dunk", "strong record-supported argument"),
+        ("nuclear", "significant procedural remedy"),
+    ]
+
+    import pandas as _pd_ct
+    st.dataframe(
+        _pd_ct.DataFrame(_replacements_display, columns=["Original Term", "Court-Safe Replacement"]),
+        use_container_width=True,
+        hide_index=True,
     )
 
 
