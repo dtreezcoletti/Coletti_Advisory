@@ -153,7 +153,7 @@ class EnterpriseManagement:
 
 @dataclass
 class CaseDates:
-    marriage_start: str = "2013-01-01"
+    marriage_start: str = "2015-01-25"
     assault_date: str = "2024-06-13"
     separation_date: str = "2024-06-13"
     filing_date: str = "2024-07-24"

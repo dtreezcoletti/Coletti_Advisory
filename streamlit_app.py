@@ -1649,11 +1649,11 @@ elif page == "Timeline Visualizer":
     # ── Marriage Duration ─────────────────────────────────────────────────────
     if _tv_marriage:
         _tv_traces.append(
-            _tv_dur("Marriage Duration", "2013-01-01", "2024-06-13", "Marriage", "#0d2233",
-                    "Jan 1 2013 → Jun 13 2024")
+            _tv_dur("Marriage Duration", "2015-01-25", "2024-06-13", "Marriage", "#0d2233",
+                    "Jan 25 2015 → Jun 13 2024")
         )
         _tv_rows.append({
-            "Date": "2013-01-01 → 2024-06-13",
+            "Date": "2015-01-25 → 2024-06-13",
             "Event": "Marriage Duration",
             "Category": "Marriage",
             "Notes": "~11.5 years",
@@ -1773,12 +1773,12 @@ elif page == "Timeline Visualizer":
     # ── Point events (diamond markers) ────────────────────────────────────────
     _TV_POINTS = [
         {
-            "date":  "2013-01-01",
+            "date":  "2015-01-25",
             "label": "Marriage Start",
             "track": "Key Events",
             "color": "#58a6ff",
             "show":  _tv_marriage,
-            "notes": "Marriage commenced Jan 1, 2013",
+            "notes": "Marriage commenced Jan 25, 2015",
         },
         {
             "date":  "2022-01-01",
