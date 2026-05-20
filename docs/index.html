@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coletti Advisory — Forensic Intelligence. Litigation Ready.</title>
+  <meta name="description" content="Coletti Advisory provides forensic accounting and litigation support powered by Coletti OS — an AI-driven platform for divorce and family law proceedings." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <style>
+    /* ─── Reset & Base ─── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-primary:   #0d1117;
+      --bg-surface:   #161b22;
+      --bg-elevated:  #1c2128;
+      --border:       #30363d;
+      --border-light: #21262d;
+      --blue:         #58a6ff;
+      --blue-dim:     #1f6feb;
+      --blue-glow:    rgba(88, 166, 255, 0.12);
+      --red:          #f85149;
+      --gold:         #d29922;
+      --text-primary: #e6edf3;
+      --text-body:    #c9d1d9;
+      --text-muted:   #8b949e;
+      --text-faint:   #484f58;
+      --radius-sm:    6px;
+      --radius-md:    10px;
+      --radius-lg:    16px;
+      --radius-xl:    24px;
+      --shadow-blue:  0 0 40px rgba(88, 166, 255, 0.08);
+      --shadow-card:  0 4px 24px rgba(0, 0, 0, 0.4);
+      --transition:   0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-body);
+      line-height: 1.65;
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* ─── Scroll Animations ─── */
+    .fade-up {
+      opacity: 0;
+      transform: translateY(32px);
+      transition: opacity 0.7s ease, transform 0.7s ease;
+    }
+    .fade-up.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .fade-up.delay-1 { transition-delay: 0.1s; }
+    .fade-up.delay-2 { transition-delay: 0.2s; }
+    .fade-up.delay-3 { transition-delay: 0.3s; }
+    .fade-up.delay-4 { transition-delay: 0.4s; }
+    .fade-up.delay-5 { transition-delay: 0.5s; }
+
+    /* ─── Typography ─── */
+    h1, h2, h3, h4 {
+      color: var(--text-primary);
+      font-weight: 700;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+    a { color: var(--blue); text-decoration: none; transition: color var(--transition); }
+    a:hover { color: #79b8ff; }
+
+    /* ─── Layout Utilities ─── */
+    .container {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+    .section { padding: 96px 0; }
+    .section-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--blue);
+      margin-bottom: 16px;
+    }
+    .section-label::before {
+      content: '';
+      display: block;
+      width: 20px;
+      height: 2px;
+      background: var(--blue);
+      border-radius: 1px;
+    }
+    .section-title {
+      font-size: clamp(28px, 4vw, 42px);
+      margin-bottom: 16px;
+    }
+    .section-subtitle {
+      font-size: 18px;
+      color: var(--text-muted);
+      max-width: 580px;
+      line-height: 1.7;
+    }
+
+    /* ─── Navigation ─── */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      padding: 0 24px;
+      height: 68px;
+      display: flex;
+      align-items: center;
+      background: rgba(13, 17, 23, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-light);
+      transition: background var(--transition), border-color var(--transition);
+    }
+    .nav-inner {
+      max-width: 1140px;
+      margin: 0 auto;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+    }
+    .nav-logo-icon {
+      width: 34px;
+      height: 34px;
+      background: linear-gradient(135deg, var(--blue-dim), var(--blue));
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .nav-logo-text {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+    }
+    .nav-logo-text span {
+      color: var(--blue);
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      list-style: none;
+    }
+    .nav-links a {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-muted);
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      transition: color var(--transition), background var(--transition);
+    }
+    .nav-links a:hover {
+      color: var(--text-primary);
+      background: rgba(255,255,255,0.04);
+    }
+    .nav-cta {
+      background: var(--blue) !important;
+      color: #0d1117 !important;
+      font-weight: 600 !important;
+      padding: 8px 18px !important;
+    }
+    .nav-cta:hover {
+      background: #79b8ff !important;
+    }
+    .nav-mobile-toggle {
+      display: none;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 16px;
+      transition: color var(--transition), border-color var(--transition);
+    }
+    .nav-mobile-toggle:hover { color: var(--text-primary); border-color: var(--blue); }
+
+    /* ─── Hero ─── */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      position: relative;
+      padding: 120px 24px 80px;
+      overflow: hidden;
+    }
+    .hero-bg {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .hero-bg-grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(88,166,255,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(88,166,255,0.04) 1px, transparent 1px);
+      background-size: 60px 60px;
+      mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 20%, transparent 100%);
+    }
+    .hero-bg-glow {
+      position: absolute;
+      top: -20%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 900px;
+      height: 600px;
+      background: radial-gradient(ellipse at center, rgba(88,166,255,0.07) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+    .hero-bg-glow-2 {
+      position: absolute;
+      bottom: 0;
+      right: -10%;
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(ellipse at center, rgba(31,111,235,0.06) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+    .hero-inner {
+      max-width: 1140px;
+      margin: 0 auto;
+      width: 100%;
+      position: relative;
+      z-index: 1;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 28px;
+    }
+    .hero-badge .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 8px var(--blue);
+      animation: pulse-dot 2.5s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { box-shadow: 0 0 4px var(--blue); transform: scale(1); }
+      50% { box-shadow: 0 0 12px var(--blue); transform: scale(1.2); }
+    }
+    .hero-headline {
+      font-size: clamp(42px, 7vw, 80px);
+      font-weight: 900;
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+      margin-bottom: 24px;
+      max-width: 820px;
+    }
+    .hero-headline .accent {
+      background: linear-gradient(135deg, var(--blue) 0%, #79b8ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero-sub {
+      font-size: clamp(16px, 2.2vw, 20px);
+      color: var(--text-muted);
+      max-width: 560px;
+      line-height: 1.7;
+      margin-bottom: 40px;
+    }
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      align-items: center;
+      margin-bottom: 72px;
+    }
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--blue);
+      color: #0d1117;
+      font-size: 15px;
+      font-weight: 700;
+      padding: 14px 28px;
+      border-radius: var(--radius-md);
+      border: none;
+      cursor: pointer;
+      transition: background var(--transition), transform var(--transition), box-shadow var(--transition);
+      text-decoration: none;
+      letter-spacing: -0.01em;
+    }
+    .btn-primary:hover {
+      background: #79b8ff;
+      color: #0d1117;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(88,166,255,0.35);
+    }
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: transparent;
+      color: var(--text-body);
+      font-size: 15px;
+      font-weight: 600;
+      padding: 13px 24px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: color var(--transition), border-color var(--transition), background var(--transition), transform var(--transition);
+      text-decoration: none;
+      letter-spacing: -0.01em;
+    }
+    .btn-secondary:hover {
+      color: var(--text-primary);
+      border-color: var(--blue);
+      background: var(--blue-glow);
+      transform: translateY(-2px);
+    }
+    .hero-trust {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 28px;
+      align-items: center;
+    }
+    .hero-trust-label {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+    }
+    .hero-trust-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .trust-tag {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-light);
+      padding: 5px 12px;
+      border-radius: 100px;
+    }
+    .trust-tag i { color: var(--blue); font-size: 11px; }
+
+    /* ─── Stats Bar ─── */
+    .stats-bar {
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 40px 24px;
+    }
+    .stats-inner {
+      max-width: 1140px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+    .stat-item {
+      background: var(--bg-surface);
+      padding: 28px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: relative;
+      transition: background var(--transition);
+    }
+    .stat-item:hover { background: var(--bg-elevated); }
+    .stat-number {
+      font-size: clamp(22px, 3vw, 32px);
+      font-weight: 800;
+      color: var(--text-primary);
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+    .stat-number .stat-accent { color: var(--blue); }
+    .stat-number .stat-gold   { color: var(--gold); }
+    .stat-number .stat-red    { color: var(--red); }
+    .stat-desc {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 500;
+      line-height: 1.4;
+    }
+    .stat-icon {
+      position: absolute;
+      top: 24px;
+      right: 24px;
+      font-size: 18px;
+      color: var(--text-faint);
+    }
+
+    /* ─── Services ─── */
+    .services { background: var(--bg-primary); }
+    .services-header { margin-bottom: 56px; }
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 36px 32px;
+      transition: border-color var(--transition), transform var(--transition), box-shadow var(--transition);
+      position: relative;
+      overflow: hidden;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--blue-dim), var(--blue));
+      opacity: 0;
+      transition: opacity var(--transition);
+    }
+    .card:hover {
+      border-color: rgba(88,166,255,0.3);
+      transform: translateY(-4px);
+      box-shadow: var(--shadow-card), 0 0 40px rgba(88,166,255,0.06);
+    }
+    .card:hover::before { opacity: 1; }
+    .card-icon-wrap {
+      width: 52px;
+      height: 52px;
+      border-radius: var(--radius-md);
+      background: var(--blue-glow);
+      border: 1px solid rgba(88,166,255,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      color: var(--blue);
+      margin-bottom: 24px;
+      transition: background var(--transition), border-color var(--transition);
+    }
+    .card:hover .card-icon-wrap {
+      background: rgba(88,166,255,0.18);
+      border-color: rgba(88,166,255,0.35);
+    }
+    .card h3 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      letter-spacing: -0.02em;
+    }
+    .card p {
+      font-size: 15px;
+      color: var(--text-muted);
+      line-height: 1.7;
+      margin-bottom: 24px;
+    }
+    .card-features {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+    .card-features li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+    .card-features li::before {
+      content: '';
+      display: block;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--blue);
+      margin-top: 6px;
+      flex-shrink: 0;
+    }
+
+    /* ─── How It Works ─── */
+    .how-it-works {
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 0;
+      margin-top: 56px;
+      position: relative;
+    }
+    .steps-grid::after {
+      content: '';
+      position: absolute;
+      top: 26px;
+      left: calc(10% + 26px);
+      right: calc(10% + 26px);
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border), var(--blue-dim), var(--border), transparent);
+      z-index: 0;
+    }
+    .step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 0 16px;
+      position: relative;
+      z-index: 1;
+    }
+    .step-num {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: var(--bg-elevated);
+      border: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--blue);
+      margin-bottom: 20px;
+      transition: background var(--transition), border-color var(--transition), box-shadow var(--transition);
+      position: relative;
+      z-index: 2;
+    }
+    .step:hover .step-num {
+      background: var(--blue-glow);
+      border-color: var(--blue);
+      box-shadow: 0 0 20px rgba(88,166,255,0.25);
+    }
+    .step-icon {
+      font-size: 22px;
+      color: var(--blue);
+      margin-bottom: 14px;
+    }
+    .step h4 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: -0.01em;
+    }
+    .step p {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* ─── Technology ─── */
+    .technology { background: var(--bg-primary); }
+    .tech-inner {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 80px;
+      align-items: center;
+    }
+    .tech-content {}
+    .tech-content .section-subtitle { max-width: 100%; margin-bottom: 32px; }
+    .tech-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 40px;
+    }
+    .tech-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      font-size: 15px;
+      color: var(--text-body);
+      line-height: 1.55;
+    }
+    .tech-list .icon-wrap {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-sm);
+      background: var(--blue-glow);
+      border: 1px solid rgba(88,166,255,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      color: var(--blue);
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .tech-panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 0;
+      overflow: hidden;
+      box-shadow: var(--shadow-card);
+    }
+    .tech-panel-header {
+      padding: 16px 20px;
+      background: var(--bg-elevated);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .win-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+    .win-red    { background: #f85149; }
+    .win-yellow { background: #d29922; }
+    .win-green  { background: #3fb950; }
+    .tech-panel-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-left: 8px;
+    }
+    .tech-panel-body {
+      padding: 28px 28px;
+      font-family: 'SF Mono', 'Cascadia Code', 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.9;
+    }
+    .code-line { display: flex; gap: 12px; }
+    .code-ln {
+      color: var(--text-faint);
+      user-select: none;
+      min-width: 20px;
+      text-align: right;
+      font-size: 12px;
+    }
+    .code-txt { color: var(--text-body); }
+    .c-key   { color: var(--blue); }
+    .c-str   { color: #a5d6ff; }
+    .c-val   { color: #d2a8ff; }
+    .c-cmt   { color: var(--text-faint); font-style: italic; }
+    .c-gold  { color: var(--gold); }
+    .c-green { color: #3fb950; }
+    .c-red   { color: var(--red); }
+
+    /* ─── Footer ─── */
+    footer {
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border);
+      padding: 64px 24px 40px;
+    }
+    .footer-inner {
+      max-width: 1140px;
+      margin: 0 auto;
+    }
+    .footer-top {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap: 56px;
+      margin-bottom: 56px;
+    }
+    .footer-brand {}
+    .footer-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .footer-logo-icon {
+      width: 34px;
+      height: 34px;
+      background: linear-gradient(135deg, var(--blue-dim), var(--blue));
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      color: #fff;
+    }
+    .footer-logo-text {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+    }
+    .footer-logo-text span { color: var(--blue); }
+    .footer-desc {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.7;
+      max-width: 320px;
+      margin-bottom: 20px;
+    }
+    .footer-confidential {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--gold);
+      background: rgba(210,153,34,0.08);
+      border: 1px solid rgba(210,153,34,0.2);
+      padding: 5px 12px;
+      border-radius: 100px;
+    }
+    .footer-col-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+    .footer-links {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .footer-links a {
+      font-size: 14px;
+      color: var(--text-muted);
+      transition: color var(--transition);
+    }
+    .footer-links a:hover { color: var(--blue); }
+    .footer-bottom {
+      border-top: 1px solid var(--border-light);
+      padding-top: 32px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .footer-copy {
+      font-size: 13px;
+      color: var(--text-faint);
+    }
+    .footer-copy strong { color: var(--text-muted); font-weight: 500; }
+    .footer-legal {
+      display: flex;
+      gap: 20px;
+    }
+    .footer-legal a {
+      font-size: 13px;
+      color: var(--text-faint);
+      transition: color var(--transition);
+    }
+    .footer-legal a:hover { color: var(--text-muted); }
+
+    /* ─── Responsive ─── */
+    @media (max-width: 1024px) {
+      .tech-inner { grid-template-columns: 1fr; gap: 48px; }
+      .steps-grid { grid-template-columns: repeat(3, 1fr); row-gap: 40px; }
+      .steps-grid::after { display: none; }
+    }
+    @media (max-width: 768px) {
+      .section { padding: 72px 0; }
+      nav { height: 60px; }
+      .nav-links { display: none; flex-direction: column; position: absolute; top: 60px; left: 0; right: 0; background: var(--bg-surface); border-bottom: 1px solid var(--border); padding: 16px 24px; gap: 4px; }
+      .nav-links.open { display: flex; }
+      .nav-links a { padding: 10px 12px; width: 100%; }
+      .nav-mobile-toggle { display: block; }
+      .cards-grid { grid-template-columns: 1fr; }
+      .stats-inner { grid-template-columns: 1fr 1fr; }
+      .steps-grid { grid-template-columns: repeat(2, 1fr); }
+      .footer-top { grid-template-columns: 1fr; gap: 40px; }
+      .hero-headline { font-size: clamp(36px, 9vw, 58px); }
+    }
+    @media (max-width: 480px) {
+      .container { padding: 0 16px; }
+      .hero { padding: 100px 16px 60px; }
+      .stats-inner { grid-template-columns: 1fr; }
+      .steps-grid { grid-template-columns: 1fr; }
+      .hero-actions { flex-direction: column; align-items: flex-start; }
+      .btn-primary, .btn-secondary { width: 100%; justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ─── Navigation ─── -->
+  <nav>
+    <div class="nav-inner">
+      <a href="#" class="nav-logo">
+        <div class="nav-logo-icon"><i class="fa-solid fa-scale-balanced"></i></div>
+        <span class="nav-logo-text">Coletti <span>Advisory</span></span>
+      </a>
+      <ul class="nav-links" id="navLinks">
+        <li><a href="#services">Services</a></li>
+        <li><a href="#how-it-works">Process</a></li>
+        <li><a href="#technology">Coletti OS</a></li>
+        <li><a href="mailto:contact@colettiadvisory.com" class="nav-cta">Contact Us</a></li>
+      </ul>
+      <button class="nav-mobile-toggle" id="mobileToggle" aria-label="Toggle navigation">
+        <i class="fa-solid fa-bars"></i>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ─── Hero ─── -->
+  <section class="hero" id="home">
+    <div class="hero-bg" aria-hidden="true">
+      <div class="hero-bg-grid"></div>
+      <div class="hero-bg-glow"></div>
+      <div class="hero-bg-glow-2"></div>
+    </div>
+    <div class="hero-inner">
+      <div class="hero-badge fade-up">
+        <span class="dot"></span>
+        Forensic Accounting &amp; Litigation Support
+      </div>
+      <h1 class="hero-headline fade-up delay-1">
+        Forensic Intelligence.<br/>
+        <span class="accent">Litigation Ready.</span>
+      </h1>
+      <p class="hero-sub fade-up delay-2">
+        Coletti Advisory delivers court-grade forensic financial analysis and litigation support for divorce and family law proceedings — powered by Coletti&nbsp;OS, our AI-driven case management platform.
+      </p>
+      <div class="hero-actions fade-up delay-3">
+        <a href="mailto:contact@colettiadvisory.com" class="btn-primary">
+          <i class="fa-solid fa-envelope"></i>
+          Request a Consultation
+        </a>
+        <a href="#" class="btn-secondary">
+          <i class="fa-solid fa-chart-line"></i>
+          View Case Dashboard
+        </a>
+      </div>
+      <div class="hero-trust fade-up delay-4">
+        <span class="hero-trust-label">Platform features</span>
+        <div class="hero-trust-tags">
+          <span class="trust-tag"><i class="fa-solid fa-check"></i> OCR Document Extraction</span>
+          <span class="trust-tag"><i class="fa-solid fa-check"></i> Income Fraud Detection</span>
+          <span class="trust-tag"><i class="fa-solid fa-check"></i> Court-Ready Reports</span>
+          <span class="trust-tag"><i class="fa-solid fa-check"></i> Dissipation Tracking</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Stats Bar ─── -->
+  <div class="stats-bar" id="stats">
+    <div class="stats-inner">
+      <div class="stat-item fade-up">
+        <i class="fa-solid fa-gauge-high stat-icon"></i>
+        <div class="stat-number"><span class="stat-accent">94</span><span style="color:var(--text-muted);font-size:0.7em;font-weight:600;">/100</span></div>
+        <div class="stat-desc">Decree Barometer Score</div>
+      </div>
+      <div class="stat-item fade-up delay-1">
+        <i class="fa-solid fa-shield-halved stat-icon"></i>
+        <div class="stat-number"><span class="stat-gold">$295K</span></div>
+        <div class="stat-desc">Shielded Capital Identified</div>
+      </div>
+      <div class="stat-item fade-up delay-2">
+        <i class="fa-solid fa-calendar-days stat-icon"></i>
+        <div class="stat-number"><span class="stat-accent">22</span><span style="color:var(--text-muted);font-size:0.65em;font-weight:500;margin-left:2px;">mo</span></div>
+        <div class="stat-desc">Financial History Tracked</div>
+      </div>
+      <div class="stat-item fade-up delay-3">
+        <i class="fa-solid fa-layer-group stat-icon"></i>
+        <div class="stat-number"><span class="stat-accent">3</span><span style="color:var(--text-muted);font-size:0.55em;font-weight:500;margin-left:4px;">TIER</span></div>
+        <div class="stat-desc">Case Valuation Framework</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Services ─── -->
+  <section class="section services" id="services">
+    <div class="container">
+      <div class="services-header fade-up">
+        <div class="section-label">What We Do</div>
+        <h2 class="section-title">Precision Services for<br/>High-Stakes Litigation</h2>
+        <p class="section-subtitle">
+          We combine forensic expertise with intelligent automation to deliver evidence-grade financial analysis that holds up in court.
+        </p>
+      </div>
+      <div class="cards-grid">
+        <div class="card fade-up delay-1">
+          <div class="card-icon-wrap"><i class="fa-solid fa-magnifying-glass-chart"></i></div>
+          <h3>Forensic Accounting</h3>
+          <p>
+            Deep financial investigation and reconstruction for divorce and family law proceedings. We surface what opposing counsel doesn't want you to see.
+          </p>
+          <ul class="card-features">
+            <li>Bank statement OCR extraction &amp; parsing</li>
+            <li>Income reconstruction &amp; underreporting analysis</li>
+            <li>Asset dissipation tracking and quantification</li>
+            <li>Multi-account transaction reconciliation</li>
+            <li>Cash flow and lifestyle analysis</li>
+          </ul>
+        </div>
+        <div class="card fade-up delay-2">
+          <div class="card-icon-wrap"><i class="fa-solid fa-gavel"></i></div>
+          <h3>Litigation Support</h3>
+          <p>
+            End-to-end case management infrastructure ensuring nothing slips through the cracks from filing through final decree.
+          </p>
+          <ul class="card-features">
+            <li>Docket and deadline management</li>
+            <li>Motion and pleading tracking</li>
+            <li>Subpoena preparation and monitoring</li>
+            <li>Exhibit organization and labeling</li>
+            <li>Court-ready document generation</li>
+          </ul>
+        </div>
+        <div class="card fade-up delay-3">
+          <div class="card-icon-wrap"><i class="fa-solid fa-chart-pie"></i></div>
+          <h3>Case Valuation</h3>
+          <p>
+            Structured multi-tier damage assessment that quantifies exposure, identifies hidden value, and supports negotiation leverage.
+          </p>
+          <ul class="card-features">
+            <li>Three-tier damage assessment framework</li>
+            <li>Dissipation quantification and reporting</li>
+            <li>Marital estate inventory and valuation</li>
+            <li>Decree Barometer scoring (0–100)</li>
+            <li>Excel and PDF export for counsel</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── How It Works ─── -->
+  <section class="section how-it-works" id="how-it-works">
+    <div class="container">
+      <div class="fade-up">
+        <div class="section-label">Our Process</div>
+        <h2 class="section-title">From Documents to<br/>Court-Ready Evidence</h2>
+        <p class="section-subtitle">
+          A rigorous, systematic workflow transforms raw financial records into defensible, court-admissible findings.
+        </p>
+      </div>
+      <div class="steps-grid">
+        <div class="step fade-up delay-1">
+          <div class="step-num">01</div>
+          <div class="step-icon"><i class="fa-solid fa-cloud-arrow-up"></i></div>
+          <h4>Upload Documents</h4>
+          <p>Securely submit bank statements, tax returns, pay stubs, and financial records via the Coletti OS portal.</p>
+        </div>
+        <div class="step fade-up delay-2">
+          <div class="step-num">02</div>
+          <div class="step-icon"><i class="fa-solid fa-scanner"></i></div>
+          <h4>Forensic Extraction</h4>
+          <p>OCR-powered ingestion automatically parses, classifies, and structures every transaction with category tagging.</p>
+        </div>
+        <div class="step fade-up delay-3">
+          <div class="step-num">03</div>
+          <div class="step-icon"><i class="fa-solid fa-microscope"></i></div>
+          <h4>Review Findings</h4>
+          <p>AI-assisted anomaly detection flags income fraud, undisclosed assets, and dissipation patterns for expert review.</p>
+        </div>
+        <div class="step fade-up delay-4">
+          <div class="step-num">04</div>
+          <div class="step-icon"><i class="fa-solid fa-file-export"></i></div>
+          <h4>Generate Reports</h4>
+          <p>One-click generation of formatted Excel workbooks and PDF reports structured for counsel and court submission.</p>
+        </div>
+        <div class="step fade-up delay-5">
+          <div class="step-num">05</div>
+          <div class="step-icon"><i class="fa-solid fa-landmark"></i></div>
+          <h4>Court Ready</h4>
+          <p>Exhibit-labeled, professionally formatted deliverables admissible as forensic evidence in family law proceedings.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Technology ─── -->
+  <section class="section technology" id="technology">
+    <div class="container">
+      <div class="tech-inner">
+        <div class="tech-content fade-up">
+          <div class="section-label">The Platform</div>
+          <h2 class="section-title">Coletti OS</h2>
+          <p class="section-subtitle">
+            An AI-powered litigation case management platform built specifically for the complexity of divorce and family law financial discovery. Designed by forensic accountants, engineered for attorneys.
+          </p>
+          <ul class="tech-list">
+            <li>
+              <div class="icon-wrap"><i class="fa-solid fa-brain"></i></div>
+              <div><strong>Python-Powered Forensic Engine</strong> — Custom algorithms for income reconstruction, dissipation analysis, and multi-account reconciliation.</div>
+            </li>
+            <li>
+              <div class="icon-wrap"><i class="fa-solid fa-scanner"></i></div>
+              <div><strong>OCR-Enabled Ingestion</strong> — Automated document parsing converts PDFs and image-based bank statements into structured, analyzable data.</div>
+            </li>
+            <li>
+              <div class="icon-wrap"><i class="fa-solid fa-file-pdf"></i></div>
+              <div><strong>Court-Document-Grade Output</strong> — Reports follow evidence exhibit standards with professional formatting, citation, and signature blocks.</div>
+            </li>
+            <li>
+              <div class="icon-wrap"><i class="fa-solid fa-table"></i></div>
+              <div><strong>Excel &amp; PDF Exports</strong> — Counsel-ready workbooks with dynamic schedules, summary dashboards, and labeled exhibits.</div>
+            </li>
+          </ul>
+          <a href="mailto:contact@colettiadvisory.com" class="btn-primary">
+            <i class="fa-solid fa-calendar-check"></i>
+            Schedule a Demo
+          </a>
+        </div>
+        <div class="tech-panel fade-up delay-2">
+          <div class="tech-panel-header">
+            <div class="win-dot win-red"></div>
+            <div class="win-dot win-yellow"></div>
+            <div class="win-dot win-green"></div>
+            <span class="tech-panel-title">coletti_os.py — forensic_engine</span>
+          </div>
+          <div class="tech-panel-body">
+            <div class="code-line"><span class="code-ln">1</span><span class="code-txt"><span class="c-cmt"># Coletti OS — Forensic Engine v2.1</span></span></div>
+            <div class="code-line"><span class="code-ln">2</span><span class="code-txt"></span></div>
+            <div class="code-line"><span class="code-ln">3</span><span class="code-txt"><span class="c-key">case</span> = ForensicCase(<span class="c-str">"Doe v. Doe"</span>)</span></div>
+            <div class="code-line"><span class="code-ln">4</span><span class="code-txt">case.<span class="c-key">ingest</span>(bank_statements, ocr=<span class="c-green">True</span>)</span></div>
+            <div class="code-line"><span class="code-ln">5</span><span class="code-txt"></span></div>
+            <div class="code-line"><span class="code-ln">6</span><span class="code-txt"><span class="c-cmt"># Income reconstruction</span></span></div>
+            <div class="code-line"><span class="code-ln">7</span><span class="code-txt">income = case.<span class="c-key">reconstruct_income</span>()</span></div>
+            <div class="code-line"><span class="code-ln">8</span><span class="code-txt"><span class="c-cmt"># → Disclosed:  $72,000 / yr</span></span></div>
+            <div class="code-line"><span class="code-ln">9</span><span class="code-txt"><span class="c-cmt"># → Detected:  $118,400 / yr</span></span></div>
+            <div class="code-line"><span class="code-ln">10</span><span class="code-txt"><span class="c-cmt"># → Delta:    <span class="c-red">$46,400 UNEXPLAINED</span></span></span></div>
+            <div class="code-line"><span class="code-ln">11</span><span class="code-txt"></span></div>
+            <div class="code-line"><span class="code-ln">12</span><span class="code-txt"><span class="c-cmt"># Dissipation analysis</span></span></div>
+            <div class="code-line"><span class="code-ln">13</span><span class="code-txt">dissipation = case.<span class="c-key">analyze_dissipation</span>(</span></div>
+            <div class="code-line"><span class="code-ln">14</span><span class="code-txt">  &nbsp;&nbsp;months=<span class="c-val">22</span>, threshold=<span class="c-val">1500</span></span></div>
+            <div class="code-line"><span class="code-ln">15</span><span class="code-txt">)</span></div>
+            <div class="code-line"><span class="code-ln">16</span><span class="code-txt"><span class="c-cmt"># → Flagged:  <span class="c-gold">$295,320 shielded</span></span></span></div>
+            <div class="code-line"><span class="code-ln">17</span><span class="code-txt"></span></div>
+            <div class="code-line"><span class="code-ln">18</span><span class="code-txt">score = case.<span class="c-key">barometer_score</span>()</span></div>
+            <div class="code-line"><span class="code-ln">19</span><span class="code-txt"><span class="c-cmt"># → Decree Barometer: <span class="c-green">94 / 100</span></span></span></div>
+            <div class="code-line"><span class="code-ln">20</span><span class="code-txt">case.<span class="c-key">export</span>(fmt=[<span class="c-str">"pdf"</span>, <span class="c-str">"xlsx"</span>])</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Footer ─── -->
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <div class="footer-logo">
+            <div class="footer-logo-icon"><i class="fa-solid fa-scale-balanced"></i></div>
+            <span class="footer-logo-text">Coletti <span>Advisory</span></span>
+          </div>
+          <p class="footer-desc">
+            Forensic accounting and litigation support for divorce and family law proceedings. Powered by Coletti OS — AI-driven financial intelligence for the courtroom.
+          </p>
+          <div class="footer-confidential">
+            <i class="fa-solid fa-lock"></i>
+            Attorney–Client Privileged &amp; Confidential
+          </div>
+        </div>
+        <div>
+          <div class="footer-col-title">Services</div>
+          <ul class="footer-links">
+            <li><a href="#services">Forensic Accounting</a></li>
+            <li><a href="#services">Litigation Support</a></li>
+            <li><a href="#services">Case Valuation</a></li>
+            <li><a href="#technology">Coletti OS Platform</a></li>
+          </ul>
+        </div>
+        <div>
+          <div class="footer-col-title">Contact</div>
+          <ul class="footer-links">
+            <li><a href="mailto:contact@colettiadvisory.com">contact@colettiadvisory.com</a></li>
+            <li><a href="#how-it-works">Our Process</a></li>
+            <li><a href="#">Case Dashboard</a></li>
+            <li><a href="mailto:contact@colettiadvisory.com">Request Consultation</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p class="footer-copy">
+          <strong>© 2026 Coletti Advisory.</strong> All rights reserved. Confidential.
+        </p>
+        <div class="footer-legal">
+          <a href="#">Privacy Policy</a>
+          <a href="#">Terms of Engagement</a>
+          <a href="#">Disclaimer</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // ─── Mobile Nav Toggle ───
+    const toggle = document.getElementById('mobileToggle');
+    const navLinks = document.getElementById('navLinks');
+    toggle.addEventListener('click', () => {
+      navLinks.classList.toggle('open');
+      const icon = toggle.querySelector('i');
+      icon.className = navLinks.classList.contains('open')
+        ? 'fa-solid fa-xmark'
+        : 'fa-solid fa-bars';
+    });
+    navLinks.querySelectorAll('a').forEach(link => {
+      link.addEventListener('click', () => {
+        navLinks.classList.remove('open');
+        toggle.querySelector('i').className = 'fa-solid fa-bars';
+      });
+    });
+
+    // ─── Scroll Fade-In Animations ───
+    const fadeEls = document.querySelectorAll('.fade-up');
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+
+    fadeEls.forEach(el => observer.observe(el));
+
+    // ─── Nav scroll state ───
+    const nav = document.querySelector('nav');
+    window.addEventListener('scroll', () => {
+      nav.style.borderBottomColor = window.scrollY > 20
+        ? 'var(--border)'
+        : 'transparent';
+    }, { passive: true });
+  </script>
+</body>
+</html>
