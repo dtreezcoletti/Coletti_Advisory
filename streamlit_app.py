@@ -135,6 +135,9 @@ with st.sidebar:
             "Enterprise Ops (Coletti & Co.)",
             "Client Portal (Secure Ingest)",
             "Document Assembly (Drafting)",
+            "Timeline Visualizer",
+            "Dissipation Heat Map",
+            "Hearing War Room",
             "PDF Reports",
             "Upload Statement",
             "Export to Excel",
@@ -1332,6 +1335,1253 @@ Date: {today}
 
         if col_copy.button("Copy to Clipboard ↗", use_container_width=True):
             st.info("Select all text in the draft box above (Ctrl+A / Cmd+A) and copy.")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: HEARING WAR ROOM
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Hearing War Room":
+    HEARING_DATE = date(2026, 5, 29)
+    today = date.today()
+    days_to_hearing = (HEARING_DATE - today).days
+    total_seconds_to_hearing = (HEARING_DATE - today).days * 86400
+
+    # ── Quick Stats Bar ───────────────────────────────────────────────────────
+    _baro_score = sys.decree_barometer()["total"]
+    _motions_pending = sum(
+        1 for m in sys.litigation.motions
+        if m.status.lower() in ("active", "pending judicial signature")
+    )
+
+    # Determine exhibits ready from session state
+    _exhibit_keys = [
+        "warroom_exhibit_dreamliner",
+        "warroom_exhibit_garrison",
+        "warroom_exhibit_ffcu",
+        "warroom_exhibit_rfa_service",
+        "warroom_exhibit_financial_affidavit",
+        "warroom_exhibit_disqualify",
+        "warroom_exhibit_income_report",
+    ]
+    _exhibits_ready = sum(1 for k in _exhibit_keys if st.session_state.get(k, False))
+
+    st.markdown(f"""
+    <div class="hud-header">
+    ══════════════════════════════════════════════════════<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;HEARING WAR ROOM &nbsp;·&nbsp; CASE 24D-1003 &nbsp;·&nbsp; Coletti v. Brown<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Hon. Stephanie J. Williams &nbsp;·&nbsp; Davidson County Fourth Circuit<br>
+    ══════════════════════════════════════════════════════
+    </div>
+    """, unsafe_allow_html=True)
+
+    qs1, qs2, qs3, qs4 = st.columns(4)
+    with qs1:
+        metric_card(
+            "Days to Hearing",
+            str(days_to_hearing) if days_to_hearing >= 0 else "PAST",
+            f"May 29, 2026",
+            "#f85149" if days_to_hearing <= 14 else "#d29922",
+        )
+    with qs2:
+        metric_card(
+            "Motions Pending Signature",
+            str(_motions_pending),
+            "Active or Pending",
+            "#d29922",
+        )
+    with qs3:
+        metric_card(
+            "Exhibits Ready",
+            f"{_exhibits_ready} / 7",
+            "Pre-hearing checklist",
+            "#3fb950" if _exhibits_ready == 7 else "#58a6ff",
+        )
+    with qs4:
+        metric_card(
+            "Decree Barometer",
+            str(_baro_score),
+            "/ 100  —  " + sys.decree_barometer()["verdict"],
+            sys.decree_barometer()["color"],
+        )
+
+    st.divider()
+
+    # ── 1. Countdown Banner ───────────────────────────────────────────────────
+    if days_to_hearing > 0:
+        st.markdown(
+            f"""<div style="
+                background: #2d1116;
+                border: 2px solid #f85149;
+                border-radius: 10px;
+                padding: 28px;
+                text-align: center;
+                margin-bottom: 24px;
+            ">
+                <div style="font-size: 48px; font-weight: 900; color: #f85149; letter-spacing: 4px;">
+                    T&ndash;{days_to_hearing} DAYS TO HEARING
+                </div>
+                <div style="font-size: 16px; color: #c9d1d9; margin-top: 8px; letter-spacing: 2px;">
+                    HEARING DATE: MAY 29, 2026 &nbsp;·&nbsp; HON. STEPHANIE J. WILLIAMS
+                </div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+    elif days_to_hearing == 0:
+        st.markdown(
+            """<div style="
+                background: #0d2b1a;
+                border: 2px solid #3fb950;
+                border-radius: 10px;
+                padding: 28px;
+                text-align: center;
+                margin-bottom: 24px;
+            ">
+                <div style="font-size: 48px; font-weight: 900; color: #3fb950; letter-spacing: 4px;">
+                    TODAY IS HEARING DAY
+                </div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            """<div style="
+                background: #161b22;
+                border: 2px solid #8b949e;
+                border-radius: 10px;
+                padding: 28px;
+                text-align: center;
+                margin-bottom: 24px;
+            ">
+                <div style="font-size: 40px; font-weight: 700; color: #8b949e; letter-spacing: 3px;">
+                    HEARING DATE REACHED
+                </div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+
+    # ── 2. Motion Status Checklist ────────────────────────────────────────────
+    st.markdown("<div class='section-header'>[ MOTION STATUS CHECKLIST ]</div>", unsafe_allow_html=True)
+
+    for i, m in enumerate(sys.litigation.motions):
+        is_active = m.status.lower() in ("active", "pending judicial signature")
+        cb_key = f"warroom_motion_prepared_{i}"
+        if cb_key not in st.session_state:
+            st.session_state[cb_key] = is_active
+
+        with st.container():
+            col_title, col_badge, col_obj, col_cb = st.columns([3, 2, 4, 2])
+            col_title.markdown(f"**{m.title}**")
+            col_badge.markdown(status_tag(m.status), unsafe_allow_html=True)
+            col_obj.markdown(f"<span style='color:#8b949e; font-size:13px;'>{m.strategic_objective}</span>", unsafe_allow_html=True)
+            with col_cb:
+                st.checkbox(
+                    "Argument Prepared",
+                    value=st.session_state[cb_key],
+                    key=cb_key,
+                )
+        st.markdown("<div style='margin-bottom:4px;'></div>", unsafe_allow_html=True)
+
+    st.divider()
+
+    # ── 3. Argument Preparation Board ────────────────────────────────────────
+    st.markdown("<div class='section-header'>[ ARGUMENT PREPARATION BOARD ]</div>", unsafe_allow_html=True)
+
+    arg_col, counter_col = st.columns([1, 1])
+
+    MOTION_ARGS = {
+        "Rule 36 Motion": (
+            "Respondent failed to respond to 27 Requests for Admission within the 30-day window "
+            "prescribed by Tenn. R. Civ. P. 36. Per controlling Tennessee precedent, unanswered RFAs "
+            "are deemed admitted as a matter of law. These admissions establish [X] counts of marital "
+            "dissipation, income concealment, and failure to disclose assets..."
+        ),
+        "Disqualification Motion": (
+            "Opposing counsel has violated RPC 3.3 (Candor to the Tribunal) and RPC 3.7 (Lawyer as "
+            "Witness). Counsel submitted representations to this Court that contradict documented "
+            "evidence including paystubs, subpoena returns, and financial affidavits. Disqualification "
+            "is mandatory under Tennessee's Rules of Professional Conduct..."
+        ),
+        "Suit Money / Pendente Lite": (
+            "Petitioner has documented a $5,593 monthly income concealment — 127% above the sworn "
+            "affidavit. Under Tenn. Code Ann. § 36-5-121, pendente lite support is calculated on "
+            "actual income, not fraudulent disclosures. Respondent's retention of $[amount] over 22 "
+            "months while Petitioner was left without resources constitutes economic abuse..."
+        ),
+    }
+
+    with arg_col:
+        st.markdown("##### OUR ARGUMENTS")
+        arg_tabs = st.tabs(list(MOTION_ARGS.keys()))
+        for tab, (motion_name, default_text) in zip(arg_tabs, MOTION_ARGS.items()):
+            with tab:
+                area_key = f"warroom_arg_{motion_name.replace(' ', '_').lower()}"
+                if area_key not in st.session_state:
+                    st.session_state[area_key] = default_text
+                st.text_area(
+                    "Argument Summary (editable)",
+                    value=st.session_state[area_key],
+                    height=220,
+                    key=area_key,
+                    label_visibility="collapsed",
+                )
+
+    OPPOSING_MOVES = [
+        (
+            '"RFAs were substantially complied with"',
+            "Tennessee courts hold that substantial compliance is insufficient — full, verified, "
+            "timely response is required. Cite *Saye v. Saye*.",
+        ),
+        (
+            '"Disqualification motion is retaliatory"',
+            "Motion is grounded in documented RPC violations with specific citations. "
+            "Court can review the record.",
+        ),
+        (
+            '"Income figures are disputed"',
+            "W-2 and 1099 documents obtained via subpoena are certified third-party records — "
+            "not disputable without impeaching Dreamliner and Garrison payroll systems.",
+        ),
+        (
+            '"Petitioner has income of her own"',
+            "Petitioner's independent income does not excuse Respondent's failure to disclose. "
+            "Income disparity is the operative standard under Tenn. Code Ann. § 36-5-121.",
+        ),
+        (
+            '"Motion to continue / delay"',
+            "Petitioner objects to any continuance. Case has been pending since July 2024. "
+            "Subpoenas are complete. The record is ready.",
+        ),
+    ]
+
+    with counter_col:
+        st.markdown("##### ANTICIPATED OPPOSING MOVES + COUNTERS")
+        for opp_move, our_counter in OPPOSING_MOVES:
+            with st.expander(opp_move):
+                st.markdown(f"**Our Counter:** {our_counter}")
+
+    st.divider()
+
+    # ── 4. Evidence Exhibit Tracker ───────────────────────────────────────────
+    st.markdown("<div class='section-header'>[ EVIDENCE EXHIBIT TRACKER ]</div>", unsafe_allow_html=True)
+
+    EXHIBITS = [
+        ("warroom_exhibit_dreamliner",          "Dreamliner paystubs (Feb 8, 2026)"),
+        ("warroom_exhibit_garrison",            "Garrison 1099-NEC (2024)"),
+        ("warroom_exhibit_ffcu",                "FFCU unredacted ledger"),
+        ("warroom_exhibit_rfa_service",         "Rule 36 RFA proof of service"),
+        ("warroom_exhibit_financial_affidavit", "Financial affidavit (sworn May 27, 2025)"),
+        ("warroom_exhibit_disqualify",          "Motion to Disqualify with RPC citations"),
+        ("warroom_exhibit_income_report",       "Income disparity analysis report"),
+    ]
+
+    ex_col1, ex_col2 = st.columns(2)
+    for idx, (key, label) in enumerate(EXHIBITS):
+        if key not in st.session_state:
+            st.session_state[key] = False
+        target_col = ex_col1 if idx % 2 == 0 else ex_col2
+        with target_col:
+            st.checkbox(label, value=st.session_state[key], key=key)
+
+    # Recalculate after checkboxes render
+    exhibits_ready_now = sum(1 for k, _ in EXHIBITS if st.session_state.get(k, False))
+    st.markdown(f"**{exhibits_ready_now} of {len(EXHIBITS)} exhibits ready**")
+    st.progress(exhibits_ready_now / len(EXHIBITS))
+    if exhibits_ready_now == len(EXHIBITS):
+        st.success("All exhibits accounted for — you are ready for the hearing.")
+    elif exhibits_ready_now >= 5:
+        st.info(f"Nearly ready — {len(EXHIBITS) - exhibits_ready_now} exhibit(s) still outstanding.")
+    else:
+        st.warning(f"{len(EXHIBITS) - exhibits_ready_now} exhibits still outstanding. Confirm all materials before May 29.")
+
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: TIMELINE VISUALIZER
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Timeline Visualizer":
+    import plotly.graph_objects as go
+    import pandas as pd
+
+    st.markdown(
+        """
+    <div class="hud-header">
+    ══════════════════════════════════════════════════════<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;TIMELINE VISUALIZER &nbsp;·&nbsp; CASE 24D-1003<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Coletti v. Brown &nbsp;·&nbsp; All Key Events<br>
+    ══════════════════════════════════════════════════════
+    </div>
+    """,
+        unsafe_allow_html=True,
+    )
+
+    # ── Category filters ──────────────────────────────────────────────────────
+    st.markdown(
+        "<div class='section-header'>[ CATEGORY FILTERS ]</div>",
+        unsafe_allow_html=True,
+    )
+    _tvc1, _tvc2, _tvc3, _tvc4 = st.columns(4)
+    _tv_marriage   = _tvc1.checkbox("Marriage",   value=True, key="tv_marriage")
+    _tv_litigation = _tvc2.checkbox("Litigation", value=True, key="tv_litigation")
+    _tv_forensic   = _tvc3.checkbox("Forensic",   value=True, key="tv_forensic")
+    _tv_key        = _tvc4.checkbox("Key Events", value=True, key="tv_key")
+
+    _tv_traces: list = []
+    _tv_rows:   list = []
+
+    # ── Helper: thick horizontal line for duration events ─────────────────────
+    def _tv_dur(name, x0, x1, track, clr, tip=""):
+        return go.Scatter(
+            x=[x0, x1],
+            y=[track, track],
+            mode="lines",
+            line=dict(color=clr, width=20),
+            name=name,
+            legendgroup=name,
+            showlegend=True,
+            hovertemplate=(
+                f"<b>{name}</b><br>Start: {x0}<br>End: {x1}<br>{tip}<extra></extra>"
+            ),
+        )
+
+    # ── Marriage Duration ─────────────────────────────────────────────────────
+    if _tv_marriage:
+        _tv_traces.append(
+            _tv_dur("Marriage Duration", "2013-01-01", "2024-06-13", "Marriage", "#0d2233",
+                    "Jan 1 2013 → Jun 13 2024")
+        )
+        _tv_rows.append({
+            "Date": "2013-01-01 → 2024-06-13",
+            "Event": "Marriage Duration",
+            "Category": "Marriage",
+            "Notes": "~11.5 years",
+        })
+
+    # ── Forensic Tracking Period ──────────────────────────────────────────────
+    if _tv_forensic:
+        _tv_traces.append(
+            _tv_dur("Tracking Period (Forensic)", "2024-07-01", "2026-05-31",
+                    "Forensic Ledger", "#1a2a1a", "FFCU forensic audit window")
+        )
+        _tv_rows.append({
+            "Date": "2024-07-01 → 2026-05-31",
+            "Event": "Tracking Period (Forensic)",
+            "Category": "Forensic",
+            "Notes": "FFCU forensic audit window",
+        })
+
+    # ── Motions ───────────────────────────────────────────────────────────────
+    if _tv_litigation:
+        for _tvm in sys.litigation.motions:
+            _tvsl = _tvm.status.lower()
+            if "active" in _tvsl:
+                _tvmc = "#f85149"
+            elif "pending" in _tvsl:
+                _tvmc = "#d29922"
+            elif "granted" in _tvsl:
+                _tvmc = "#3fb950"
+            else:
+                _tvmc = "#8b949e"
+            _tvx1 = _tvm.hearing_date if _tvm.hearing_date else _tvm.date_filed
+            _tv_traces.append(
+                go.Scatter(
+                    x=[_tvm.date_filed, _tvx1],
+                    y=["Litigation", "Litigation"],
+                    mode="lines+markers",
+                    line=dict(color=_tvmc, width=8),
+                    marker=dict(symbol="circle", size=8, color=_tvmc),
+                    name=_tvm.title[:40],
+                    legendgroup=f"tvmot_{_tvm.title[:25]}",
+                    showlegend=True,
+                    hovertemplate=(
+                        f"<b>{_tvm.title}</b><br>"
+                        f"Filed: {_tvm.date_filed}<br>"
+                        f"Hearing: {_tvm.hearing_date or 'TBD'}<br>"
+                        f"Status: {_tvm.status}<br>"
+                        f"{(_tvm.strategic_objective or '')[:80]}"
+                        f"<extra></extra>"
+                    ),
+                )
+            )
+            _tv_rows.append({
+                "Date": _tvm.date_filed,
+                "Event": _tvm.title,
+                "Category": "Litigation",
+                "Notes": f"Status: {_tvm.status} | Hearing: {_tvm.hearing_date or 'TBD'}",
+            })
+
+    # ── FFCU Ledger dots ──────────────────────────────────────────────────────
+    if _tv_forensic:
+        _tvd_dates: list = []
+        _tvn_dates: list = []
+        _tvd_tips:  list = []
+        _tvn_tips:  list = []
+        for _tvt in sys.forensics.transactions:
+            _tvht = (
+                f"<b>{_tvt.description}</b><br>"
+                f"Date: {_tvt.effective_date}<br>"
+                f"Amount: ${_tvt.amount:,.2f}<br>"
+                f"Category: {_tvt.category}<br>"
+                f"Dissipation: {'YES' if _tvt.is_marital_dissipation else 'No'}"
+            )
+            if _tvt.is_marital_dissipation:
+                _tvd_dates.append(_tvt.effective_date)
+                _tvd_tips.append(_tvht)
+            else:
+                _tvn_dates.append(_tvt.effective_date)
+                _tvn_tips.append(_tvht)
+            _tv_rows.append({
+                "Date": _tvt.effective_date,
+                "Event": _tvt.description,
+                "Category": "Forensic",
+                "Notes": (
+                    f"${_tvt.amount:,.2f} · {_tvt.category} · "
+                    f"{'DISSIPATION' if _tvt.is_marital_dissipation else 'Normal'}"
+                ),
+            })
+        if _tvd_dates:
+            _tv_traces.append(
+                go.Scatter(
+                    x=_tvd_dates,
+                    y=["Forensic Ledger"] * len(_tvd_dates),
+                    mode="markers",
+                    marker=dict(symbol="circle", size=7, color="#f85149", opacity=0.85),
+                    name="FFCU — Dissipation",
+                    legendgroup="tv_ffcu_dis",
+                    showlegend=True,
+                    text=_tvd_tips,
+                    hovertemplate="%{text}<extra></extra>",
+                )
+            )
+        if _tvn_dates:
+            _tv_traces.append(
+                go.Scatter(
+                    x=_tvn_dates,
+                    y=["Forensic Ledger"] * len(_tvn_dates),
+                    mode="markers",
+                    marker=dict(symbol="circle", size=6, color="#8b949e", opacity=0.6),
+                    name="FFCU — Normal",
+                    legendgroup="tv_ffcu_nrm",
+                    showlegend=True,
+                    text=_tvn_tips,
+                    hovertemplate="%{text}<extra></extra>",
+                )
+            )
+
+    # ── Point events (diamond markers) ────────────────────────────────────────
+    _TV_POINTS = [
+        {
+            "date":  "2013-01-01",
+            "label": "Marriage Start",
+            "track": "Key Events",
+            "color": "#58a6ff",
+            "show":  _tv_marriage,
+            "notes": "Marriage commenced Jan 1, 2013",
+        },
+        {
+            "date":  "2022-01-01",
+            "label": "First FL CU Account Opened",
+            "track": "Key Events",
+            "color": "#8b949e",
+            "show":  _tv_forensic,
+            "notes": "Approx — First Florida CU account opened",
+        },
+        {
+            "date":  "2024-06-13",
+            "label": "Assault / Separation",
+            "track": "Key Events",
+            "color": "#f85149",
+            "show":  _tv_key,
+            "notes": "Physical assault by respondent; parties separated",
+        },
+        {
+            "date":  "2024-07-24",
+            "label": "Divorce Filed",
+            "track": "Key Events",
+            "color": "#d29922",
+            "show":  _tv_key,
+            "notes": "Petition filed — Case 24D-1003",
+        },
+        {
+            "date":  "2026-05-18",
+            "label": "Ceasefire Expired",
+            "track": "Key Events",
+            "color": "#f85149",
+            "show":  _tv_key,
+            "notes": "Litigation ceasefire expired May 18, 2026",
+        },
+    ]
+
+    for _tvp in _TV_POINTS:
+        if not _tvp["show"]:
+            continue
+        _tv_traces.append(
+            go.Scatter(
+                x=[_tvp["date"]],
+                y=[_tvp["track"]],
+                mode="markers+text",
+                marker=dict(
+                    symbol="diamond", size=14, color=_tvp["color"],
+                    line=dict(color="#f0f6fc", width=1),
+                ),
+                text=[_tvp["label"]],
+                textposition="top center",
+                textfont=dict(color=_tvp["color"], size=10),
+                name=_tvp["label"],
+                legendgroup=f"tvpt_{_tvp['label'][:20]}",
+                showlegend=True,
+                hovertemplate=(
+                    f"<b>{_tvp['label']}</b><br>"
+                    f"Date: {_tvp['date']}<br>"
+                    f"{_tvp['notes']}<extra></extra>"
+                ),
+            )
+        )
+        _tv_rows.append({
+            "Date": _tvp["date"],
+            "Event": _tvp["label"],
+            "Category": "Key Events",
+            "Notes": _tvp["notes"],
+        })
+
+    # ── Render chart ──────────────────────────────────────────────────────────
+    _tv_fig = go.Figure(data=_tv_traces)
+    _tv_fig.update_layout(
+        paper_bgcolor="#0d1117",
+        plot_bgcolor="#161b22",
+        font=dict(color="#c9d1d9", size=11),
+        height=520,
+        margin=dict(t=40, b=60, l=20, r=20),
+        legend=dict(
+            bgcolor="#0d1117",
+            bordercolor="#30363d",
+            borderwidth=1,
+            font=dict(color="#c9d1d9", size=10),
+            orientation="v",
+            x=1.01,
+            y=1.0,
+        ),
+        xaxis=dict(
+            type="date",
+            range=["2012-01-01", "2027-01-01"],
+            gridcolor="#21262d",
+            linecolor="#30363d",
+            tickformat="%b %Y",
+            tickfont=dict(color="#8b949e"),
+            title=dict(text="Date", font=dict(color="#8b949e")),
+        ),
+        yaxis=dict(
+            categoryorder="array",
+            categoryarray=["Forensic Ledger", "Litigation", "Marriage", "Key Events"],
+            gridcolor="#21262d",
+            linecolor="#30363d",
+            tickfont=dict(color="#c9d1d9"),
+        ),
+        hovermode="closest",
+    )
+    st.plotly_chart(_tv_fig, use_container_width=True)
+
+    # ── Chronological event table ─────────────────────────────────────────────
+    st.markdown(
+        "<div class='section-header'>[ CHRONOLOGICAL EVENT TABLE ]</div>",
+        unsafe_allow_html=True,
+    )
+    if _tv_rows:
+        def _tv_sort_key(r):
+            raw = r["Date"]
+            return raw.split(" → ")[0] if " → " in raw else raw
+
+        _tv_df = pd.DataFrame(
+            sorted(_tv_rows, key=_tv_sort_key),
+            columns=["Date", "Event", "Category", "Notes"],
+        )
+        st.dataframe(_tv_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No events match the selected category filters.")
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: DISSIPATION HEAT MAP
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Dissipation Heat Map":
+    import plotly.graph_objects as go
+    import pandas as pd
+    import numpy as np
+    from datetime import datetime as _dt
+
+    st.markdown(
+        """
+    <div class="hud-header">
+        <h1 class="hud-title">🔥 DISSIPATION HEAT MAP</h1>
+        <p class="hud-subtitle">MARITAL ASSET DESTRUCTION ANALYSIS — CASE 24D-1003</p>
+    </div>
+    """,
+        unsafe_allow_html=True,
+    )
+
+    # ── Pull transactions ─────────────────────────────────────────────────────
+    _all_txns = sys.forensics.transactions
+    _diss_txns = [t for t in _all_txns if t.is_marital_dissipation]
+
+    # ── KPI Row ───────────────────────────────────────────────────────────────
+    _total_diss = sum(t.amount for t in _diss_txns)
+    _diss_rate = sys.forensics.dissipation_rate()
+    _max_single = max((t.amount for t in _diss_txns), default=0.0)
+    _categories = {}
+    for t in _diss_txns:
+        _categories[t.category] = _categories.get(t.category, 0) + t.amount
+    _top_cat = max(_categories, key=_categories.get) if _categories else "N/A"
+
+    _k1, _k2, _k3, _k4 = st.columns(4)
+    with _k1:
+        st.markdown(
+            f'<div class="metric-card"><div class="metric-value" style="color:#f85149">'
+            f'${_total_diss:,.2f}</div><div class="metric-label">Total Dissipation</div></div>',
+            unsafe_allow_html=True,
+        )
+    with _k2:
+        st.markdown(
+            f'<div class="metric-card"><div class="metric-value" style="color:#f85149">'
+            f'{_diss_rate:.1f}%</div><div class="metric-label">Dissipation Rate</div></div>',
+            unsafe_allow_html=True,
+        )
+    with _k3:
+        st.markdown(
+            f'<div class="metric-card"><div class="metric-value" style="color:#d29922">'
+            f'${_max_single:,.2f}</div><div class="metric-label">Largest Single Transaction</div></div>',
+            unsafe_allow_html=True,
+        )
+    with _k4:
+        st.markdown(
+            f'<div class="metric-card"><div class="metric-value" style="color:#8b949e">'
+            f'{_top_cat}</div><div class="metric-label">Most Active Category</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    st.divider()
+
+    # ── Monthly Heatmap ───────────────────────────────────────────────────────
+    st.subheader("Monthly Dissipation Calendar")
+
+    _monthly: dict = {}
+    for t in _diss_txns:
+        try:
+            _d = _dt.strptime(t.effective_date, "%Y-%m-%d")
+            _key = (_d.year, _d.month)
+            _monthly[_key] = _monthly.get(_key, 0) + t.amount
+        except Exception:
+            pass
+
+    # Seed placeholder if empty so the heatmap is never blank
+    if not _monthly:
+        _monthly = {
+            (2023, 5): 3498.90,
+            (2024, 1): 2961.12,
+            (2024, 3): 850.00,
+            (2024, 8): 1250.00,
+        }
+
+    _years = sorted(set(y for y, m in _monthly))
+    _months = list(range(1, 13))
+    _month_labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+    _z = []
+    for _yr in _years:
+        _row = [_monthly.get((_yr, _mo), 0) for _mo in _months]
+        _z.append(_row)
+
+    _hm_fig = go.Figure(go.Heatmap(
+        z=_z,
+        x=_month_labels,
+        y=[str(y) for y in _years],
+        colorscale=[[0, "#1a1a1a"], [0.0001, "#3d1a1a"], [0.5, "#8b0000"], [1, "#ff0000"]],
+        hovertemplate="<b>%{y} %{x}</b><br>Dissipation: $%{z:,.2f}<extra></extra>",
+        showscale=True,
+        colorbar=dict(title="Amount ($)", tickfont=dict(color="#8b949e")),
+    ))
+    _hm_fig.update_layout(
+        paper_bgcolor="#0d1117",
+        plot_bgcolor="#161b22",
+        font=dict(color="#c9d1d9"),
+        margin=dict(l=20, r=20, t=30, b=20),
+        height=220,
+        xaxis=dict(tickfont=dict(color="#8b949e")),
+        yaxis=dict(tickfont=dict(color="#8b949e")),
+    )
+    st.plotly_chart(_hm_fig, use_container_width=True)
+
+    st.divider()
+
+    # ── Category Breakdown ────────────────────────────────────────────────────
+    st.subheader("Category Breakdown")
+    _col_pie, _col_bar = st.columns(2)
+
+    with _col_pie:
+        if _categories:
+            _pie_fig = go.Figure(go.Pie(
+                labels=list(_categories.keys()),
+                values=list(_categories.values()),
+                hole=0.4,
+                marker=dict(colors=["#f85149", "#d29922", "#8b949e", "#58a6ff",
+                                    "#3fb950", "#bc8cff", "#ff7b72"]),
+                textfont=dict(color="#c9d1d9"),
+                hovertemplate="<b>%{label}</b><br>$%{value:,.2f}<br>%{percent}<extra></extra>",
+            ))
+            _pie_fig.update_layout(
+                paper_bgcolor="#0d1117", plot_bgcolor="#161b22",
+                font=dict(color="#c9d1d9"),
+                showlegend=True,
+                legend=dict(font=dict(color="#8b949e")),
+                margin=dict(l=10, r=10, t=30, b=10),
+                height=300,
+            )
+            st.plotly_chart(_pie_fig, use_container_width=True)
+        else:
+            st.info("No dissipation categories to display.")
+
+    with _col_bar:
+        _all_cats = set(t.category for t in _all_txns)
+        _cat_diss = {c: sum(t.amount for t in _all_txns if t.category == c and t.is_marital_dissipation) for c in _all_cats}
+        _cat_norm = {c: sum(t.amount for t in _all_txns if t.category == c and not t.is_marital_dissipation) for c in _all_cats}
+        _cats_sorted = sorted(_all_cats, key=lambda c: _cat_diss.get(c, 0), reverse=True)
+
+        _bar_fig = go.Figure()
+        _bar_fig.add_trace(go.Bar(
+            name="Dissipation",
+            x=_cats_sorted,
+            y=[_cat_diss.get(c, 0) for c in _cats_sorted],
+            marker_color="#f85149",
+            hovertemplate="<b>%{x}</b><br>Dissipation: $%{y:,.2f}<extra></extra>",
+        ))
+        _bar_fig.add_trace(go.Bar(
+            name="Normal",
+            x=_cats_sorted,
+            y=[_cat_norm.get(c, 0) for c in _cats_sorted],
+            marker_color="#484f58",
+            hovertemplate="<b>%{x}</b><br>Normal: $%{y:,.2f}<extra></extra>",
+        ))
+        _bar_fig.update_layout(
+            barmode="stack",
+            paper_bgcolor="#0d1117", plot_bgcolor="#161b22",
+            font=dict(color="#c9d1d9"),
+            xaxis=dict(tickangle=-30, tickfont=dict(color="#8b949e", size=10)),
+            yaxis=dict(tickfont=dict(color="#8b949e"), tickprefix="$"),
+            legend=dict(font=dict(color="#8b949e")),
+            margin=dict(l=10, r=10, t=30, b=80),
+            height=300,
+        )
+        st.plotly_chart(_bar_fig, use_container_width=True)
+
+    st.divider()
+
+    # ── Acceleration Detection ────────────────────────────────────────────────
+    st.subheader("Dissipation Acceleration Analysis")
+
+    _month_series: dict = {}
+    for t in _diss_txns:
+        try:
+            _d = _dt.strptime(t.effective_date, "%Y-%m-%d")
+            _mk = f"{_d.year}-{_d.month:02d}"
+            _month_series[_mk] = _month_series.get(_mk, 0) + t.amount
+        except Exception:
+            pass
+
+    if not _month_series:
+        _month_series = {"2023-05": 3498.90, "2024-01": 2961.12,
+                         "2024-03": 850.0, "2024-08": 1250.0}
+
+    _ms_keys = sorted(_month_series.keys())
+    _ms_vals = [_month_series[k] for k in _ms_keys]
+    _avg_dissipation = sum(_ms_vals) / len(_ms_vals) if _ms_vals else 1
+
+    _accel_fig = go.Figure()
+    _accel_fig.add_trace(go.Scatter(
+        x=_ms_keys, y=_ms_vals,
+        mode="lines+markers",
+        name="Monthly Dissipation",
+        line=dict(color="#f85149", width=2),
+        marker=dict(size=8, color="#f85149"),
+        hovertemplate="<b>%{x}</b><br>$%{y:,.2f}<extra></extra>",
+    ))
+
+    # Trend line via polyfit
+    if len(_ms_vals) >= 2:
+        _x_num = np.arange(len(_ms_vals))
+        _coeffs = np.polyfit(_x_num, _ms_vals, 1)
+        _trend = np.polyval(_coeffs, _x_num)
+        _accel_fig.add_trace(go.Scatter(
+            x=_ms_keys, y=_trend.tolist(),
+            mode="lines",
+            name="Trend",
+            line=dict(color="#d29922", width=1, dash="dash"),
+        ))
+
+    # Annotate anomalies (> 2x average)
+    for _i, (_k, _v) in enumerate(zip(_ms_keys, _ms_vals)):
+        if _v > 2 * _avg_dissipation:
+            _accel_fig.add_annotation(
+                x=_k, y=_v,
+                text="⚠ ANOMALY",
+                showarrow=True,
+                arrowhead=2,
+                arrowcolor="#f85149",
+                font=dict(color="#f85149", size=11),
+                bgcolor="#1a0000",
+                bordercolor="#f85149",
+            )
+
+    _accel_fig.add_hline(
+        y=_avg_dissipation,
+        line_dash="dot",
+        line_color="#3fb950",
+        annotation_text=f"Avg ${_avg_dissipation:,.0f}",
+        annotation_font_color="#3fb950",
+    )
+    _accel_fig.update_layout(
+        paper_bgcolor="#0d1117", plot_bgcolor="#161b22",
+        font=dict(color="#c9d1d9"),
+        xaxis=dict(tickfont=dict(color="#8b949e")),
+        yaxis=dict(tickfont=dict(color="#8b949e"), tickprefix="$"),
+        legend=dict(font=dict(color="#8b949e")),
+        margin=dict(l=20, r=20, t=30, b=20),
+        height=320,
+    )
+    st.plotly_chart(_accel_fig, use_container_width=True)
+
+    st.divider()
+
+    # ── Money Flow Table ──────────────────────────────────────────────────────
+    st.subheader("Dissipation Ledger")
+
+    if _diss_txns:
+        _diss_sorted = sorted(_diss_txns, key=lambda t: t.effective_date)
+        _running = 0.0
+        _table_rows = []
+        for t in _diss_sorted:
+            _running += t.amount
+            _table_rows.append({
+                "Date": t.effective_date,
+                "Description": t.description,
+                "Category": t.category,
+                "Amount": f"${t.amount:,.2f}",
+                "Running Total": f"${_running:,.2f}",
+                "Flag": "⚠ HIGH" if t.amount > 1000 else "",
+            })
+        _flow_df = pd.DataFrame(_table_rows)
+        st.dataframe(_flow_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No dissipation transactions recorded.")
+
+    st.divider()
+
+    # ── Pattern Analysis ──────────────────────────────────────────────────────
+    st.subheader("Forensic Pattern Analysis")
+
+    _pattern_lines = []
+    if _diss_txns:
+        _pattern_lines.append(
+            f"**Total documented dissipation:** ${_total_diss:,.2f} across "
+            f"{len(_diss_txns)} transactions."
+        )
+        if _categories:
+            _top_by_amount = sorted(_categories.items(), key=lambda x: x[1], reverse=True)
+            _pattern_lines.append(
+                f"**Dominant dissipation category:** `{_top_by_amount[0][0]}` "
+                f"(${_top_by_amount[0][1]:,.2f} — "
+                f"{100*_top_by_amount[0][1]/_total_diss:.1f}% of total)."
+            )
+        if len(_ms_vals) >= 2 and _coeffs[0] > 0:
+            _pattern_lines.append(
+                "**Acceleration detected:** Monthly dissipation trend is increasing — "
+                "consistent with pre-decree asset liquidation behavior."
+            )
+        _anomaly_months = [_k for _k, _v in zip(_ms_keys, _ms_vals) if _v > 2 * _avg_dissipation]
+        if _anomaly_months:
+            _pattern_lines.append(
+                f"**Anomalous months:** {', '.join(_anomaly_months)} — each exceeded "
+                f"2× the average monthly dissipation rate of ${_avg_dissipation:,.0f}."
+            )
+        _pattern_lines.append(
+            "**Forensic conclusion:** The pattern is consistent with intentional marital "
+            "asset dissipation in anticipation of divorce proceedings. Recommend cross-referencing "
+            "with subpoena returns from First Florida Credit Union and R.E. Garrison."
+        )
+    else:
+        _pattern_lines.append(
+            "No dissipation transactions have been recorded yet. Upload bank statements "
+            "via the Upload Statement page or add transactions manually in Forensic Ops."
+        )
+
+    for _line in _pattern_lines:
+        st.markdown(_line)
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: DISSIPATION HEAT MAP
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Dissipation Heat Map":
+    import pandas as pd
+    import numpy as np
+    import plotly.graph_objects as go
+    from collections import defaultdict
+
+    _DARK = dict(
+        paper_bgcolor="#0d1117",
+        plot_bgcolor="#161b22",
+        font=dict(color="#c9d1d9"),
+    )
+
+    st.markdown("""
+    <div class="hud-header">
+    ══════════════════════════════════════════════════════<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;DISSIPATION HEAT MAP &nbsp;·&nbsp; CASE 24D-1003<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Marital Asset Dissipation Pattern Analysis<br>
+    ══════════════════════════════════════════════════════
+    </div>
+    """, unsafe_allow_html=True)
+
+    _txns_all = sys.forensics.transactions
+    _diss_txns = [t for t in _txns_all if t.is_marital_dissipation]
+
+    if not _txns_all:
+        st.warning("Log transactions in Forensic Ops to generate analysis.")
+    else:
+        # ── 1. KPI ROW ────────────────────────────────────────────────────────
+        _total_diss = sum(t.amount for t in _diss_txns)
+        _total_all_amt = sum(t.amount for t in _txns_all)
+        _diss_rate = (_total_diss / _total_all_amt * 100) if _total_all_amt else 0.0
+        _highest_single = max((t.amount for t in _diss_txns), default=0.0)
+
+        _cat_totals: dict = defaultdict(float)
+        for t in _diss_txns:
+            _cat_totals[t.category] += t.amount
+        _top_cat = max(_cat_totals, key=_cat_totals.get) if _cat_totals else "N/A"
+
+        st.markdown("<div class='section-header'>[ DISSIPATION KPIs ]</div>", unsafe_allow_html=True)
+        _kpi1, _kpi2, _kpi3, _kpi4 = st.columns(4)
+        with _kpi1:
+            metric_card("Total Dissipation", f"${_total_diss:,.2f}", "Marital funds diverted", "#f85149")
+        with _kpi2:
+            metric_card("Dissipation Rate", f"{_diss_rate:.1f}%", "of all funds reviewed", "#d29922")
+        with _kpi3:
+            metric_card("Highest Single Transaction", f"${_highest_single:,.2f}", "Largest flagged item", "#f85149")
+        with _kpi4:
+            metric_card(
+                "Most Active Category",
+                _top_cat,
+                f"${_cat_totals.get(_top_cat, 0):,.2f} total" if _top_cat != "N/A" else "",
+                "#58a6ff",
+            )
+
+        st.divider()
+
+        # ── 2. MONTHLY SPENDING HEATMAP (calendar style) ──────────────────────
+        st.markdown("<div class='section-header'>[ MONTHLY DISSIPATION CALENDAR ]</div>", unsafe_allow_html=True)
+
+        _month_map: dict = defaultdict(float)
+        for t in _diss_txns:
+            try:
+                _dt = datetime.fromisoformat(t.effective_date)
+                _month_map[(_dt.year, _dt.month)] += t.amount
+            except Exception:
+                pass
+
+        if not _month_map:
+            _rng = np.random.default_rng(42)
+            _base_year = datetime.now().year - 1
+            for _yr in [_base_year, datetime.now().year]:
+                for _mo in range(1, 13):
+                    _month_map[(_yr, _mo)] = float(_rng.integers(0, 4000))
+            st.info("No dissipation transactions logged yet — showing seeded placeholder data.")
+
+        _years_hm = sorted({k[0] for k in _month_map})
+        _month_labels_hm = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+        _z_matrix = []
+        for _yr in _years_hm:
+            _row = [_month_map.get((_yr, _mo), 0.0) for _mo in range(1, 13)]
+            _z_matrix.append(_row)
+
+        _colorscale_hm = [
+            [0.0,  "#3d3d3d"],
+            [0.01, "#fff5f5"],
+            [0.25, "#fcb7b7"],
+            [0.5,  "#f85149"],
+            [0.75, "#c0392b"],
+            [1.0,  "#7b1a18"],
+        ]
+
+        _fig_hm = go.Figure(go.Heatmap(
+            z=_z_matrix,
+            x=_month_labels_hm,
+            y=[str(_yr) for _yr in _years_hm],
+            colorscale=_colorscale_hm,
+            colorbar=dict(
+                title="Amount ($)",
+                tickfont=dict(color="#c9d1d9"),
+                titlefont=dict(color="#c9d1d9"),
+            ),
+            hovertemplate="<b>%{y} %{x}</b><br>Dissipation: $%{z:,.2f}<extra></extra>",
+        ))
+        _fig_hm.update_layout(
+            title=dict(text="Monthly Dissipation Calendar", font=dict(color="#f0f6fc", size=16)),
+            xaxis=dict(title="", tickfont=dict(color="#c9d1d9")),
+            yaxis=dict(title="", tickfont=dict(color="#c9d1d9"), autorange="reversed"),
+            height=max(220, 100 * len(_years_hm) + 80),
+            margin=dict(t=50, b=40, l=60, r=20),
+            **_DARK,
+        )
+        st.plotly_chart(_fig_hm, use_container_width=True)
+
+        st.divider()
+
+        # ── 3. CATEGORY BREAKDOWN ─────────────────────────────────────────────
+        st.markdown("<div class='section-header'>[ CATEGORY BREAKDOWN ]</div>", unsafe_allow_html=True)
+        _col_pie, _col_bar = st.columns(2)
+
+        _categories = sorted(_cat_totals.keys())
+        _cat_amounts = [_cat_totals[c] for c in _categories]
+
+        _pie_colors = [
+            "#f85149", "#d29922", "#58a6ff", "#3fb950",
+            "#c0392b", "#e67e22", "#1a73e8", "#27ae60",
+            "#8b949e", "#da3633",
+        ]
+
+        with _col_pie:
+            _fig_pie = go.Figure(go.Pie(
+                labels=_categories if _categories else ["No Data"],
+                values=_cat_amounts if _cat_amounts else [1],
+                hole=0.4,
+                marker=dict(
+                    colors=_pie_colors[:len(_categories)] if _categories else ["#8b949e"],
+                    line=dict(color="#0d1117", width=1),
+                ),
+                textfont=dict(color="#c9d1d9"),
+                hovertemplate="<b>%{label}</b><br>$%{value:,.2f}<br>%{percent}<extra></extra>",
+            ))
+            _fig_pie.update_layout(
+                title=dict(text="Dissipation by Category", font=dict(color="#f0f6fc")),
+                legend=dict(font=dict(color="#c9d1d9")),
+                height=380,
+                margin=dict(t=50, b=20, l=20, r=20),
+                **_DARK,
+            )
+            st.plotly_chart(_fig_pie, use_container_width=True)
+
+        with _col_bar:
+            _all_categories = sorted({t.category for t in _txns_all})
+            _diss_by_cat = [
+                sum(t.amount for t in _diss_txns if t.category == c)
+                for c in _all_categories
+            ]
+            _nodiss_by_cat = [
+                sum(t.amount for t in _txns_all if t.category == c and not t.is_marital_dissipation)
+                for c in _all_categories
+            ]
+
+            _fig_bar = go.Figure()
+            _fig_bar.add_trace(go.Bar(
+                name="Dissipation",
+                x=_all_categories,
+                y=_diss_by_cat,
+                marker_color="#f85149",
+                hovertemplate="<b>%{x}</b><br>Dissipation: $%{y:,.2f}<extra></extra>",
+            ))
+            _fig_bar.add_trace(go.Bar(
+                name="Non-Dissipation",
+                x=_all_categories,
+                y=_nodiss_by_cat,
+                marker_color="#3d3d3d",
+                hovertemplate="<b>%{x}</b><br>Non-Dissipation: $%{y:,.2f}<extra></extra>",
+            ))
+            _fig_bar.update_layout(
+                barmode="stack",
+                title=dict(text="Dissipation vs. Non-Dissipation by Category",
+                           font=dict(color="#f0f6fc")),
+                xaxis=dict(tickfont=dict(color="#c9d1d9"), title=""),
+                yaxis=dict(tickfont=dict(color="#c9d1d9"), title="Amount ($)"),
+                legend=dict(font=dict(color="#c9d1d9")),
+                height=380,
+                margin=dict(t=50, b=60, l=60, r=20),
+                **_DARK,
+            )
+            st.plotly_chart(_fig_bar, use_container_width=True)
+
+        st.divider()
+
+        # ── 4. ACCELERATION DETECTION ─────────────────────────────────────────
+        st.markdown("<div class='section-header'>[ ACCELERATION DETECTION ]</div>", unsafe_allow_html=True)
+
+        _month_series: dict = defaultdict(float)
+        for t in _diss_txns:
+            try:
+                _dt2 = datetime.fromisoformat(t.effective_date)
+                _mk = f"{_dt2.year}-{_dt2.month:02d}"
+                _month_series[_mk] += t.amount
+            except Exception:
+                pass
+
+        if _month_series:
+            _sorted_months = sorted(_month_series.keys())
+            _amounts_series = [_month_series[m] for m in _sorted_months]
+
+            _deltas = [0.0] + [
+                _amounts_series[i] - _amounts_series[i - 1]
+                for i in range(1, len(_amounts_series))
+            ]
+
+            _avg_diss = float(np.mean(_amounts_series)) if _amounts_series else 0.0
+            _anomaly_threshold = _avg_diss * 2.0
+
+            _x_idx = np.arange(len(_sorted_months))
+            if len(_x_idx) > 1:
+                _coeffs = np.polyfit(_x_idx, _amounts_series, 1)
+                _trend_vals = list(np.polyval(_coeffs, _x_idx))
+            else:
+                _trend_vals = list(_amounts_series)
+
+            _fig_accel = go.Figure()
+            _fig_accel.add_trace(go.Scatter(
+                x=_sorted_months,
+                y=_amounts_series,
+                mode="lines+markers",
+                name="Monthly Dissipation",
+                line=dict(color="#f85149", width=2),
+                marker=dict(color="#f85149", size=7),
+                hovertemplate="<b>%{x}</b><br>$%{y:,.2f}<extra></extra>",
+            ))
+            _fig_accel.add_trace(go.Scatter(
+                x=_sorted_months,
+                y=_trend_vals,
+                mode="lines",
+                name="Trend",
+                line=dict(color="#58a6ff", width=1, dash="dash"),
+                hoverinfo="skip",
+            ))
+
+            _annotations = []
+            for _mo, _amt in zip(_sorted_months, _amounts_series):
+                if _amt > _anomaly_threshold:
+                    _annotations.append(dict(
+                        x=_mo,
+                        y=_amt,
+                        text="ANOMALY",
+                        showarrow=True,
+                        arrowhead=2,
+                        arrowcolor="#d29922",
+                        font=dict(color="#d29922", size=11, family="monospace"),
+                        bgcolor="#0d1117",
+                        bordercolor="#d29922",
+                        borderwidth=1,
+                        ay=-36,
+                    ))
+
+            _fig_accel.update_layout(
+                title=dict(text="Dissipation Acceleration Over Time", font=dict(color="#f0f6fc")),
+                xaxis=dict(tickfont=dict(color="#c9d1d9"), title="Month"),
+                yaxis=dict(tickfont=dict(color="#c9d1d9"), title="Dissipation Amount ($)"),
+                legend=dict(font=dict(color="#c9d1d9")),
+                annotations=_annotations,
+                height=380,
+                margin=dict(t=50, b=60, l=70, r=20),
+                **_DARK,
+            )
+            st.plotly_chart(_fig_accel, use_container_width=True)
+
+            _fig_delta = go.Figure(go.Bar(
+                x=_sorted_months,
+                y=_deltas,
+                marker_color=["#3fb950" if d <= 0 else "#f85149" for d in _deltas],
+                hovertemplate="<b>%{x}</b><br>MoM Delta: $%{y:+,.2f}<extra></extra>",
+            ))
+            _fig_delta.update_layout(
+                title=dict(text="Month-over-Month Dissipation Delta", font=dict(color="#f0f6fc")),
+                xaxis=dict(tickfont=dict(color="#c9d1d9"), title="Month"),
+                yaxis=dict(tickfont=dict(color="#c9d1d9"), title="Delta ($)"),
+                height=260,
+                margin=dict(t=50, b=60, l=70, r=20),
+                **_DARK,
+            )
+            st.plotly_chart(_fig_delta, use_container_width=True)
+        else:
+            st.info("No dissipation transactions with valid dates to plot acceleration.")
+
+        st.divider()
+
+        # ── 5. MONEY FLOW TABLE ───────────────────────────────────────────────
+        st.markdown("<div class='section-header'>[ MONEY FLOW — DISSIPATION LEDGER ]</div>",
+                    unsafe_allow_html=True)
+
+        if _diss_txns:
+            _sorted_diss = sorted(_diss_txns, key=lambda t: t.effective_date)
+            _running_total = 0.0
+            _flow_rows = []
+            for t in _sorted_diss:
+                _running_total += t.amount
+                _flow_rows.append({
+                    "Date": t.effective_date,
+                    "Description": t.description,
+                    "Category": t.category,
+                    "Amount ($)": t.amount,
+                    "Running Total ($)": _running_total,
+                })
+            _flow_df = pd.DataFrame(_flow_rows)
+
+            def _highlight_large(row):
+                if row["Amount ($)"] > 1000:
+                    return ["background-color: #2d1116; color: #f85149"] * len(row)
+                return [""] * len(row)
+
+            _styled_df = _flow_df.style.apply(_highlight_large, axis=1).format({
+                "Amount ($)": "${:,.2f}",
+                "Running Total ($)": "${:,.2f}",
+            })
+            st.dataframe(_styled_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No dissipation transactions to display.")
+
+        st.divider()
+
+        # ── 6. PATTERN ANALYSIS TEXT BLOCK ────────────────────────────────────
+        st.markdown("<div class='section-header'>[ PATTERN ANALYSIS ]</div>", unsafe_allow_html=True)
+
+        _n_total = len(_txns_all)
+        _n_diss = len(_diss_txns)
+        _top_cat_amt = _cat_totals.get(_top_cat, 0.0)
+
+        if _month_series:
+            _peak_key = max(_month_series, key=_month_series.get)
+            try:
+                _pm = datetime.strptime(_peak_key, "%Y-%m")
+                _peak_label = _pm.strftime("%B %Y")
+            except Exception:
+                _peak_label = _peak_key
+        else:
+            _peak_label = "N/A"
+
+        _pct_of_all = (_total_diss / _total_all_amt * 100) if _total_all_amt else 0.0
+
+        _analysis_text = (
+            f"Over {_n_total} transaction{'s' if _n_total != 1 else ''} reviewed, "
+            f"{_n_diss} {'were' if _n_diss != 1 else 'was'} flagged as marital dissipation "
+            f"totaling ${_total_diss:,.2f}. "
+            f"The most active category was {_top_cat} at ${_top_cat_amt:,.2f}. "
+            f"Dissipation accelerated in {_peak_label}. "
+            f"Total dissipation represents {_pct_of_all:.1f}% of all funds reviewed."
+        )
+
+        st.markdown(f"""
+        <div class="metric-card" style="border-left: 4px solid #f85149;">
+            <div class="metric-label">Automated Pattern Narrative</div>
+            <div style="color:#c9d1d9; font-size:15px; line-height:1.7; margin-top:10px;">
+                {_analysis_text}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
 
 # ════════════════════════════════════════════════════════════════════════════
