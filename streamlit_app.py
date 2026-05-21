@@ -1017,3 +1017,345 @@ elif page == "Data Export":
             st.success("State restored successfully. Navigate to any page to see updated data.")
         except Exception as e:
             st.error(f"Failed to parse JSON: {e}")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: TRANSACTION IMPORT
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Transaction Import":
+    st.title("📥 Transaction Import & Analysis Config")
+    st.caption("Upload a CSV ledger to run advanced forensic detection across all exhibit channels.")
+
+    cfg = st.session_state["adv_config"]
+
+    col_left, col_right = st.columns(2)
+
+    with col_left:
+        st.markdown("#### Data Source")
+        tx_file = st.file_uploader("Transaction Ledger (CSV)", type=["csv"])
+
+        st.markdown("#### Temporal Anchors")
+        cfg["affidavit_date"] = st.text_input("Affidavit Date", cfg["affidavit_date"])
+        cfg["hearing_date"]   = st.text_input("Hearing Date",   cfg["hearing_date"])
+
+        st.markdown("#### Thresholds")
+        cfg["thresh_cash"] = st.number_input("Cash Threshold ($)",     min_value=0.0, value=cfg["thresh_cash"])
+        cfg["thresh_xfer"] = st.number_input("Transfer Threshold ($)", min_value=0.0, value=cfg["thresh_xfer"])
+        cfg["conf_filter"] = st.multiselect("Confidence Levels", ["High", "Med", "Low"], default=cfg["conf_filter"])
+
+    with col_right:
+        st.markdown("#### Known Entities")
+        known_accounts_raw = st.text_area(
+            "Known Account Numbers (one per line)",
+            "\n".join(cfg["known_accounts"]),
+            height=100,
+        )
+        cfg["known_accounts"] = [a.strip() for a in known_accounts_raw.split("\n") if a.strip()]
+
+        known_vendors_raw = st.text_area(
+            "Known Vendors (fuzzy matching)",
+            "\n".join(cfg["known_vendors"]),
+            height=100,
+        )
+        cfg["known_vendors"] = [v.strip() for v in known_vendors_raw.split("\n") if v.strip()]
+
+        st.markdown("#### Detection Modules")
+        cfg["enable_if"] = st.checkbox(
+            "Isolation Forest Anomaly Detection",
+            value=cfg["enable_if"],
+            disabled=not SKLEARN_AVAILABLE,
+            help="Requires scikit-learn." if not SKLEARN_AVAILABLE else "",
+        )
+        cfg["enable_structuring"]     = st.checkbox("Structuring Detection", value=cfg["enable_structuring"])
+        cfg["structuring_window"]     = int(st.number_input("Structuring Window (days)", min_value=1, value=cfg["structuring_window"]))
+        cfg["structuring_threshold"]  = st.number_input("Structuring Threshold ($)", min_value=0.0, value=cfg["structuring_threshold"])
+
+    st.divider()
+
+    if tx_file is not None:
+        raw_df = pd.read_csv(tx_file)
+    else:
+        st.info("No file uploaded — using simulation baseline.")
+        raw_df = pd.DataFrame([
+            {"Date": "2022-12-06", "Description": "FOGELMAN-20-235D Withdrawal",          "Amount": 1623.10},
+            {"Date": "2022-12-10", "Description": "Shared Branch Withdrawal (Nashville)",  "Amount": 4000.00},
+            {"Date": "2022-12-13", "Description": "Large Cash Withdrawal",                 "Amount": 2500.00},
+            {"Date": "2022-12-15", "Description": "ATM Withdrawal",                        "Amount":  800.00},
+            {"Date": "2022-12-16", "Description": "Cash Withdrawal",                       "Amount":  850.00},
+            {"Date": "2022-12-17", "Description": "ATM Cash",                              "Amount":  900.00},
+            {"Date": "2022-12-18", "Description": "Withdrawal ATM",                        "Amount":  920.00},
+            {"Date": "2022-12-19", "Description": "Cash ATM",                              "Amount":  880.00},
+            {"Date": "2025-05-15", "Description": "Transfer to Account ending 9172",       "Amount": np.nan},
+            {"Date": "2025-05-20", "Description": "Wire Transfer - External",              "Amount": 3500.00},
+            {"Date": "2025-05-21", "Description": "Coinbase Pro Purchase",                 "Amount": 5000.00},
+        ])
+
+    if st.button("▶ Process Transactions", type="primary", use_container_width=True):
+        with st.spinner("Classifying and analyzing..."):
+            tx_norm = normalize_transactions_v2(raw_df, cfg["known_accounts"], cfg["known_vendors"])
+
+            aff_ts  = pd.Timestamp(cfg["affidavit_date"])
+            hear_ts = pd.Timestamp(cfg["hearing_date"])
+            tx_norm["Days_To_Affidavit"] = (aff_ts  - tx_norm["Date"]).dt.days
+            tx_norm["Days_To_Hearing"]   = (hear_ts - tx_norm["Date"]).dt.days
+
+            tx_filt = tx_norm[tx_norm["Confidence"].isin(cfg["conf_filter"])].copy()
+
+            if cfg["enable_structuring"]:
+                tx_filt = detect_structuring(
+                    tx_filt,
+                    window_days=cfg["structuring_window"],
+                    amount_threshold=cfg["structuring_threshold"],
+                )
+            else:
+                tx_filt["Is_Structured"]        = False
+                tx_filt["Structured_Cluster_ID"] = None
+                tx_filt["Cluster_Total"]         = 0.0
+                tx_filt["Cluster_Count"]         = 0
+
+            if cfg["enable_if"] and SKLEARN_AVAILABLE:
+                tx_filt = detect_anomalies_isolation_forest(tx_filt)
+            else:
+                tx_filt["Is_Anomaly_IF"]  = False
+                tx_filt["Anomaly_Score"]  = 0.0
+
+            crypto_detected = tx_filt["Crypto_Indicators"].apply(len).gt(0).any()
+
+            st.session_state["adv_tx"]             = tx_filt
+            st.session_state["adv_raw"]            = tx_norm
+            st.session_state["adv_crypto_detected"] = bool(crypto_detected)
+
+        st.success(f"✓ {len(tx_filt)} transactions processed. Navigate to Advanced Detection or Exhibits.")
+        st.dataframe(
+            tx_filt[["Date", "Description", "Amount", "Category", "Confidence", "Rule_Triggered"]].head(20),
+            use_container_width=True,
+        )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: ADVANCED DETECTION
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Advanced Detection":
+    st.title("🔍 Advanced Pattern Detection")
+
+    if st.session_state["adv_tx"] is None:
+        st.warning("No transaction data loaded. Go to **Transaction Import** first.")
+        st.stop()
+
+    tx_filt = st.session_state["adv_tx"]
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Fuzzy Matching",       "✓ Online" if FUZZY_AVAILABLE   else "✗ Offline")
+    c2.metric("Isolation Forest",     "✓ Online" if SKLEARN_AVAILABLE else "✗ Offline")
+    c3.metric("Structuring Detection","✓ Online")
+
+    st.divider()
+
+    # Velocity
+    st.subheader("Velocity Analysis")
+    v_cash  = calculate_velocity_metrics(tx_filt, "CASH_WITHDRAWAL")
+    v_xfer  = calculate_velocity_metrics(tx_filt, "TRANSFER")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Cash Withdrawal Velocity**")
+        if v_cash:
+            st.metric("Transactions / week", f"{v_cash.get('velocity_transactions_per_week', 0):.2f}")
+            st.metric("Avg interval (days)",  f"{v_cash.get('avg_interval_days', 0):.1f}")
+            accel = v_cash.get("velocity_acceleration", 0)
+            st.metric("Acceleration", f"{accel:.0%}")
+        else:
+            st.info("Insufficient data.")
+    with col2:
+        st.markdown("**Transfer Velocity**")
+        if v_xfer:
+            st.metric("Transactions / week", f"{v_xfer.get('velocity_transactions_per_week', 0):.2f}")
+            st.metric("Avg interval (days)",  f"{v_xfer.get('avg_interval_days', 0):.1f}")
+            accel = v_xfer.get("velocity_acceleration", 0)
+            st.metric("Acceleration", f"{accel:.0%}")
+        else:
+            st.info("Insufficient data.")
+
+    st.divider()
+
+    # Structuring
+    st.subheader("Structuring Analysis")
+    structured = tx_filt[tx_filt["Is_Structured"] == True]
+    if len(structured) > 0:
+        st.error(f"⚠️ STRUCTURING DETECTED: {len(structured)} transactions in {structured['Structured_Cluster_ID'].nunique()} cluster(s)")
+        for cid in structured["Structured_Cluster_ID"].unique():
+            cdata = structured[structured["Structured_Cluster_ID"] == cid]
+            total = cdata["Cluster_Total"].iloc[0]
+            dr    = f"{cdata['Date'].min().date()} to {cdata['Date'].max().date()}"
+            with st.expander(f"**{cid}** — ${total:,.2f} across {len(cdata)} transactions ({dr})"):
+                st.dataframe(cdata[["Date", "Description", "Amount", "Category"]], use_container_width=True)
+    else:
+        st.success("No structuring patterns detected.")
+
+    st.divider()
+
+    # Isolation Forest
+    st.subheader("Isolation Forest Anomalies")
+    anomalies = tx_filt[tx_filt["Is_Anomaly_IF"] == True]
+    if len(anomalies) > 0:
+        st.warning(f"⚠️ {len(anomalies)} statistical anomalies detected")
+        st.dataframe(
+            anomalies[["Date", "Description", "Amount", "Category", "Anomaly_Score"]].sort_values("Anomaly_Score"),
+            use_container_width=True,
+        )
+    else:
+        st.success("No statistical anomalies detected.")
+
+    st.divider()
+
+    # Crypto
+    st.subheader("Cryptocurrency Activity")
+    crypto_txns = tx_filt[tx_filt["Crypto_Indicators"].apply(len) > 0]
+    if len(crypto_txns) > 0:
+        st.error(f"🚨 {len(crypto_txns)} cryptocurrency-related transactions detected")
+        st.dataframe(crypto_txns[["Date", "Description", "Amount", "Crypto_Indicators"]], use_container_width=True)
+    else:
+        st.success("No cryptocurrency activity detected.")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: EXHIBITS
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Exhibits":
+    st.title("📊 Forensic Exhibits — A / B / C / D")
+
+    if st.session_state["adv_tx"] is None:
+        st.warning("No transaction data loaded. Go to **Transaction Import** first.")
+        st.stop()
+
+    tx_filt = st.session_state["adv_tx"]
+    raw_df  = st.session_state.get("adv_raw", tx_filt)
+    cfg     = st.session_state["adv_config"]
+
+    # Build exhibits
+    ex_a_all   = tx_filt[tx_filt["Category"] == "CASH_WITHDRAWAL"].copy()
+    ex_a_known = ex_a_all[ex_a_all["Amount"].notna() & (ex_a_all["Amount"] >= cfg["thresh_cash"])].copy()
+    ex_a_unk   = ex_a_all[ex_a_all["Amount"].isna()].copy()
+    ex_a_total = float(ex_a_known["Amount"].sum())
+
+    income_df = pd.DataFrame([{
+        "As_Of_Date":              cfg["affidavit_date"],
+        "Sworn_Monthly_Net":       4389.80,
+        "Verified_Monthly_Income": 12601.44,
+    }])
+    income_df["Monthly_Gap"]    = income_df["Verified_Monthly_Income"] - income_df["Sworn_Monthly_Net"]
+    income_df["Annualized_Gap"] = income_df["Monthly_Gap"] * 12
+
+    ex_c_all   = tx_filt[tx_filt["Category"] == "TRANSFER"].copy()
+    ex_c_known = ex_c_all[ex_c_all["Amount"].notna() & (ex_c_all["Amount"] >= cfg["thresh_xfer"])].copy()
+    ex_c_unk   = ex_c_all[ex_c_all["Amount"].isna()].copy()
+    ex_c_total = float(ex_c_known["Amount"].sum())
+
+    crypto_txns    = tx_filt[tx_filt["Crypto_Indicators"].apply(len) > 0]
+    structured_txns = tx_filt[tx_filt["Is_Structured"] == True]
+    anomaly_txns    = tx_filt[tx_filt["Is_Anomaly_IF"]  == True]
+
+    ex_d = pd.DataFrame([
+        {"Line_Item": "Exhibit A — Cash Withdrawals",    "Amount": ex_a_total},
+        {"Line_Item": "Exhibit C — Transfers",           "Amount": ex_c_total},
+        {"Line_Item": "Structuring Clusters Detected",   "Amount": float(structured_txns["Structured_Cluster_ID"].nunique() if len(structured_txns) > 0 else 0)},
+        {"Line_Item": "Isolation Forest Anomalies",      "Amount": float(len(anomaly_txns))},
+        {"Line_Item": "Cryptocurrency Transactions",     "Amount": float(len(crypto_txns))},
+        {"Line_Item": "TOTAL QUANTIFIED DISSIPATION",    "Amount": ex_a_total + ex_c_total},
+    ])
+
+    tab_a, tab_b, tab_c, tab_d, tab_export = st.tabs(
+        ["Exhibit A — Cash", "Exhibit B — Income", "Exhibit C — Transfers", "Exhibit D — Summary", "Export"]
+    )
+
+    with tab_a:
+        st.markdown(f"#### Cash Withdrawals ≥ ${cfg['thresh_cash']:,.0f}")
+        st.metric("Total Quantified", f"${ex_a_total:,.2f}", f"{len(ex_a_known)} transactions")
+        st.dataframe(ex_a_known[["Date", "Description", "Amount", "Confidence", "Rule_Triggered"]], use_container_width=True)
+        if len(ex_a_unk) > 0:
+            st.markdown("#### Unquantified — Require Subpoena")
+            st.dataframe(ex_a_unk[["Date", "Description", "Confidence"]], use_container_width=True)
+
+    with tab_b:
+        st.markdown("#### Income Discrepancy Summary")
+        st.dataframe(income_df, use_container_width=True)
+        st.metric("Annualized Gap", f"${float(income_df['Annualized_Gap'].iloc[0]):,.2f}")
+
+    with tab_c:
+        st.markdown(f"#### Transfers ≥ ${cfg['thresh_xfer']:,.0f}")
+        st.metric("Total Quantified", f"${ex_c_total:,.2f}", f"{len(ex_c_known)} transactions")
+        st.dataframe(ex_c_known[["Date", "Description", "Amount", "Confidence", "Rule_Triggered"]], use_container_width=True)
+        if len(ex_c_unk) > 0:
+            st.markdown("#### Unquantified — Require Subpoena")
+            st.dataframe(ex_c_unk[["Date", "Description", "Confidence"]], use_container_width=True)
+
+    with tab_d:
+        st.markdown("#### Comprehensive Dissipation Summary")
+        st.dataframe(ex_d, use_container_width=True)
+        st.metric("Total Quantified Dissipation", f"${ex_a_total + ex_c_total:,.2f}")
+
+    with tab_export:
+        st.markdown("#### Export Complete Forensic Packet")
+        v_cash = calculate_velocity_metrics(tx_filt, "CASH_WITHDRAWAL")
+        v_xfer = calculate_velocity_metrics(tx_filt, "TRANSFER")
+
+        structuring_summary = None
+        if len(structured_txns) > 0:
+            structuring_summary = structured_txns.groupby("Structured_Cluster_ID").agg(
+                Date_Min=("Date", "min"),
+                Date_Max=("Date", "max"),
+                Amount_Sum=("Amount", "sum"),
+                Count=("Amount", "count"),
+            ).reset_index()
+
+        packet_bytes = make_packet_excel_v2(
+            ex_a_known, income_df, ex_c_known, ex_d, raw_df,
+            {**v_cash, **v_xfer},
+            structuring_summary,
+        )
+        st.download_button(
+            "📊 Download Complete Forensic Packet (XLSX)",
+            data=packet_bytes,
+            file_name=f"COLETTI_Forensic_Packet_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: ENHANCED SUBPOENA
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Enhanced Subpoena":
+    st.title("⚖️ Enhanced Schedule A Generator")
+    st.caption("Digital-asset-aware subpoena template with automatic crypto section injection.")
+
+    cfg             = st.session_state["adv_config"]
+    crypto_detected = st.session_state.get("adv_crypto_detected", False)
+
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        target = st.text_input("Target Entity", TARGET_ENTITY)
+    with col2:
+        force_crypto = st.checkbox(
+            "Include Crypto Section",
+            value=crypto_detected,
+            help="Auto-enabled when cryptocurrency transactions are detected in loaded data.",
+        )
+
+    if crypto_detected:
+        st.warning("🚨 Cryptocurrency transactions detected in loaded data — crypto section auto-enabled.")
+
+    schedule_a = generate_schedule_a_v2(target, cfg["known_accounts"], force_crypto)
+
+    st.text_area("Schedule A — Enhanced Digital Asset Discovery", value=schedule_a, height=500)
+
+    st.download_button(
+        "📥 Download Schedule A (TXT)",
+        data=schedule_a,
+        file_name=f"Schedule_A_Enhanced_{datetime.now().strftime('%Y%m%d')}.txt",
+        mime="text/plain",
+        use_container_width=True,
+    )
