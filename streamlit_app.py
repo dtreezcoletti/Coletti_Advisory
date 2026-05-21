@@ -17,6 +17,11 @@ from forensic_ocr import ForensicOCREngine
 from excel_export import ExcelExporter
 from ingestion_engine import DataIngestionEngine, DocumentRecord, ExhibitRecord
 from coletti_os_core import ColettiOSCore
+from forensic_v27 import (
+    normalize_transactions_v27, detect_anomalies_isolation_forest,
+    detect_structuring, calculate_velocity_metrics,
+    generate_schedule_a_v27, SKLEARN_AVAILABLE, FUZZY_AVAILABLE,
+)
 
 # ── Page config ───────────────────────────────────────────────────────────────
 
@@ -147,6 +152,8 @@ with st.sidebar:
             "Upload Statement",
             "Export to Excel",
             "Court-Safe Translation",
+            "Advanced Detection",
+            "Schedule A Generator",
             "Data Export",
         ],
         label_visibility="collapsed",
@@ -3028,6 +3035,193 @@ elif page == "Court-Safe Translation":
         use_container_width=True,
         hide_index=True,
     )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: ADVANCED DETECTION
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Advanced Detection":
+    st.markdown(
+        """
+    <div class="hud-header">
+        <h1 class="hud-title">🔍 ADVANCED DETECTION</h1>
+        <p class="hud-subtitle">COLETTI OS v2.7.0 — ISOLATION FOREST · STRUCTURING · CRYPTO · VELOCITY</p>
+    </div>
+    """,
+        unsafe_allow_html=True,
+    )
+
+    _ad_col1, _ad_col2, _ad_col3 = st.columns(3)
+    _ad_col1.metric("Isolation Forest", "✓ Online" if SKLEARN_AVAILABLE else "✗ Offline")
+    _ad_col2.metric("Fuzzy Matching", "✓ Online" if FUZZY_AVAILABLE else "✗ Offline")
+    _ad_col3.metric("Structuring Detection", "✓ Online")
+
+    st.divider()
+
+    # ── Upload ledger ─────────────────────────────────────────────────────────
+    st.markdown("#### Upload Transaction Ledger (CSV)")
+    st.caption("Required columns: Date, Description, Amount")
+    _ad_file = st.file_uploader("CSV file", type=["csv"], key="adv_upload")
+
+    _ad_known_accounts = st.text_input(
+        "Known account numbers (comma-separated)", "9172, 5431, 8765",
+        key="ad_accounts"
+    )
+    _ad_known_vendors = st.text_input(
+        "Known vendors for fuzzy matching (comma-separated)",
+        "First Florida Credit Union, Chase Bank, Wells Fargo",
+        key="ad_vendors"
+    )
+    _ad_accounts_list = [a.strip() for a in _ad_known_accounts.split(",") if a.strip()]
+    _ad_vendors_list  = [v.strip() for v in _ad_known_vendors.split(",") if v.strip()]
+
+    _ad_col_s1, _ad_col_s2 = st.columns(2)
+    _ad_window     = _ad_col_s1.number_input("Structuring window (days)", min_value=1, value=7, key="ad_win")
+    _ad_threshold  = _ad_col_s2.number_input("Structuring threshold ($)", min_value=0.0, value=10000.0, key="ad_thresh")
+
+    if _ad_file:
+        _ad_raw = pd.read_csv(_ad_file)
+    else:
+        st.info("No file uploaded — using demo data.")
+        _ad_raw = pd.DataFrame([
+            {"Date": "2022-12-10", "Description": "Shared Branch Withdrawal (Nashville)", "Amount": 4000.00},
+            {"Date": "2022-12-13", "Description": "Large Cash Withdrawal", "Amount": 2500.00},
+            {"Date": "2022-12-15", "Description": "ATM Withdrawal", "Amount": 800.00},
+            {"Date": "2022-12-16", "Description": "Cash Withdrawal", "Amount": 850.00},
+            {"Date": "2022-12-17", "Description": "ATM Cash", "Amount": 900.00},
+            {"Date": "2022-12-18", "Description": "Withdrawal ATM", "Amount": 920.00},
+            {"Date": "2022-12-19", "Description": "Cash ATM", "Amount": 880.00},
+            {"Date": "2025-05-15", "Description": "Transfer to Account ending 9172", "Amount": 3500.00},
+            {"Date": "2025-05-20", "Description": "Wire Transfer - External", "Amount": 3500.00},
+            {"Date": "2025-05-21", "Description": "Coinbase Pro Purchase", "Amount": 5000.00},
+        ])
+
+    with st.spinner("Running v2.7 classification and detection…"):
+        _ad_tx = normalize_transactions_v27(_ad_raw, _ad_accounts_list, _ad_vendors_list)
+        _ad_tx = detect_structuring(_ad_tx, window_days=int(_ad_window), amount_threshold=float(_ad_threshold))
+        if SKLEARN_AVAILABLE:
+            _ad_tx = detect_anomalies_isolation_forest(_ad_tx)
+        _ad_structured  = _ad_tx[_ad_tx["Is_Structured"] == True]
+        _ad_crypto      = _ad_tx[_ad_tx["Crypto_Indicators"].apply(lambda x: len(x) > 0)]
+        _ad_anomalies   = _ad_tx[_ad_tx.get("Is_Anomaly_IF", pd.Series(False, index=_ad_tx.index)) == True] if SKLEARN_AVAILABLE else pd.DataFrame()
+        _ad_vel_cash    = calculate_velocity_metrics(_ad_tx, "CASH_WITHDRAWAL")
+        _ad_vel_xfer    = calculate_velocity_metrics(_ad_tx, "TRANSFER")
+
+    # KPI row
+    _k1, _k2, _k3, _k4 = st.columns(4)
+    _k1.metric("Structuring Clusters", _ad_structured["Structured_Cluster_ID"].nunique() if len(_ad_structured) > 0 else 0)
+    _k2.metric("IF Anomalies", len(_ad_anomalies))
+    _k3.metric("Crypto Transactions", len(_ad_crypto))
+    _k4.metric("Total Flagged", len(_ad_structured) + len(_ad_anomalies) + len(_ad_crypto))
+
+    if len(_ad_crypto) > 0:
+        st.error(f"🚨 CRYPTO ALERT: {len(_ad_crypto)} cryptocurrency transaction(s) detected")
+
+    _ad_tabs = st.tabs(["Structuring", "Isolation Forest", "Crypto", "Velocity", "All Transactions"])
+
+    with _ad_tabs[0]:
+        st.subheader("Structuring / Layering Detection")
+        if len(_ad_structured) > 0:
+            st.error(f"⚠️ {len(_ad_structured)} transactions in {_ad_structured['Structured_Cluster_ID'].nunique()} cluster(s)")
+            for _cid in _ad_structured["Structured_Cluster_ID"].unique():
+                _cdata = _ad_structured[_ad_structured["Structured_Cluster_ID"] == _cid]
+                _ctotal = _cdata["Cluster_Total"].iloc[0]
+                _cdates = f"{_cdata['Date'].min().date()} → {_cdata['Date'].max().date()}"
+                with st.expander(f"**{_cid}**: ${_ctotal:,.2f} across {len(_cdata)} transactions ({_cdates})", expanded=True):
+                    st.dataframe(_cdata[["Date", "Description", "Amount", "Category"]], use_container_width=True, hide_index=True)
+        else:
+            st.success("No structuring patterns detected in this dataset.")
+
+    with _ad_tabs[1]:
+        st.subheader("Isolation Forest Anomaly Detection")
+        if not SKLEARN_AVAILABLE:
+            st.warning("scikit-learn not installed. Add it to requirements.txt and reboot.")
+        elif len(_ad_anomalies) > 0:
+            st.warning(f"⚠️ {len(_ad_anomalies)} statistical anomalies detected")
+            st.dataframe(
+                _ad_anomalies[["Date", "Description", "Amount", "Category", "Anomaly_Score"]].sort_values("Anomaly_Score"),
+                use_container_width=True, hide_index=True,
+            )
+        else:
+            st.success("No statistical anomalies detected.")
+
+    with _ad_tabs[2]:
+        st.subheader("Cryptocurrency Activity")
+        if len(_ad_crypto) > 0:
+            st.error(f"🚨 {len(_ad_crypto)} crypto-related transaction(s)")
+            st.dataframe(_ad_crypto[["Date", "Description", "Amount", "Crypto_Indicators"]], use_container_width=True, hide_index=True)
+        else:
+            st.success("No cryptocurrency activity detected.")
+
+    with _ad_tabs[3]:
+        st.subheader("Transaction Velocity Analysis")
+        _v1, _v2 = st.columns(2)
+        with _v1:
+            st.markdown("**Cash Withdrawal Velocity**")
+            if _ad_vel_cash:
+                for k, v in _ad_vel_cash.items():
+                    st.write(f"- {k.replace('_', ' ').title()}: `{v:.2f}`")
+            else:
+                st.info("No cash withdrawal data.")
+        with _v2:
+            st.markdown("**Transfer Velocity**")
+            if _ad_vel_xfer:
+                for k, v in _ad_vel_xfer.items():
+                    st.write(f"- {k.replace('_', ' ').title()}: `{v:.2f}`")
+            else:
+                st.info("No transfer data.")
+
+    with _ad_tabs[4]:
+        st.subheader("All Classified Transactions")
+        st.dataframe(_ad_tx[["Date", "Description", "Amount", "Category", "Confidence", "Rule_Triggered"]], use_container_width=True, hide_index=True)
+
+        _ad_csv = _ad_tx.astype(str).to_csv(index=False).encode()
+        st.download_button(
+            "⬇️ Download Full Analysis (CSV)",
+            data=_ad_csv,
+            file_name=f"advanced_detection_{date.today().isoformat()}.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: SCHEDULE A GENERATOR
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Schedule A Generator":
+    st.markdown(
+        """
+    <div class="hud-header">
+        <h1 class="hud-title">📋 SCHEDULE A GENERATOR</h1>
+        <p class="hud-subtitle">COLETTI OS v2.7.0 — ENHANCED DIGITAL ASSET DISCOVERY</p>
+    </div>
+    """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "Generates a comprehensive document production Schedule A covering financial records, "
+        "employment, assets, digital payments, crypto, offshore accounts, and electronic evidence."
+    )
+    st.divider()
+
+    _sa_entity   = st.text_input("Target Entity", "Coletti & Brown Enterprises, LLC")
+    _sa_accounts = st.text_input("Known Account Numbers (comma-separated)", "9172, 5431, 8765")
+    _sa_crypto   = st.checkbox("Include Cryptocurrency / Digital Asset Section", value=True)
+
+    _sa_accounts_list = [a.strip() for a in _sa_accounts.split(",") if a.strip()]
+
+    if st.button("Generate Schedule A", type="primary", use_container_width=True):
+        _sa_text = generate_schedule_a_v27(_sa_entity, _sa_accounts_list, _sa_crypto)
+        st.text_area("Schedule A — Document Production Request", value=_sa_text, height=600, key="sa_output")
+        st.download_button(
+            "⬇️ Download Schedule A (TXT)",
+            data=_sa_text,
+            file_name=f"Schedule_A_{date.today().isoformat()}.txt",
+            mime="text/plain",
+            use_container_width=True,
+        )
 
 
 # ════════════════════════════════════════════════════════════════════════════
