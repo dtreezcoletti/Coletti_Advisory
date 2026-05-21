@@ -1,2 +1,6 @@
 streamlit
 reportlab
+scikit-learn
+rapidfuzz
+plotly
+openpyxl

@@ -14,6 +14,15 @@ from document_engine import (
 )
 from forensic_engine import ForensicEngine
 
+import numpy as np
+import pandas as pd
+from advanced_detection import (
+    normalize_transactions_v2, detect_anomalies_isolation_forest,
+    detect_structuring, calculate_velocity_metrics,
+    generate_schedule_a_v2, make_packet_excel_v2,
+    SKLEARN_AVAILABLE, FUZZY_AVAILABLE, TARGET_ENTITY,
+)
+
 # ── Page config ───────────────────────────────────────────────────────────────
 
 st.set_page_config(
@@ -74,6 +83,27 @@ if "fe" not in st.session_state:
 sys: ColettiOS = st.session_state["os"]
 fe: ForensicEngine = st.session_state["fe"]
 
+if "adv_tx" not in st.session_state:
+    st.session_state["adv_tx"] = None
+if "adv_raw" not in st.session_state:
+    st.session_state["adv_raw"] = None
+if "adv_crypto_detected" not in st.session_state:
+    st.session_state["adv_crypto_detected"] = False
+if "adv_config" not in st.session_state:
+    st.session_state["adv_config"] = {
+        "known_accounts": ["9172", "5431", "8765"],
+        "known_vendors": ["First Florida Credit Union", "Chase Bank", "Wells Fargo"],
+        "affidavit_date": "2025-05-27",
+        "hearing_date": "2026-02-20",
+        "thresh_cash": 1500.0,
+        "thresh_xfer": 500.0,
+        "conf_filter": ["High", "Med"],
+        "enable_if": SKLEARN_AVAILABLE,
+        "enable_structuring": True,
+        "structuring_window": 7,
+        "structuring_threshold": 10000.0,
+    }
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -120,7 +150,8 @@ with st.sidebar:
     page = st.radio(
         "Navigation",
         ["Dashboard", "Litigation Command", "Forensic Accounting", "Income Disparity",
-         "Case Valuation", "Forensic Engine", "Enterprise Ops", "Documents", "Data Export"],
+         "Case Valuation", "Forensic Engine", "Enterprise Ops", "Documents", "Data Export",
+         "Transaction Import", "Advanced Detection", "Exhibits", "Enhanced Subpoena"],
         label_visibility="collapsed",
     )
 
