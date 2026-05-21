@@ -20,8 +20,14 @@ from advanced_detection import (
     normalize_transactions_v2, detect_anomalies_isolation_forest,
     detect_structuring, calculate_velocity_metrics,
     generate_schedule_a_v2, make_packet_excel_v2,
+    cluster_entity_aliases, score_entity_attribution,
     SKLEARN_AVAILABLE, FUZZY_AVAILABLE, TARGET_ENTITY,
 )
+from ocr_engine import ingest_statement, PDFPLUMBER_AVAILABLE, TESSERACT_AVAILABLE
+from geo_engine import build_transaction_map, tag_locations, FOLIUM_AVAILABLE
+from network_engine import build_flow_graph, NETWORKX_AVAILABLE, PYVIS_AVAILABLE
+from citation_engine import search_cases, format_citation, get_snippet, TOPIC_QUERIES, TN_COURTS
+import streamlit.components.v1 as components
 
 # ── Page config ───────────────────────────────────────────────────────────────
 
@@ -157,7 +163,8 @@ with st.sidebar:
         "Navigation",
         ["Dashboard", "Litigation Command", "Forensic Accounting", "Income Disparity",
          "Case Valuation", "Forensic Engine", "Enterprise Ops", "Documents", "Data Export",
-         "Transaction Import", "Advanced Detection", "Exhibits", "Enhanced Subpoena"],
+         "Transaction Import", "Advanced Detection", "Exhibits", "Enhanced Subpoena",
+         "Statement Upload", "Transaction Map", "Money Flow Graph", "Case Law"],
         label_visibility="collapsed",
     )
 
@@ -1470,3 +1477,292 @@ elif page == "Enhanced Subpoena":
         mime="text/plain",
         use_container_width=True,
     )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: STATEMENT UPLOAD (OCR INGESTION)
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Statement Upload":
+    st.title("📄 Statement Upload — Automated Ingestion")
+    st.caption("Upload a PDF or scanned image of a bank statement. The engine extracts transactions automatically.")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("PDF Extraction (pdfplumber)", "✓ Online" if PDFPLUMBER_AVAILABLE else "✗ Offline")
+    c2.metric("Image OCR (pytesseract)",     "✓ Online" if TESSERACT_AVAILABLE   else "✗ Offline")
+    c3.metric("Camelot (premium)",           "Manual install required")
+
+    st.markdown("""
+    **Supported inputs:**
+    - Digital PDF (direct bank download) → pdfplumber table extraction
+    - Scanned PDF or image (phone photo, flatbed scan) → pytesseract OCR
+
+    **Tip:** Preserve the raw bank description text — it carries the card ending digits,
+    city/state location, and P2P handle data that drives entity attribution.
+    """)
+
+    st.divider()
+
+    uploaded = st.file_uploader(
+        "Upload Bank Statement (PDF, PNG, JPG, TIFF)",
+        type=["pdf", "png", "jpg", "jpeg", "tiff", "bmp"],
+    )
+
+    if uploaded:
+        with st.spinner(f"Extracting transactions from {uploaded.name}…"):
+            file_bytes = uploaded.read()
+            extracted_df, warnings = ingest_statement(file_bytes, uploaded.name)
+
+        for w in warnings:
+            st.warning(w)
+
+        if not extracted_df.empty:
+            st.success(f"✓ {len(extracted_df)} transactions extracted")
+            st.dataframe(extracted_df, use_container_width=True)
+
+            st.divider()
+            st.markdown("#### Review & Edit Before Processing")
+            st.caption("Correct any OCR errors in the table below, then export to CSV for the Transaction Import page.")
+
+            edited_df = st.data_editor(
+                extracted_df,
+                use_container_width=True,
+                num_rows="dynamic",
+                column_config={
+                    "Date":        st.column_config.TextColumn("Date (YYYY-MM-DD)"),
+                    "Description": st.column_config.TextColumn("Description"),
+                    "Amount":      st.column_config.NumberColumn("Amount ($)", format="$%.2f"),
+                },
+            )
+
+            csv_bytes = edited_df.to_csv(index=False).encode()
+            st.download_button(
+                "⬇️ Download as CSV (for Transaction Import)",
+                data=csv_bytes,
+                file_name=f"extracted_{uploaded.name.rsplit('.', 1)[0]}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+
+            # One-click: process directly without CSV round-trip
+            st.divider()
+            if st.button("▶ Process Directly (skip CSV export)", type="primary", use_container_width=True):
+                cfg = st.session_state["adv_config"]
+                with st.spinner("Classifying extracted transactions…"):
+                    tx_norm = normalize_transactions_v2(
+                        edited_df, cfg["known_accounts"], cfg["known_vendors"],
+                        entity_config=cfg.get("entity_config"),
+                    )
+                    tx_norm["Days_To_Affidavit"] = (pd.Timestamp(cfg["affidavit_date"]) - tx_norm["Date"]).dt.days
+                    tx_norm["Days_To_Hearing"]   = (pd.Timestamp(cfg["hearing_date"])   - tx_norm["Date"]).dt.days
+                    tx_filt = tx_norm[tx_norm["Confidence"].isin(cfg["conf_filter"])].copy()
+                    if cfg["enable_structuring"]:
+                        tx_filt = detect_structuring(tx_filt, cfg["structuring_window"], cfg["structuring_threshold"])
+                    else:
+                        tx_filt["Is_Structured"] = False; tx_filt["Structured_Cluster_ID"] = None
+                        tx_filt["Cluster_Total"] = 0.0;  tx_filt["Cluster_Count"] = 0
+                    if cfg["enable_if"] and SKLEARN_AVAILABLE:
+                        tx_filt = detect_anomalies_isolation_forest(tx_filt)
+                    else:
+                        tx_filt["Is_Anomaly_IF"] = False; tx_filt["Anomaly_Score"] = 0.0
+                    st.session_state["adv_tx"]              = tx_filt
+                    st.session_state["adv_raw"]             = tx_norm
+                    st.session_state["adv_crypto_detected"] = bool(tx_filt["Crypto_Indicators"].apply(len).gt(0).any())
+                st.success(f"✓ {len(tx_filt)} transactions processed. Navigate to Advanced Detection or Exhibits.")
+        else:
+            st.error("No transactions could be extracted. Check the file quality and format.")
+            st.markdown("""
+            **Troubleshooting:**
+            - If the PDF is a scanned image (not digitally created), pytesseract is required
+            - For low-quality scans, photograph the document under good lighting and try again
+            - As a fallback, use Google Drive: upload the image → open with Google Docs → it OCRs automatically → copy/paste the text
+            """)
+
+    else:
+        st.info("Upload a bank statement PDF or image to begin automatic extraction.")
+        st.markdown("""
+        **For best results:**
+        1. Use the bank's direct PDF download (not a print-to-PDF scan)
+        2. If you only have paper: photograph in bright light, keep camera parallel to document
+        3. Google Docs auto-OCR is a reliable free fallback for any image
+        """)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: TRANSACTION MAP
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Transaction Map":
+    st.title("🗺️ Transaction Map — Geospatial Analysis")
+    st.caption("Interactive map of transaction locations. Robert's tour-route states are highlighted in orange.")
+
+    if not FOLIUM_AVAILABLE:
+        st.error("folium not installed. Run: pip install folium streamlit-folium")
+        st.stop()
+
+    if st.session_state["adv_tx"] is None:
+        st.warning("No transaction data loaded. Go to **Transaction Import** or **Statement Upload** first.")
+        st.stop()
+
+    tx_filt = st.session_state["adv_tx"]
+    cfg     = st.session_state["adv_config"]
+
+    # Tour route config
+    ec = cfg.get("entity_config", {})
+    robert_states = ec.get("geographic_rules", {}).get("Robert", [])
+    tour_abbrs = [s for s in robert_states if len(s) == 2 and s.isupper()]
+
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        st.markdown("#### Map Config")
+        show_tour = st.checkbox("Highlight Tour Route", value=bool(tour_abbrs))
+        show_unattributed = st.checkbox("Show Unattributed", value=True)
+
+    tx_map_df = tx_filt.copy()
+    if not show_unattributed:
+        tx_map_df = tx_map_df[tx_map_df["Entity"].notna()]
+
+    with col1:
+        with st.spinner("Building map…"):
+            map_html = build_transaction_map(
+                tx_map_df,
+                entity_config=cfg.get("entity_config"),
+                tour_route=tour_abbrs if show_tour else None,
+            )
+        components.html(map_html, height=580, scrolling=False)
+
+    st.divider()
+
+    # Location summary table
+    tx_tagged = tag_locations(tx_filt)
+    located = tx_tagged[tx_tagged["Location_State"].notna()]
+    if len(located) > 0:
+        st.markdown(f"**{len(located)} of {len(tx_filt)} transactions have location data**")
+        loc_summary = located.groupby(["Location_State", "Entity"]).agg(
+            Count=("Amount", "count"),
+            Total=("Amount", "sum"),
+        ).reset_index().sort_values("Total", ascending=False)
+        st.dataframe(loc_summary, use_container_width=True)
+    else:
+        st.info("No location data found. POS descriptions like 'WALMART NASHVILLE TN' are needed.")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: MONEY FLOW GRAPH
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Money Flow Graph":
+    st.title("🕸️ Money Flow Graph — Account Network")
+    st.caption("Interactive network visualization of cash flows from the marital account to named entities and platforms.")
+
+    if not PYVIS_AVAILABLE or not NETWORKX_AVAILABLE:
+        st.error("pyvis / networkx not installed. Run: pip install pyvis networkx")
+        st.stop()
+
+    if st.session_state["adv_tx"] is None:
+        st.warning("No transaction data loaded. Go to **Transaction Import** or **Statement Upload** first.")
+        st.stop()
+
+    tx_filt = st.session_state["adv_tx"]
+
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        st.markdown("#### Graph Config")
+        source_acct = st.text_input("Source Account Label", "First Florida ×0094")
+
+        st.markdown("**Node Colors**")
+        st.markdown("🔵 Bank Account  🔴 Named Entity  🟠 P2P Platform  ⚫ Untraced")
+
+        # Fuzzy alias clustering
+        if st.checkbox("Show Alias Clusters (RapidFuzz)", value=FUZZY_AVAILABLE):
+            descs = tx_filt["Description"].dropna().tolist()
+            clusters = cluster_entity_aliases(descs, threshold=72)
+            flagged = {k: v for k, v in clusters.items() if len(v) > 1}
+            if flagged:
+                st.markdown(f"**{len(flagged)} alias clusters detected:**")
+                for rep, aliases in list(flagged.items())[:5]:
+                    st.caption(f"→ {rep[:40]}: {len(aliases)} variants")
+            else:
+                st.caption("No duplicate entity aliases found.")
+
+    with col1:
+        with st.spinner("Building network graph…"):
+            graph_html = build_flow_graph(
+                tx_filt,
+                source_account=source_acct,
+                entity_config=st.session_state["adv_config"].get("entity_config"),
+            )
+        components.html(graph_html, height=580, scrolling=False)
+
+    st.divider()
+
+    # Entity attribution summary
+    summary_df = score_entity_attribution(tx_filt)
+    if not summary_df.empty:
+        st.markdown("#### Entity Attribution Summary")
+        st.dataframe(summary_df, use_container_width=True)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: CASE LAW
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Case Law":
+    st.title("⚖️ Case Law — CourtListener Citation Engine")
+    st.caption("Automated Tennessee appellate research. No API key required.")
+
+    col1, col2 = st.columns([2, 1])
+
+    with col2:
+        st.markdown("#### Search Config")
+        court_label = st.selectbox("Court", list(TN_COURTS.keys()), index=1)
+        court_id    = TN_COURTS[court_label]
+        result_count = st.slider("Max Results", 3, 15, 8)
+
+    with col1:
+        st.markdown("#### Quick Topics")
+        topic = st.selectbox("Load pre-built query", ["(custom)"] + list(TOPIC_QUERIES.keys()))
+
+        if topic != "(custom)":
+            default_query = TOPIC_QUERIES[topic]
+        else:
+            default_query = ""
+
+        query = st.text_input("Search Query", value=default_query,
+                              placeholder="e.g. marital dissipation income concealment Tennessee")
+
+        if st.button("🔍 Search Cases", type="primary", use_container_width=True) and query:
+            with st.spinner(f"Querying CourtListener — {court_label}…"):
+                results = search_cases(query, court=court_id, page_size=result_count)
+
+            if not results:
+                st.info("No results found. Try broadening the query.")
+            elif "error" in results[0]:
+                st.error(f"API error: {results[0]['error']}")
+            else:
+                st.success(f"✓ {len(results)} cases found")
+                st.divider()
+
+                for i, case in enumerate(results, 1):
+                    citation = format_citation(case)
+                    snippet  = get_snippet(case)
+                    with st.expander(f"**{i}.** {case.get('caseName') or case.get('case_name', 'Case')}"):
+                        st.code(citation, language="text")
+                        st.markdown(f"_{snippet}_")
+                        url = case.get("absolute_url", "")
+                        if url:
+                            st.markdown(f"[View Full Opinion →](https://www.courtlistener.com{url})")
+
+                # Bulk citation export
+                st.divider()
+                all_citations = "\n\n".join(format_citation(c) for c in results)
+                st.download_button(
+                    "📥 Export All Citations (TXT)",
+                    data=all_citations,
+                    file_name=f"citations_{topic.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.txt",
+                    mime="text/plain",
+                    use_container_width=True,
+                )
+
+    st.markdown("---")
+    st.caption("Data source: CourtListener / Free Law Project (courtlistener.com). Free, no authentication required.")

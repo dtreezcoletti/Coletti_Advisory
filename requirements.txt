@@ -4,3 +4,12 @@ scikit-learn
 rapidfuzz
 plotly
 openpyxl
+pdfplumber
+Pillow
+pytesseract
+folium
+streamlit-folium
+pyvis
+networkx
+geopy
+requests

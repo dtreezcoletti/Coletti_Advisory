@@ -345,6 +345,58 @@ def calculate_velocity_metrics(df: pd.DataFrame, category: str = None) -> dict:
     return metrics
 
 
+def cluster_entity_aliases(descriptions: list, threshold: int = 75) -> dict[str, list]:
+    """
+    Group messy transaction descriptions that refer to the same entity.
+    Example: 'VENMO*MARY E BRWN', 'CASHAPP MARYB', 'P2P TRANSFER M BROWN'
+    all cluster together under a representative label.
+
+    Returns dict: {representative_string: [matching_descriptions]}
+    """
+    if not FUZZY_AVAILABLE:
+        return {}
+
+    remaining = list(set(descriptions))
+    clusters: dict[str, list] = {}
+
+    while remaining:
+        seed = remaining.pop(0)
+        cluster = [seed]
+        still_remaining = []
+        for candidate in remaining:
+            score = fuzz.token_sort_ratio(seed, candidate)
+            if score >= threshold:
+                cluster.append(candidate)
+            else:
+                still_remaining.append(candidate)
+        remaining = still_remaining
+        clusters[seed] = cluster
+
+    return clusters
+
+
+def score_entity_attribution(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute a per-entity breakdown: transaction count, total amount,
+    and method confidence distribution. Returns a summary DataFrame.
+    """
+    if 'Entity' not in df.columns or df['Entity'].isna().all():
+        return pd.DataFrame()
+
+    attributed = df[df['Entity'].notna()].copy()
+    if attributed.empty:
+        return pd.DataFrame()
+
+    summary = attributed.groupby('Entity').agg(
+        Transactions=('Amount', 'count'),
+        Total_Amount=('Amount', 'sum'),
+        Definitive=('Entity_Confidence', lambda x: (x == 'Definitive').sum()),
+        High=('Entity_Confidence', lambda x: (x == 'High').sum()),
+    ).reset_index()
+    summary['Pct_Definitive'] = (summary['Definitive'] / summary['Transactions'] * 100).round(1)
+    return summary
+
+
 def generate_schedule_a_v2(target_entity: str, known_accounts: list = None,
                            crypto_detected: bool = False) -> str:
     account_section = ""
