@@ -29,6 +29,21 @@ from network_engine import build_flow_graph, NETWORKX_AVAILABLE, PYVIS_AVAILABLE
 from citation_engine import search_cases, format_citation, get_snippet, TOPIC_QUERIES, TN_COURTS
 import streamlit.components.v1 as components
 
+
+# ── Cached heavy renderers (avoid rebuild on every widget interaction) ─────────
+
+@st.cache_data
+def _cached_map(df, tour_route_key):
+    return build_transaction_map(df, tour_route=list(tour_route_key) if tour_route_key else None)
+
+@st.cache_data
+def _cached_flow_graph(df, source_account):
+    return build_flow_graph(df, source_account)
+
+@st.cache_data
+def _cached_cluster_aliases(descs_key, threshold):
+    return cluster_entity_aliases(list(descs_key), threshold)
+
 # ── Page config ───────────────────────────────────────────────────────────────
 
 st.set_page_config(
@@ -1553,21 +1568,27 @@ elif page == "Statement Upload":
                         edited_df, cfg["known_accounts"], cfg["known_vendors"],
                         entity_config=cfg.get("entity_config"),
                     )
-                    tx_norm["Days_To_Affidavit"] = (pd.Timestamp(cfg["affidavit_date"]) - tx_norm["Date"]).dt.days
-                    tx_norm["Days_To_Hearing"]   = (pd.Timestamp(cfg["hearing_date"])   - tx_norm["Date"]).dt.days
+                    dates = pd.to_datetime(tx_norm["Date"], errors='coerce')
+                    tx_norm["Days_To_Affidavit"] = (pd.Timestamp(cfg["affidavit_date"]) - dates).dt.days
+                    tx_norm["Days_To_Hearing"]   = (pd.Timestamp(cfg["hearing_date"])   - dates).dt.days
                     tx_filt = tx_norm[tx_norm["Confidence"].isin(cfg["conf_filter"])].copy()
                     if cfg["enable_structuring"]:
                         tx_filt = detect_structuring(tx_filt, cfg["structuring_window"], cfg["structuring_threshold"])
                     else:
-                        tx_filt["Is_Structured"] = False; tx_filt["Structured_Cluster_ID"] = None
-                        tx_filt["Cluster_Total"] = 0.0;  tx_filt["Cluster_Count"] = 0
+                        tx_filt["Is_Structured"] = False
+                        tx_filt["Structured_Cluster_ID"] = None
+                        tx_filt["Cluster_Total"] = 0.0
+                        tx_filt["Cluster_Count"] = 0
                     if cfg["enable_if"] and SKLEARN_AVAILABLE:
                         tx_filt = detect_anomalies_isolation_forest(tx_filt)
                     else:
-                        tx_filt["Is_Anomaly_IF"] = False; tx_filt["Anomaly_Score"] = 0.0
-                    st.session_state["adv_tx"]              = tx_filt
-                    st.session_state["adv_raw"]             = tx_norm
-                    st.session_state["adv_crypto_detected"] = bool(tx_filt["Crypto_Indicators"].apply(len).gt(0).any())
+                        tx_filt["Is_Anomaly_IF"] = False
+                        tx_filt["Anomaly_Score"] = 0.0
+                    st.session_state["adv_tx"]  = tx_filt
+                    st.session_state["adv_raw"] = tx_norm
+                    st.session_state["adv_crypto_detected"] = bool(
+                        tx_filt["Crypto_Indicators"].apply(lambda x: len(x) if x else 0).gt(0).any()
+                    )
                 st.success(f"✓ {len(tx_filt)} transactions processed. Navigate to Advanced Detection or Exhibits.")
         else:
             st.error("No transactions could be extracted. Check the file quality and format.")
@@ -1622,19 +1643,17 @@ elif page == "Transaction Map":
     if not show_unattributed:
         tx_map_df = tx_map_df[tx_map_df["Entity"].notna()]
 
+    # Tag locations once; pass pre-tagged df to map builder (skips redundant re-tagging)
+    tx_tagged = tag_locations(tx_map_df)
+    tour_key = tuple(tour_abbrs) if show_tour else ()
+
     with col1:
         with st.spinner("Building map…"):
-            map_html = build_transaction_map(
-                tx_map_df,
-                entity_config=cfg.get("entity_config"),
-                tour_route=tour_abbrs if show_tour else None,
-            )
+            map_html = _cached_map(tx_tagged, tour_key)
         components.html(map_html, height=580, scrolling=False)
 
     st.divider()
 
-    # Location summary table
-    tx_tagged = tag_locations(tx_filt)
     located = tx_tagged[tx_tagged["Location_State"].notna()]
     if len(located) > 0:
         st.markdown(f"**{len(located)} of {len(tx_filt)} transactions have location data**")
@@ -1675,8 +1694,8 @@ elif page == "Money Flow Graph":
 
         # Fuzzy alias clustering
         if st.checkbox("Show Alias Clusters (RapidFuzz)", value=FUZZY_AVAILABLE):
-            descs = tx_filt["Description"].dropna().tolist()
-            clusters = cluster_entity_aliases(descs, threshold=72)
+            descs_key = tuple(sorted(set(tx_filt["Description"].dropna().tolist())))
+            clusters = _cached_cluster_aliases(descs_key, 72)
             flagged = {k: v for k, v in clusters.items() if len(v) > 1}
             if flagged:
                 st.markdown(f"**{len(flagged)} alias clusters detected:**")
@@ -1687,11 +1706,7 @@ elif page == "Money Flow Graph":
 
     with col1:
         with st.spinner("Building network graph…"):
-            graph_html = build_flow_graph(
-                tx_filt,
-                source_account=source_acct,
-                entity_config=st.session_state["adv_config"].get("entity_config"),
-            )
+            graph_html = _cached_flow_graph(tx_filt, source_acct)
         components.html(graph_html, height=580, scrolling=False)
 
     st.divider()

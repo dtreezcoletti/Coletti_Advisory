@@ -4,6 +4,7 @@ Extracts US city/state location signals from transaction descriptions
 and builds interactive Folium maps for court presentation.
 """
 
+import random
 import re
 
 import pandas as pd
@@ -124,8 +125,7 @@ def tag_locations(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def build_transaction_map(df: pd.DataFrame, entity_config: dict = None,
-                          tour_route: list = None) -> str:
+def build_transaction_map(df: pd.DataFrame, tour_route: list = None) -> str:
     """
     Build an interactive Folium map of transaction locations.
     Returns HTML string for embedding in Streamlit via st.components.v1.html().
@@ -135,7 +135,8 @@ def build_transaction_map(df: pd.DataFrame, entity_config: dict = None,
     if not FOLIUM_AVAILABLE:
         return "<p>folium not installed. Run: pip install folium streamlit-folium</p>"
 
-    df = tag_locations(df)
+    if 'Location_State' not in df.columns:
+        df = tag_locations(df)
     has_locations = df['Location_State'].notna().any()
 
     # Center map on continental US
@@ -163,10 +164,9 @@ def build_transaction_map(df: pd.DataFrame, entity_config: dict = None,
             continue
         lat, lon = STATE_CENTROIDS[abbr]
 
-        # Jitter so stacked markers are visible
-        import random
-        lat += random.uniform(-0.8, 0.8)
-        lon += random.uniform(-0.8, 0.8)
+        rng = random.Random(hash(str(row.get('Description', ''))))
+        lat += rng.uniform(-0.8, 0.8)
+        lon += rng.uniform(-0.8, 0.8)
 
         entity = row.get('Entity')
         color = ENTITY_COLORS.get(entity, 'gray')

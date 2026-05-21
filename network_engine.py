@@ -37,8 +37,7 @@ def _node_type(name: str) -> str:
     return 'entity'
 
 
-def build_flow_graph(df: pd.DataFrame, source_account: str = "First Florida ×0094",
-                     entity_config: dict = None) -> str:
+def build_flow_graph(df: pd.DataFrame, source_account: str = "First Florida ×0094") -> str:
     """
     Build an interactive PyVis network graph of money flows.
     Nodes: source account, entities, P2P platforms.
@@ -68,15 +67,13 @@ def build_flow_graph(df: pd.DataFrame, source_account: str = "First Florida ×00
         entity = row.get('Entity')
         category = row.get('Category', '')
 
-        # Determine destination node
+        desc_lower = desc.lower()
+        p2p_match = next((k for k in P2P_KEYWORDS if k in desc_lower), None)
+
         if entity:
             dest = entity
-        elif any(k in desc.lower() for k in P2P_KEYWORDS):
-            # Extract P2P platform name
-            for k in P2P_KEYWORDS:
-                if k in desc.lower():
-                    dest = k.title().replace(' ', '')
-                    break
+        elif p2p_match:
+            dest = p2p_match.title().replace(' ', '')
         elif category in ('CASH_WITHDRAWAL', 'INTERNAL_THEFT'):
             dest = 'Cash (Untraced)'
         elif category == 'TRANSFER':

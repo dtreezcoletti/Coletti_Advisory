@@ -33,6 +33,8 @@ _DATE_PATTERNS = [
     r'\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}\b',
 ]
 _AMOUNT_PATTERN = r'-?\$?[\d,]+\.\d{2}'
+_AMOUNT_RE = re.compile(_AMOUNT_PATTERN)
+_DATE_STRIP_RE = re.compile(r'\d{1,2}/\d{1,2}/\d{2,4}')
 
 
 def _parse_amount(text: str) -> float | None:
@@ -57,6 +59,10 @@ def _parse_date(text: str) -> str | None:
                 except ValueError:
                     continue
     return None
+
+
+def _clean_description(text: str) -> str:
+    return _DATE_STRIP_RE.sub('', _AMOUNT_RE.sub('', text)).strip()
 
 
 def _rows_to_df(rows: list[dict]) -> pd.DataFrame:
@@ -94,10 +100,7 @@ def extract_from_pdf(file_bytes: bytes) -> tuple[pd.DataFrame, list[str]]:
                     date = _parse_date(text)
                     amount = _parse_amount(text)
                     if date and amount is not None:
-                        # Description: everything between date and amount
-                        desc = re.sub(_AMOUNT_PATTERN, '', text)
-                        desc = re.sub(r'\d{1,2}/\d{1,2}/\d{2,4}', '', desc).strip()
-                        rows.append({'Date': date, 'Description': desc, 'Amount': amount})
+                        rows.append({'Date': date, 'Description': _clean_description(text), 'Amount': amount})
 
             # Fallback: line-by-line text parse
             if not tables:
@@ -107,9 +110,7 @@ def extract_from_pdf(file_bytes: bytes) -> tuple[pd.DataFrame, list[str]]:
                     date = _parse_date(line)
                     amount = _parse_amount(line)
                     if date and amount is not None:
-                        desc = re.sub(_AMOUNT_PATTERN, '', line)
-                        desc = re.sub(r'\d{1,2}/\d{1,2}/\d{2,4}', '', desc).strip()
-                        rows.append({'Date': date, 'Description': desc, 'Amount': amount})
+                        rows.append({'Date': date, 'Description': _clean_description(line), 'Amount': amount})
 
     if not rows:
         warnings.append("No transactions detected. The PDF may be scanned (image-based). Try the image OCR path.")

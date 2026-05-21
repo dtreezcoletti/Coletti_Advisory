@@ -5,6 +5,7 @@ fuzzy classification, and enhanced subpoena generation.
 """
 
 import re
+from collections import deque
 from datetime import datetime, timedelta
 from io import BytesIO
 
@@ -356,11 +357,11 @@ def cluster_entity_aliases(descriptions: list, threshold: int = 75) -> dict[str,
     if not FUZZY_AVAILABLE:
         return {}
 
-    remaining = list(set(descriptions))
+    remaining = deque(set(descriptions))
     clusters: dict[str, list] = {}
 
     while remaining:
-        seed = remaining.pop(0)
+        seed = remaining.popleft()
         cluster = [seed]
         still_remaining = []
         for candidate in remaining:
