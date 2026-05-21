@@ -102,6 +102,12 @@ if "adv_config" not in st.session_state:
         "enable_structuring": True,
         "structuring_window": 7,
         "structuring_threshold": 10000.0,
+        "entity_config": {
+            "card_endings": {},
+            "geographic_rules": {},
+            "behavioral_tags": {},
+            "p2p_identifiers": {},
+        },
     }
 
 
@@ -1073,6 +1079,82 @@ elif page == "Transaction Import":
 
     st.divider()
 
+    # ── Entity Attribution Config ─────────────────────────────────────────────
+    st.markdown("### 🎯 Entity Attribution Engine")
+    st.caption("Tag transactions to specific individuals using 4 mechanical proof methods.")
+
+    ec = cfg.setdefault("entity_config", {"card_endings": {}, "geographic_rules": {}, "behavioral_tags": {}, "p2p_identifiers": {}})
+
+    ea_col1, ea_col2 = st.columns(2)
+
+    with ea_col1:
+        with st.expander("① Card Ending Filter — Definitive Proof", expanded=True):
+            st.caption("Each physical debit card has unique last-4 digits. Any POS swipe is mechanically attributed to the cardholder.")
+            card_raw = st.text_area(
+                "card_ending → Entity (one per line, e.g. `5431 → Robert`)",
+                "\n".join(f"{k} → {v}" for k, v in ec.get("card_endings", {}).items()) or "5431 → Robert",
+                height=90, key="card_raw",
+            )
+            ec["card_endings"] = {}
+            for line in card_raw.splitlines():
+                if "→" in line:
+                    k, _, v = line.partition("→")
+                    k, v = k.strip(), v.strip()
+                    if k and v:
+                        ec["card_endings"][k] = v
+
+        with st.expander("③ Behavioral Vendor Tagging — Spending Baseline", expanded=True):
+            st.caption("Merchants exclusive to one party's lifestyle: kennel fees, specific streaming, auto shops, etc.")
+            beh_raw = st.text_area(
+                "keyword → Entity (one per line, e.g. `kennel → Robert`)",
+                "\n".join(f"{k} → {v}" for k, v in ec.get("behavioral_tags", {}).items())
+                or "kennel → Robert\npetco → Robert\npetsmart → Robert",
+                height=120, key="beh_raw",
+            )
+            ec["behavioral_tags"] = {}
+            for line in beh_raw.splitlines():
+                if "→" in line:
+                    k, _, v = line.partition("→")
+                    k, v = k.strip(), v.strip()
+                    if k and v:
+                        ec["behavioral_tags"][k] = v
+
+    with ea_col2:
+        with st.expander("② Geographic Isolation — Tour Bus Advantage", expanded=True):
+            st.caption("Transactions in states where one party was physically present (e.g. Robert on tour) can't belong to the other.")
+            geo_raw = st.text_area(
+                "Entity → locations (one per line, e.g. `Robert → Ohio`)",
+                "\n".join(f"{entity} → {loc}" for entity, locs in ec.get("geographic_rules", {}).items() for loc in locs)
+                or "Robert → Ohio\nRobert → Florida\nRobert → California\nPetitioner → Tennessee\nPetitioner → Texas",
+                height=120, key="geo_raw",
+            )
+            geo_map: dict = {}
+            for line in geo_raw.splitlines():
+                if "→" in line:
+                    entity_name, _, loc = line.partition("→")
+                    entity_name, loc = entity_name.strip(), loc.strip()
+                    if entity_name and loc:
+                        geo_map.setdefault(entity_name, []).append(loc)
+            ec["geographic_rules"] = geo_map
+
+        with st.expander("④ P2P Transfer Tracing — Digital Wallet Diversion", expanded=True):
+            st.caption("Venmo handles, CashApp tags, and phone numbers in transfer descriptions reveal the recipient.")
+            p2p_raw = st.text_area(
+                "identifier → Entity (one per line, e.g. `cashapp*robert → Robert`)",
+                "\n".join(f"{k} → {v}" for k, v in ec.get("p2p_identifiers", {}).items())
+                or "cashapp*robert → Robert\nvenmo*robert → Robert",
+                height=90, key="p2p_raw",
+            )
+            ec["p2p_identifiers"] = {}
+            for line in p2p_raw.splitlines():
+                if "→" in line:
+                    k, _, v = line.partition("→")
+                    k, v = k.strip(), v.strip()
+                    if k and v:
+                        ec["p2p_identifiers"][k] = v
+
+    st.divider()
+
     if tx_file is not None:
         raw_df = pd.read_csv(tx_file)
     else:
@@ -1093,7 +1175,10 @@ elif page == "Transaction Import":
 
     if st.button("▶ Process Transactions", type="primary", use_container_width=True):
         with st.spinner("Classifying and analyzing..."):
-            tx_norm = normalize_transactions_v2(raw_df, cfg["known_accounts"], cfg["known_vendors"])
+            tx_norm = normalize_transactions_v2(
+                raw_df, cfg["known_accounts"], cfg["known_vendors"],
+                entity_config=cfg.get("entity_config"),
+            )
 
             aff_ts  = pd.Timestamp(cfg["affidavit_date"])
             hear_ts = pd.Timestamp(cfg["hearing_date"])
@@ -1217,6 +1302,32 @@ elif page == "Advanced Detection":
         st.dataframe(crypto_txns[["Date", "Description", "Amount", "Crypto_Indicators"]], use_container_width=True)
     else:
         st.success("No cryptocurrency activity detected.")
+
+    st.divider()
+
+    st.subheader("🎯 Entity Attribution")
+    if "Entity" in tx_filt.columns:
+        attributed = tx_filt[tx_filt["Entity"].notna()]
+        if len(attributed) > 0:
+            # Per-entity summary
+            by_entity = attributed.groupby("Entity").agg(
+                Transactions=("Amount", "count"),
+                Total_Amount=("Amount", "sum"),
+            ).reset_index()
+            st.dataframe(by_entity, use_container_width=True)
+
+            # Method breakdown
+            for entity in attributed["Entity"].unique():
+                ent_df = attributed[attributed["Entity"] == entity]
+                with st.expander(f"**{entity}** — {len(ent_df)} transactions  |  ${ent_df['Amount'].sum():,.2f}"):
+                    st.dataframe(
+                        ent_df[["Date", "Description", "Amount", "Category", "Entity_Method", "Entity_Confidence"]],
+                        use_container_width=True,
+                    )
+        else:
+            st.info("No transactions attributed yet. Configure entity rules in Transaction Import.")
+    else:
+        st.info("Re-process transactions to enable entity attribution.")
 
 
 # ════════════════════════════════════════════════════════════════════════════

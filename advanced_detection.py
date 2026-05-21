@@ -55,6 +55,79 @@ def extract_crypto_indicators(text: str) -> list:
     return [kw for kw in keywords if kw in tl]
 
 
+def extract_card_ending(text: str) -> str | None:
+    """Extract the 4-digit card ending from a POS transaction description.
+    Handles formats like: 'POS DEBIT 4582 WALMART', 'XXXX-4582', 'CARD ENDING 4582'.
+    """
+    if not text:
+        return None
+    patterns = [
+        r'(?:pos|debit|card|visa|mc|ending|xxxx[-\s]?)(\d{4})\b',
+        r'\b(\d{4})\s+(?:pos|visa|mc|purchase|debit)\b',
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, text, re.IGNORECASE)
+        if m:
+            return m.group(1)
+    return None
+
+
+def attribute_entity(description: str, entity_config: dict) -> dict:
+    """
+    Attribute a transaction to a named entity using 4 cascading methods:
+      1. Card ending filter  — Definitive (mechanical proof)
+      2. P2P identifier      — High (specific handle/phone)
+      3. Geographic isolation — High (location in description)
+      4. Behavioral tagging  — High (vendor keyword)
+    Returns the first match in priority order.
+    """
+    result = {"entity": None, "entity_method": None, "entity_confidence": None}
+    if not entity_config:
+        return result
+
+    d_lower = str(description or "").lower()
+
+    # 1. Card ending — most definitive
+    card_map = entity_config.get("card_endings", {})
+    card = extract_card_ending(description)
+    if card and card in card_map:
+        return {
+            "entity": card_map[card],
+            "entity_method": f"Card ×{card}",
+            "entity_confidence": "Definitive",
+        }
+
+    # 2. P2P identifier — specific handle or phone in description
+    for identifier, entity in entity_config.get("p2p_identifiers", {}).items():
+        if identifier.lower() in d_lower:
+            return {
+                "entity": entity,
+                "entity_method": f"P2P: {identifier}",
+                "entity_confidence": "High",
+            }
+
+    # 3. Geographic isolation — location keyword in description
+    for entity, locations in entity_config.get("geographic_rules", {}).items():
+        for loc in locations:
+            if loc.lower() in d_lower:
+                return {
+                    "entity": entity,
+                    "entity_method": f"Geographic: {loc}",
+                    "entity_confidence": "High",
+                }
+
+    # 4. Behavioral tagging — merchant/vendor keyword
+    for keyword, entity in entity_config.get("behavioral_tags", {}).items():
+        if keyword.lower() in d_lower:
+            return {
+                "entity": entity,
+                "entity_method": f"Behavioral: {keyword}",
+                "entity_confidence": "High",
+            }
+
+    return result
+
+
 def fuzzy_classify_vendor(description: str, known_vendors: list, threshold: int = 80) -> tuple:
     if not FUZZY_AVAILABLE or not description or not known_vendors:
         return None, 0
@@ -65,11 +138,13 @@ def fuzzy_classify_vendor(description: str, known_vendors: list, threshold: int 
 
 
 def classify_txn_v2(description: str, amount: float = 0.0,
-                    known_accounts: list = None, known_vendors: list = None) -> dict:
+                    known_accounts: list = None, known_vendors: list = None,
+                    entity_config: dict = None) -> dict:
     d = str(description or "").lower()
     amt = float(amount or 0.0)
     accounts = extract_account_numbers(description)
     crypto_signals = extract_crypto_indicators(description)
+    entity_attr = attribute_entity(description, entity_config or {})
 
     result = {
         "category": "OTHER",
@@ -79,6 +154,9 @@ def classify_txn_v2(description: str, amount: float = 0.0,
         "crypto_indicators": crypto_signals,
         "fuzzy_vendor": None,
         "fuzzy_score": 0,
+        "entity": entity_attr["entity"],
+        "entity_method": entity_attr["entity_method"],
+        "entity_confidence": entity_attr["entity_confidence"],
     }
 
     if crypto_signals:
@@ -139,7 +217,8 @@ def classify_txn_v2(description: str, amount: float = 0.0,
 
 
 def normalize_transactions_v2(df: pd.DataFrame, known_accounts: list = None,
-                               known_vendors: list = None) -> pd.DataFrame:
+                               known_vendors: list = None,
+                               entity_config: dict = None) -> pd.DataFrame:
     df = df.copy()
     for c in ["Strategic_Risk", "Source_Bank", "Statement_Period", "Statement_Page", "Line_Item", "To_Account"]:
         if c not in df.columns:
@@ -149,17 +228,21 @@ def normalize_transactions_v2(df: pd.DataFrame, known_accounts: list = None,
     df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce")
 
     classifications = df.apply(
-        lambda r: pd.Series(classify_txn_v2(r["Description"], r["Amount"], known_accounts, known_vendors)),
+        lambda r: pd.Series(classify_txn_v2(r["Description"], r["Amount"],
+                                            known_accounts, known_vendors, entity_config)),
         axis=1,
     )
 
-    df["Category"]          = classifications["category"]
-    df["Confidence"]        = classifications["confidence"]
-    df["Rule_Triggered"]    = classifications["rule"]
+    df["Category"]           = classifications["category"]
+    df["Confidence"]         = classifications["confidence"]
+    df["Rule_Triggered"]     = classifications["rule"]
     df["Extracted_Accounts"] = classifications["extracted_accounts"]
-    df["Crypto_Indicators"] = classifications["crypto_indicators"]
-    df["Fuzzy_Vendor"]      = classifications["fuzzy_vendor"]
-    df["Fuzzy_Score"]       = classifications["fuzzy_score"]
+    df["Crypto_Indicators"]  = classifications["crypto_indicators"]
+    df["Fuzzy_Vendor"]       = classifications["fuzzy_vendor"]
+    df["Fuzzy_Score"]        = classifications["fuzzy_score"]
+    df["Entity"]             = classifications["entity"]
+    df["Entity_Method"]      = classifications["entity_method"]
+    df["Entity_Confidence"]  = classifications["entity_confidence"]
 
     df["Is_Amount_Known"] = df["Amount"].notna()
     df["Amount_Bin"] = pd.cut(
@@ -392,4 +475,11 @@ def make_packet_excel_v2(ex_a, ex_b, ex_c, ex_d, raw,
             ).to_excel(writer, index=False, sheet_name="Velocity Analysis")
         if structuring_summary is not None and len(structuring_summary) > 0:
             structuring_summary.to_excel(writer, index=False, sheet_name="Structuring Detected")
+        # Entity attribution sheet — only rows that were attributed
+        if "Entity" in raw.columns:
+            attributed = raw[raw["Entity"].notna()][
+                ["Date", "Description", "Amount", "Category", "Entity", "Entity_Method", "Entity_Confidence"]
+            ]
+            if len(attributed) > 0:
+                attributed.to_excel(writer, index=False, sheet_name="Entity Attribution")
     return output.getvalue()
