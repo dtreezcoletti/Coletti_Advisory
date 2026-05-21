@@ -1,923 +1,717 @@
-# COLETTI OS v2.6.0 - ELITE FORENSIC LITIGATION SUITE
-# ACC (Coletti & Co.) | Case Reference: 24D1003
-#
-# Modules:
-# 1. OCR Evidence Intake: TRANSCRIPT + FINANCIAL
-# 2. Evidence Chain-of-Custody Engine
-# 3. Court-Safe Translation Layer
-# 4. Dynamic Financial Reconstruction Engine
-# 5. Procedural Litigation Dashboard
-#
-# Court-safe design:
-# - Uses detected / possible / review needed / subject to proof.
-# - Avoids unsupported fraud, motive, or intent conclusions.
-# - Treats calculations as working forensic estimates pending source verification.
+"""
+Coletti OS v2.0 — Core Data Framework
+"""
 
-import os
-import re
 import json
-import hashlib
-from pathlib import Path
-from datetime import datetime, date
-from dataclasses import dataclass, asdict
-
-import cv2
-import pytesseract
-import pandas as pd
-import numpy as np
+from datetime import datetime, date, timedelta
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional
+from enum import Enum
 
 
-TESSERACT_PATH = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-IMAGE_FOLDER = "./evidence_images"
-OUTPUT_FOLDER = "./coletti_os_exports"
+class ThreatLevel(Enum):
+    LOW = "Monitoring"
+    ELEVATED = "Active Defense Required"
+    CRITICAL = "Immediate Tactical Execution"
+    CONTAINED = "Asset/Advantage Secured"
 
 
-@dataclass
-class EvidenceRecord:
-    evidence_id: str
-    case_number: str
-    source_file: str
-    sha256: str
-    imported_at_utc: str
-    file_size_bytes: int
-    file_extension: str
-    module: str
-    review_status: str = "Preserved in custody ledger; verify against original before court use"
+class ProjectPhase(Enum):
+    DRAFTING = "Blueprint & Drafting"
+    ACTIVE = "Live Operations"
+    ARCHIVED = "Completed/Archived"
 
+
+# ── Forensic Accounting ───────────────────────────────────────────────────────
 
 @dataclass
-class LitigationEvent:
-    event_id: str
-    title: str
-    event_date: str
+class Transaction:
+    effective_date: str
+    amount: float
+    description: str
     category: str
-    rule_or_basis: str = ""
-    status: str = "Active"
-    notes: str = ""
-    priority: str = "Medium"
+    is_marital_dissipation: bool = False
+    balance_after: float = 0.0
+
+    def to_dict(self) -> dict:
+        return {
+            "effective_date": self.effective_date,
+            "amount": self.amount,
+            "description": self.description,
+            "category": self.category,
+            "is_marital_dissipation": self.is_marital_dissipation,
+            "balance_after": self.balance_after,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Transaction":
+        return cls(**d)
 
 
 @dataclass
-class FinancialObservation:
-    source: str
-    observation_date: str
-    observed_monthly_net: float = np.nan
-    observed_gross: float = np.nan
-    ytd_income: float = np.nan
-    employer_or_source: str = ""
-    notes: str = ""
-    confidence: str = "Review Needed"
+class ForensicLedger:
+    institution: str
+    target_account: str
+    known_balance: float
+    transactions: List[Transaction] = field(default_factory=list)
+
+    def calculate_dissipation(self) -> float:
+        return sum(t.amount for t in self.transactions if t.is_marital_dissipation)
+
+    def calculate_total(self) -> float:
+        return sum(t.amount for t in self.transactions)
+
+    def dissipation_rate(self) -> float:
+        total = self.calculate_total()
+        return (self.calculate_dissipation() / total * 100) if total else 0.0
 
 
-class ColettiOSCore:
-    def __init__(self):
-        self.system_id = "ColettiOS_v2.6.0_ELITE_PROD"
-        self.case_number = "24D1003"
-        self.case_name = "Coletti-Brown v. Brown"
-        self.attribution = "ACC (Coletti & Co.)"
+# ── Litigation Command ────────────────────────────────────────────────────────
 
-        if Path(TESSERACT_PATH).exists():
-            pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
+@dataclass
+class LegalMotion:
+    title: str
+    date_filed: str          # ISO string for serialisation simplicity
+    hearing_date: Optional[str]
+    status: str
+    strategic_objective: str
 
-        Path(IMAGE_FOLDER).mkdir(parents=True, exist_ok=True)
-        Path(OUTPUT_FOLDER).mkdir(parents=True, exist_ok=True)
-
-        self.sworn_monthly_net = 4389.80
-        self.verified_monthly_net = 9983.18
-        self.tracking_months = 22
-        self.sequestered_hard_assets = 205642.80
-        self.coletti_co_lifetime_net = 23011.04
-
-        self.evidence_ledger = []
-        self.litigation_events = []
-        self.financial_observations = []
-
-    # -------------------------------------------------------------------------
-    # OCR EVIDENCE INTAKE
-    # -------------------------------------------------------------------------
-
-    def process_ocr_batch(self, mode="TRANSCRIPT"):
-        mode = mode.upper().strip()
-        target_dir = Path(IMAGE_FOLDER)
-
-        valid_exts = [".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"]
-        image_files = [f for f in target_dir.iterdir() if f.suffix.lower() in valid_exts]
-
-        if not image_files:
-            print(f"[INFO] No images found in {IMAGE_FOLDER}.")
-            return pd.DataFrame()
-
-        parsed_records = []
-
-        for img_file in sorted(image_files):
-            evidence_record = self.register_evidence_file(img_file, module=f"OCR_{mode}")
-            raw_text = self._ocr_image(img_file)
-
-            if not raw_text.strip():
-                parsed_records.append({
-                    "Case": self.case_number,
-                    "Mode": mode,
-                    "Evidence_ID": evidence_record.evidence_id,
-                    "File": img_file.name,
-                    "Line_No": None,
-                    "Observed_Text": "",
-                    "Review_Status": "OCR did not detect text; manual review needed"
-                })
-                continue
-
-            if mode == "TRANSCRIPT":
-                parsed_records.extend(
-                    self._parse_transcript_text(raw_text, img_file.name, evidence_record.evidence_id)
-                )
-            elif mode == "FINANCIAL":
-                parsed_records.extend(
-                    self._parse_financial_text(raw_text, img_file.name, evidence_record.evidence_id)
-                )
-            else:
-                raise ValueError("Unsupported mode. Use mode='TRANSCRIPT' or mode='FINANCIAL'.")
-
-        df = pd.DataFrame(parsed_records)
-
-        csv_path = Path(OUTPUT_FOLDER) / f"Court_Ready_{mode}_Export.csv"
-        json_path = Path(OUTPUT_FOLDER) / f"Court_Ready_{mode}_Export.json"
-
-        df.to_csv(csv_path, index=False)
-        df.to_json(json_path, orient="records", indent=2)
-
-        print(f"[SUCCESS] Flattened {len(df)} records into:")
-        print(f"  - {csv_path}")
-        print(f"  - {json_path}")
-
-        if mode == "FINANCIAL":
-            self.generate_financial_summary(df)
-
-        self.export_evidence_ledger()
-
-        return df
-
-    def _ocr_image(self, img_file: Path) -> str:
-        img = cv2.imread(str(img_file))
-        if img is None:
-            return ""
-
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-        height, width = gray.shape[:2]
-        if width < 1200:
-            scale = 1200 / max(width, 1)
-            gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-
-        gray = cv2.medianBlur(gray, 3)
-        thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-
-        return pytesseract.image_to_string(thresh, config=r"--oem 3 --psm 6")
-
-    def _parse_transcript_text(self, text: str, filename: str, evidence_id: str):
-        records = []
-        time_pattern = r"\b((1[0-2]|0?[1-9]):([0-5][0-9])\s*([AaPp][Mm]))\b"
-
-        for line_no, line in enumerate(text.splitlines(), start=1):
-            clean = self._clean_line(line)
-            if not clean:
-                continue
-
-            time_match = re.search(time_pattern, clean)
-            timestamp = time_match.group(0) if time_match else "Unknown"
-            msg = clean.replace(timestamp, "").strip()
-
-            if len(msg) > 4 and not any(n in msg for n in ["4G", "LTE", "Wi-Fi", "5G"]):
-                records.append({
-                    "Case": self.case_number,
-                    "Mode": "TRANSCRIPT",
-                    "Evidence_ID": evidence_id,
-                    "File": filename,
-                    "Line_No": line_no,
-                    "Timestamp": timestamp,
-                    "Data": msg,
-                    "Court_Safe_Summary": self.translate_to_court_safe(msg, mode="Timeline"),
-                    "Review_Status": "OCR extracted; verify against original image"
-                })
-
-        return records
-
-    def _parse_financial_text(self, text: str, filename: str, evidence_id: str):
-        records = []
-        doc_type = self._classify_financial_document(text)
-        detected_periods = self._extract_dates(text)
-
-        for line_no, line in enumerate(text.splitlines(), start=1):
-            clean = self._clean_line(line)
-            if not clean:
-                continue
-
-            money_values = self._extract_money_values(clean)
-            date_values = self._extract_dates(clean)
-            field_type = self._classify_financial_field(clean)
-            confidence = self._confidence_score(clean, money_values, field_type, doc_type)
-
-            if money_values or field_type != "Unclassified" or date_values:
-                records.append({
-                    "Case": self.case_number,
-                    "Mode": "FINANCIAL",
-                    "Evidence_ID": evidence_id,
-                    "File": filename,
-                    "Line_No": line_no,
-                    "Document_Type_Detected": doc_type,
-                    "Field_Type_Detected": field_type,
-                    "Observed_Text": clean,
-                    "Court_Safe_Summary": self.translate_to_court_safe(clean, mode="Judge"),
-                    "Money_Values": "; ".join([f"${v:,.2f}" for v in money_values]),
-                    "Primary_Amount": money_values[0] if money_values else np.nan,
-                    "Date_Values": "; ".join(date_values),
-                    "Document_Periods_Found": "; ".join(detected_periods),
-                    "Confidence": confidence,
-                    "Review_Status": self._review_status(confidence)
-                })
-
-        if not records:
-            records.append({
-                "Case": self.case_number,
-                "Mode": "FINANCIAL",
-                "Evidence_ID": evidence_id,
-                "File": filename,
-                "Line_No": None,
-                "Document_Type_Detected": doc_type,
-                "Field_Type_Detected": "No structured financial fields detected",
-                "Observed_Text": text[:500].replace("\n", " "),
-                "Court_Safe_Summary": "The document requires manual review because OCR did not detect reliable structured financial fields.",
-                "Money_Values": "",
-                "Primary_Amount": np.nan,
-                "Date_Values": "; ".join(detected_periods),
-                "Document_Periods_Found": "; ".join(detected_periods),
-                "Confidence": "Low",
-                "Review_Status": "Manual review needed"
-            })
-
-        return records
-
-    # -------------------------------------------------------------------------
-    # EVIDENTIARY CHAIN-OF-CUSTODY ENGINE
-    # -------------------------------------------------------------------------
-
-    def register_evidence_file(self, file_path, module="Manual"):
-        file_path = Path(file_path)
-        sha = self._sha256_file(file_path)
-        imported_at = datetime.utcnow().isoformat() + "Z"
-        evidence_id = self._generate_evidence_id(file_path, sha)
-
-        record = EvidenceRecord(
-            evidence_id=evidence_id,
-            case_number=self.case_number,
-            source_file=file_path.name,
-            sha256=sha,
-            imported_at_utc=imported_at,
-            file_size_bytes=file_path.stat().st_size if file_path.exists() else 0,
-            file_extension=file_path.suffix.lower(),
-            module=module
-        )
-
-        self.evidence_ledger.append(record)
-        return record
-
-    def _sha256_file(self, file_path: Path):
-        h = hashlib.sha256()
-        with open(file_path, "rb") as f:
-            for block in iter(lambda: f.read(1024 * 1024), b""):
-                h.update(block)
-        return h.hexdigest()
-
-    def _generate_evidence_id(self, file_path: Path, sha: str):
-        base = file_path.stem[:12].upper().replace(" ", "_")
-        return f"EXH-{datetime.utcnow().strftime('%Y%m%d')}-{base}-{sha[:8]}"
-
-    def export_evidence_ledger(self):
-        if not self.evidence_ledger:
-            return pd.DataFrame()
-
-        df = pd.DataFrame([asdict(r) for r in self.evidence_ledger])
-        path = Path(OUTPUT_FOLDER) / "Evidence_Chain_of_Custody_Ledger.csv"
-        json_path = Path(OUTPUT_FOLDER) / "Evidence_Chain_of_Custody_Ledger.json"
-
-        df.to_csv(path, index=False)
-        df.to_json(json_path, orient="records", indent=2)
-
-        print("[SUCCESS] Evidence custody ledger exported:")
-        print(f"  - {path}")
-        print(f"  - {json_path}")
-
-        return df
-
-    # -------------------------------------------------------------------------
-    # COURT-SAFE TRANSLATION LAYER
-    # -------------------------------------------------------------------------
-
-    def translate_to_court_safe(self, raw_statement: str, mode="Judge"):
-        if not raw_statement:
-            return ""
-
-        text = raw_statement.strip()
-
-        replacements = {
-            r"\bfraud\b": "material discrepancy",
-            r"\bfraudulent\b": "materially inconsistent",
-            r"\blie\b": "inconsistent statement",
-            r"\blied\b": "made a statement that appears inconsistent with the record",
-            r"\bperjury\b": "sworn statement requiring judicial review",
-            r"\bhidden\b": "not yet verified or disclosed",
-            r"\bhiding\b": "not yet verified or disclosed",
-            r"\bstole\b": "retained or transferred value requiring verification",
-            r"\btheft\b": "asset transfer issue requiring verification",
-            r"\babuse\b": "coercive or destabilizing conduct alleged",
-            r"\bfinancial abuse\b": "financial instability and control-related concerns",
-            r"\bstrangled\b": "substantially restricted",
-            r"\bdestroyed\b": "materially impaired",
-            r"\bweaponized\b": "used in a manner that affected litigation stability",
-            r"\bpunish\b": "impose consequences authorized by rule or statute",
-            r"\bcareer threat\b": "professional-conduct issue requiring review",
-            r"\bpanic\b": "time-sensitive procedural response",
-            r"\bcornered\b": "procedurally constrained",
-            r"\bdead to rights\b": "subject to evidentiary challenge",
-            r"\bslam dunk\b": "strong record-supported argument",
-            r"\bnuclear\b": "significant procedural remedy",
+    def to_dict(self) -> dict:
+        return {
+            "title": self.title,
+            "date_filed": self.date_filed,
+            "hearing_date": self.hearing_date,
+            "status": self.status,
+            "strategic_objective": self.strategic_objective,
         }
 
-        safe = text
-        for pattern, replacement in replacements.items():
-            safe = re.sub(pattern, replacement, safe, flags=re.IGNORECASE)
-
-        safe = re.sub(r"!+", ".", safe)
-        safe = re.sub(r"\s+", " ", safe).strip()
-
-        mode_lower = mode.lower()
-
-        if mode_lower == "judge":
-            return (
-                "Petitioner respectfully submits that the record reflects the following issue "
-                f"requiring review: {safe}"
-            )
-
-        if mode_lower == "settlement":
-            return (
-                "For settlement purposes only, this issue is framed as a documented risk requiring "
-                f"resolution: {safe}"
-            )
-
-        if mode_lower == "advisory":
-            return (
-                "Operational risk indicator: "
-                f"{safe}. Recommended action: verify source documents and preserve the record."
-            )
-
-        if mode_lower == "timeline":
-            return f"Record note: {safe}"
-
-        return safe
-
-    def translate_batch_to_court_safe(self, statements, mode="Judge"):
-        rows = []
-        for idx, statement in enumerate(statements, start=1):
-            rows.append({
-                "Item": idx,
-                "Raw_Statement": statement,
-                "Mode": mode,
-                "Court_Safe_Output": self.translate_to_court_safe(statement, mode=mode)
-            })
-
-        df = pd.DataFrame(rows)
-        path = Path(OUTPUT_FOLDER) / f"Court_Safe_Translation_{mode}.csv"
-        df.to_csv(path, index=False)
-
-        print(f"[SUCCESS] Court-safe translation exported to {path}")
-        return df
-
-    # -------------------------------------------------------------------------
-    # DYNAMIC FINANCIAL RECONSTRUCTION ENGINE
-    # -------------------------------------------------------------------------
-
-    def add_financial_observation(
-        self,
-        source,
-        observation_date,
-        observed_monthly_net=np.nan,
-        observed_gross=np.nan,
-        ytd_income=np.nan,
-        employer_or_source="",
-        notes="",
-        confidence="Review Needed"
-    ):
-        obs = FinancialObservation(
-            source=source,
-            observation_date=observation_date,
-            observed_monthly_net=float(observed_monthly_net) if not pd.isna(observed_monthly_net) else np.nan,
-            observed_gross=float(observed_gross) if not pd.isna(observed_gross) else np.nan,
-            ytd_income=float(ytd_income) if not pd.isna(ytd_income) else np.nan,
-            employer_or_source=employer_or_source,
-            notes=notes,
-            confidence=confidence
-        )
-        self.financial_observations.append(obs)
-        return obs
-
-    def reconstruct_financial_position(self):
-        observations_df = pd.DataFrame([asdict(o) for o in self.financial_observations])
-
-        if observations_df.empty:
-            observed_avg_net = self.verified_monthly_net
-            observed_avg_gross = np.nan
-            confidence = "Baseline Constants Only"
-        else:
-            observed_avg_net = observations_df["observed_monthly_net"].dropna().mean()
-            observed_avg_gross = observations_df["observed_gross"].dropna().mean()
-
-            if pd.isna(observed_avg_net):
-                observed_avg_net = self.verified_monthly_net
-
-            confidence = self._financial_confidence_from_observations(observations_df)
-
-        monthly_delta = observed_avg_net - self.sworn_monthly_net
-        percent_variance = (monthly_delta / self.sworn_monthly_net) * 100 if self.sworn_monthly_net else np.nan
-        total_cash_variance = monthly_delta * self.tracking_months
-        total_capital_at_issue = total_cash_variance + self.sequestered_hard_assets
-
-        reconstruction = {
-            "system_id": self.system_id,
-            "case_number": self.case_number,
-            "sworn_monthly_net": self.sworn_monthly_net,
-            "observed_average_monthly_net": observed_avg_net,
-            "observed_average_gross": observed_avg_gross,
-            "monthly_net_delta": monthly_delta,
-            "percent_variance_from_sworn_net": percent_variance,
-            "tracking_months": self.tracking_months,
-            "tracking_period_cash_variance": total_cash_variance,
-            "sequestered_hard_assets": self.sequestered_hard_assets,
-            "total_capital_at_issue_working_estimate": total_capital_at_issue,
-            "confidence": confidence,
-            "court_safe_summary": (
-                "The working reconstruction identifies a variance between the sworn monthly net figure "
-                "and observed or verified monthly income indicators. The calculation should be treated as "
-                "subject to proof and source-document verification."
-            )
-        }
-
-        path = Path(OUTPUT_FOLDER) / "Dynamic_Financial_Reconstruction.json"
-        path.write_text(json.dumps(reconstruction, indent=2), encoding="utf-8")
-
-        rows_path = Path(OUTPUT_FOLDER) / "Financial_Observations.csv"
-        observations_df.to_csv(rows_path, index=False)
-
-        print("[SUCCESS] Dynamic financial reconstruction exported:")
-        print(f"  - {path}")
-        print(f"  - {rows_path}")
-
-        return reconstruction
-
-    def _financial_confidence_from_observations(self, df):
-        count_net = df["observed_monthly_net"].dropna().shape[0]
-        count_gross = df["observed_gross"].dropna().shape[0]
-        count_ytd = df["ytd_income"].dropna().shape[0]
-
-        score = count_net * 2 + count_gross + count_ytd
-
-        if score >= 6:
-            return "High - Multiple Observations"
-        if score >= 3:
-            return "Medium - Some Observations"
-        return "Low - Limited Observations"
-
-    def generate_variance_table(self):
-        reconstruction = self.reconstruct_financial_position()
-
-        rows = [
-            ["Sworn Monthly Net", reconstruction["sworn_monthly_net"]],
-            ["Observed Average Monthly Net", reconstruction["observed_average_monthly_net"]],
-            ["Monthly Net Delta", reconstruction["monthly_net_delta"]],
-            ["Percent Variance from Sworn Net", reconstruction["percent_variance_from_sworn_net"]],
-            [f"{self.tracking_months}-Month Cash Variance", reconstruction["tracking_period_cash_variance"]],
-            ["Sequestered / Hard Assets at Issue", reconstruction["sequestered_hard_assets"]],
-            ["Total Capital at Issue - Working Estimate", reconstruction["total_capital_at_issue_working_estimate"]],
-        ]
-
-        df = pd.DataFrame(rows, columns=["Metric", "Value"])
-        path = Path(OUTPUT_FOLDER) / "Financial_Variance_Table.csv"
-        df.to_csv(path, index=False)
-
-        print(f"[SUCCESS] Financial variance table exported to {path}")
-        return df
-
-    # -------------------------------------------------------------------------
-    # PROCEDURAL LITIGATION DASHBOARD
-    # -------------------------------------------------------------------------
-
-    def add_litigation_event(
-        self,
-        title,
-        event_date,
-        category,
-        rule_or_basis="",
-        status="Active",
-        notes="",
-        priority="Medium"
-    ):
-        event_id = f"EVT-{len(self.litigation_events) + 1:04d}"
-        event = LitigationEvent(
-            event_id=event_id,
-            title=title,
-            event_date=event_date,
-            category=category,
-            rule_or_basis=rule_or_basis,
-            status=status,
-            notes=notes,
-            priority=priority
-        )
-        self.litigation_events.append(event)
-        return event
-
-    def seed_case_24d1003_dashboard(self):
-        self.add_litigation_event(
-            title="Discovery response due date / production tracking",
-            event_date="2026-06-08",
-            category="Discovery",
-            rule_or_basis="Tenn. R. Civ. P. 26, 33, 34, 37",
-            notes="Track whether requested written discovery and production are acknowledged and answered.",
-            priority="High"
-        )
-
-        self.add_litigation_event(
-            title="Status conference",
-            event_date="2026-06-18",
-            category="Court Date",
-            rule_or_basis="Court scheduling / case management",
-            notes="Use as procedural checkpoint for discovery status, pending motions, and trial readiness.",
-            priority="High"
-        )
-
-        self.add_litigation_event(
-            title="Evidentiary hearing target window",
-            event_date="2026-06-26",
-            category="Hearing",
-            rule_or_basis="Support / equitable distribution / discovery compliance issues",
-            notes="Prepare exhibit list, financial variance table, custody ledger, and court-safe summaries.",
-            priority="High"
-        )
-
-        self.add_litigation_event(
-            title="Vehicle maintenance / stabilization issue",
-            event_date="2026-05-20",
-            category="Stabilization",
-            rule_or_basis="Tenn. Code Ann. Section 36-4-106(d); marital property preservation",
-            notes="Track registration, maintenance, insurance, inspection, and repair status.",
-            priority="Medium"
-        )
-
-        self.add_litigation_event(
-            title="Service animal / kennel-related expenditure tracking",
-            event_date="2026-05-20",
-            category="Injunction / Property / Animal Care",
-            rule_or_basis="Tenn. Code Ann. Section 36-4-106(d)",
-            notes="Track alleged noncompliance period, kennel-related expenditures, and proof-of-condition requests.",
-            priority="Medium"
-        )
-
-    def generate_litigation_dashboard(self):
-        if not self.litigation_events:
-            self.seed_case_24d1003_dashboard()
-
-        today = date.today()
-        rows = []
-
-        for event in self.litigation_events:
-            try:
-                event_dt = datetime.strptime(event.event_date, "%Y-%m-%d").date()
-                days_until = (event_dt - today).days
-            except Exception:
-                days_until = None
-
-            risk_level = self._procedural_risk_level(days_until, event.priority, event.status)
-            next_action = self._next_action_for_event(event, days_until)
-
-            rows.append({
-                **asdict(event),
-                "days_until_or_since": days_until,
-                "risk_level": risk_level,
-                "recommended_next_action": next_action
-            })
-
-        df = pd.DataFrame(rows)
-        path = Path(OUTPUT_FOLDER) / "Procedural_Litigation_Dashboard.csv"
-        json_path = Path(OUTPUT_FOLDER) / "Procedural_Litigation_Dashboard.json"
-
-        df.to_csv(path, index=False)
-        df.to_json(json_path, orient="records", indent=2)
-
-        print("[SUCCESS] Procedural litigation dashboard exported:")
-        print(f"  - {path}")
-        print(f"  - {json_path}")
-
-        return df
-
-    def _procedural_risk_level(self, days_until, priority, status):
-        if status.lower() not in ["active", "pending", "open"]:
-            return "Low / Closed"
-
-        if days_until is None:
-            return "Review Needed"
-
-        if days_until < 0:
-            return "Past Due / Verify Status"
-
-        if days_until <= 7 and priority.lower() == "high":
-            return "Critical"
-
-        if days_until <= 14:
-            return "High"
-
-        if priority.lower() == "high":
-            return "Medium-High"
-
-        return "Medium"
-
-    def _next_action_for_event(self, event, days_until):
-        category = event.category.lower()
-
-        if days_until is not None and days_until < 0:
-            return "Verify whether the event occurred, whether an order was entered, and whether follow-up relief is needed."
-
-        if "discovery" in category:
-            return "Prepare deficiency table, service proof, requested relief, and proposed order."
-
-        if "hearing" in category or "court" in category:
-            return "Prepare exhibit index, financial variance table, custody ledger, and short bench summary."
-
-        if "vehicle" in event.title.lower() or "stabilization" in category:
-            return "Document current impairment, requested remedy, cost estimate, and connection to employment/self-stabilization."
-
-        if "animal" in event.title.lower() or "kennel" in event.notes.lower():
-            return "Update kennel-cost tracker, proof-of-condition request, and injunction compliance analysis."
-
-        return "Review status, preserve source documents, and identify next procedural filing or communication."
-
-    # -------------------------------------------------------------------------
-    # FINANCIAL OCR HELPERS
-    # -------------------------------------------------------------------------
-
-    def _classify_financial_document(self, text: str) -> str:
-        t = text.lower()
-
-        if any(k in t for k in ["w-2", "w2", "wage and tax statement", "box 1", "box 3", "box 5"]):
-            return "Possible W-2 / Wage and Tax Statement"
-
-        if any(k in t for k in ["1099-nec", "1099 nec", "nonemployee compensation", "payer", "recipient"]):
-            return "Possible 1099 / Nonemployee Compensation"
-
-        if any(k in t for k in ["paystub", "pay stub", "earnings statement", "gross pay", "net pay", "ytd", "year to date"]):
-            return "Possible Paystub / Earnings Statement"
-
-        if any(k in t for k in ["statement period", "beginning balance", "ending balance", "deposit", "withdrawal", "account number"]):
-            return "Possible Bank / Account Statement"
-
-        if any(k in t for k in ["form 1040", "tax return", "adjusted gross income", "taxable income"]):
-            return "Possible Tax Return"
-
-        if any(k in t for k in ["401k", "401(k)", "fidelity", "retirement", "vested balance", "plan balance"]):
-            return "Possible Retirement / 401(k) Record"
-
-        return "Financial Document - Type Review Needed"
-
-    def _classify_financial_field(self, line: str) -> str:
-        t = line.lower()
-
-        field_patterns = [
-            ("Gross Pay / Gross Income", ["gross pay", "gross income", "total gross", "gross earnings", "current gross"]),
-            ("Net Pay / Net Income", ["net pay", "net income", "take home", "net amount", "direct deposit"]),
-            ("Year-to-Date Income", ["ytd", "year to date", "year-to-date"]),
-            ("W-2 Wages", ["box 1", "wages tips", "wages, tips", "medicare wages", "social security wages"]),
-            ("1099 Nonemployee Compensation", ["nonemployee compensation", "1099-nec", "1099 nec"]),
-            ("Deposit / Credit", ["deposit", "credit", "ach credit", "direct dep", "direct deposit"]),
-            ("Withdrawal / Debit", ["withdrawal", "debit", "ach debit", "payment", "purchase"]),
-            ("Deduction / Withholding", ["deduction", "withholding", "federal tax", "fica", "medicare", "social security", "pre-tax", "pretax"]),
-            ("Employer / Payer", ["employer", "payer", "company", "dreamliner", "garrison", "lyons"]),
-            ("Account Balance", ["balance", "ending balance", "beginning balance", "available balance"]),
-            ("Retirement / 401(k)", ["401k", "401(k)", "retirement", "fidelity", "vested", "contribution"]),
-            ("Tax Return Field", ["adjusted gross income", "agi", "taxable income", "refund", "amount owed"]),
-            ("Document Date / Period", ["pay date", "period", "statement date", "for period", "check date"])
-        ]
-
-        for label, keys in field_patterns:
-            if any(k in t for k in keys):
-                return label
-
-        if self._extract_money_values(line):
-            return "Money Amount - Context Review Needed"
-
-        if self._extract_dates(line):
-            return "Date / Period - Context Review Needed"
-
-        return "Unclassified"
-
-    def _extract_money_values(self, line: str):
-        values = []
-
-        patterns = [
-            r"\$\s*\(?\d{1,3}(?:,\d{3})*(?:\.\d{2})?\)?",
-            r"\(?\b\d{1,3}(?:,\d{3})+\.\d{2}\b\)?",
-            r"\(?\b\d+\.\d{2}\b\)?"
-        ]
-
-        for pattern in patterns:
-            for match in re.findall(pattern, line):
-                raw = match.replace("$", "").replace(",", "").strip()
-                negative = raw.startswith("(") and raw.endswith(")")
-                raw = raw.replace("(", "").replace(")", "")
-
-                try:
-                    val = float(raw)
-                    if negative:
-                        val = -val
-                    if abs(val) >= 0.01:
-                        values.append(val)
-                except ValueError:
-                    pass
-
-        deduped = []
-        for value in values:
-            if value not in deduped:
-                deduped.append(value)
-
-        return deduped
-
-    def _extract_dates(self, text: str):
-        patterns = [
-            r"\b\d{1,2}/\d{1,2}/\d{2,4}\b",
-            r"\b\d{4}-\d{2}-\d{2}\b",
-            r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}\b"
-        ]
-
-        dates = []
-        for pattern in patterns:
-            dates.extend(re.findall(pattern, text, flags=re.IGNORECASE))
-
-        return list(dict.fromkeys(dates))
-
-    def _confidence_score(self, line: str, money_values: list, field_type: str, doc_type: str):
+    @classmethod
+    def from_dict(cls, d: dict) -> "LegalMotion":
+        return cls(**d)
+
+
+@dataclass
+class LitigationDocket:
+    case_number: str = "24D1003"
+    jurisdiction: str = "Fourth Circuit Court, Davidson County"
+    judge: str = "Hon. Stephanie J. Williams"
+    motions: List[LegalMotion] = field(default_factory=list)
+    active_subpoenas: List[str] = field(default_factory=list)
+    rule_36_days_default: int = 89
+
+    def evaluate_docket_leverage(self) -> int:
         score = 0
+        if self.rule_36_days_default > 30:
+            score += 100
+        score += len(self.active_subpoenas) * 20
+        return score
 
-        if money_values:
-            score += 2
-
-        if field_type not in ["Unclassified", "Money Amount - Context Review Needed", "Date / Period - Context Review Needed"]:
-            score += 2
-
-        if doc_type != "Financial Document - Type Review Needed":
-            score += 1
-
-        if len(line) >= 8:
-            score += 1
-
-        if score >= 5:
-            return "High"
-
-        if score >= 3:
-            return "Medium"
-
-        return "Low"
-
-    def _review_status(self, confidence: str):
-        if confidence == "High":
-            return "Detected; verify against source image before court use"
-
-        if confidence == "Medium":
-            return "Possible match; manual review recommended"
-
-        return "Manual review needed"
-
-    def _clean_line(self, line: str):
-        line = line.replace("\x0c", " ")
-        line = re.sub(r"\s+", " ", line).strip()
-        return line
-
-    # -------------------------------------------------------------------------
-    # REPORT EXPORTS
-    # -------------------------------------------------------------------------
-
-    def generate_financial_summary(self, df: pd.DataFrame):
-        if df.empty:
-            return pd.DataFrame()
-
-        summary = (
-            df.groupby(["File", "Document_Type_Detected", "Field_Type_Detected"], dropna=False)
-              .agg(
-                  Count=("Observed_Text", "count"),
-                  Total_Primary_Amount=("Primary_Amount", "sum"),
-                  Max_Primary_Amount=("Primary_Amount", "max")
-              )
-              .reset_index()
-        )
-
-        summary_path = Path(OUTPUT_FOLDER) / "Court_Ready_FINANCIAL_Summary.csv"
-        summary.to_csv(summary_path, index=False)
-
-        checklist_path = Path(OUTPUT_FOLDER) / "Court_Ready_FINANCIAL_Review_Checklist.txt"
-        lines = [
-            "COLETTI OS v2.6.0 - FINANCIAL OCR REVIEW CHECKLIST",
-            f"Generated: {datetime.utcnow().isoformat()} UTC",
-            f"Case: {self.case_number}",
-            "",
-            "Use this as an internal review checklist only.",
-            "Before filing or relying on any number, verify OCR output against the original document/image.",
-            "",
-            "Detected field groups:"
+    def next_hearing(self) -> Optional[str]:
+        future = [
+            m.hearing_date for m in self.motions
+            if m.hearing_date and m.hearing_date >= date.today().isoformat()
         ]
+        return min(future) if future else None
 
-        for _, row in summary.iterrows():
-            lines.append(
-                f"- {row['File']} | {row['Document_Type_Detected']} | "
-                f"{row['Field_Type_Detected']} | Count: {row['Count']} | "
-                f"Total observed primary amount: ${row['Total_Primary_Amount']:,.2f}"
-            )
 
-        checklist_path.write_text("\n".join(lines), encoding="utf-8")
+# ── Enterprise Management ─────────────────────────────────────────────────────
 
-        print("[SUCCESS] Financial summary exported:")
-        print(f"  - {summary_path}")
-        print(f"  - {checklist_path}")
+@dataclass
+class AdvisoryClient:
+    entity_name: str
+    primary_objective: str
+    phase: str               # ProjectPhase value string
+    retainer_active: bool = False
 
-        return summary
+    def to_dict(self) -> dict:
+        return {
+            "entity_name": self.entity_name,
+            "primary_objective": self.primary_objective,
+            "phase": self.phase,
+            "retainer_active": self.retainer_active,
+        }
 
-    def run_financial_calculus(self):
-        monthly_delta = self.verified_monthly_net - self.sworn_monthly_net
-        total_withheld_cash = monthly_delta * self.tracking_months
-        total_shielded_capital = total_withheld_cash + self.sequestered_hard_assets
+    @classmethod
+    def from_dict(cls, d: dict) -> "AdvisoryClient":
+        return cls(**d)
 
-        annualized_verified_income = self.verified_monthly_net * 12
-        economic_asymmetry_factor = (
-            annualized_verified_income / self.coletti_co_lifetime_net
-            if self.coletti_co_lifetime_net else np.nan
-        )
 
-        results = {
-            "system_id": self.system_id,
-            "case_number": self.case_number,
+@dataclass
+class EnterpriseManagement:
+    firm_name: str = "Coletti & Co."
+    founder: str = "Demetries James Lucio Coletti"
+    active_portfolios: List[AdvisoryClient] = field(default_factory=list)
+
+    def add_client(self, client: AdvisoryClient):
+        self.active_portfolios.append(client)
+
+    def retainer_count(self) -> int:
+        return sum(1 for c in self.active_portfolios if c.retainer_active)
+
+
+# ── Key Case Dates ───────────────────────────────────────────────────────────
+
+@dataclass
+class CaseDates:
+    marriage_start: str = "2015-01-25"
+    assault_date: str = "2024-06-13"
+    separation_date: str = "2024-06-13"
+    filing_date: str = "2024-07-24"
+
+    def marriage_years(self) -> float:
+        return (date.fromisoformat(self.separation_date) - date.fromisoformat(self.marriage_start)).days / 365.25
+
+    def to_dict(self) -> dict:
+        return {
+            "marriage_start": self.marriage_start,
+            "assault_date": self.assault_date,
+            "separation_date": self.separation_date,
+            "filing_date": self.filing_date,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "CaseDates":
+        return cls(**d)
+
+
+# ── Income Fraud (Opposing Party) ─────────────────────────────────────────────
+
+@dataclass
+class IncomeFraud:
+    sworn_annual: float = 60750.00
+    verified_w2: float = 114920.00
+    verified_1099: float = 22611.00
+
+    @property
+    def verified_total(self) -> float:
+        return self.verified_w2 + self.verified_1099
+
+    @property
+    def concealment_amount(self) -> float:
+        return self.verified_total - self.sworn_annual
+
+    @property
+    def concealment_pct(self) -> float:
+        return (self.concealment_amount / self.sworn_annual * 100) if self.sworn_annual else 0.0
+
+    def to_dict(self) -> dict:
+        return {
+            "sworn_annual": self.sworn_annual,
+            "verified_w2": self.verified_w2,
+            "verified_1099": self.verified_1099,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "IncomeFraud":
+        return cls(**d)
+
+
+# ── Pre-Assault Income (Coletti) ──────────────────────────────────────────────
+
+@dataclass
+class ColettisIncome:
+    modeling_annual: float = 36750.00
+    coletti_co_annual: float = 20000.00
+
+    @property
+    def total_independent(self) -> float:
+        return self.modeling_annual + self.coletti_co_annual
+
+    def to_dict(self) -> dict:
+        return {"modeling_annual": self.modeling_annual, "coletti_co_annual": self.coletti_co_annual}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ColettisIncome":
+        return cls(**d)
+
+
+# ── Case Valuation ────────────────────────────────────────────────────────────
+
+@dataclass
+class Tier1Relief:
+    suit_money: float = 5000.00
+    income_concealment_proven: float = 76781.00
+    income_concealment_suspected: float = 21758.68
+    animal_equalization: float = 20000.00
+    pendente_lite_monthly: float = 4355.15
+    pendente_lite_arrearage: float = 33666.60
+    king_personal_sanctions: float = 27000.00
+
+    @property
+    def income_concealment_total(self) -> float:
+        return self.income_concealment_proven + self.income_concealment_suspected
+
+    @property
+    def subtotal(self) -> float:
+        return (self.suit_money + self.income_concealment_total +
+                self.animal_equalization + self.pendente_lite_arrearage +
+                self.king_personal_sanctions)
+
+    def to_dict(self) -> dict:
+        return {
+            "suit_money": self.suit_money,
+            "income_concealment_proven": self.income_concealment_proven,
+            "income_concealment_suspected": self.income_concealment_suspected,
+            "animal_equalization": self.animal_equalization,
+            "pendente_lite_monthly": self.pendente_lite_monthly,
+            "pendente_lite_arrearage": self.pendente_lite_arrearage,
+            "king_personal_sanctions": self.king_personal_sanctions,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Tier1Relief":
+        return cls(**d)
+
+
+@dataclass
+class Tier2Damages:
+    homemaker_contributions: float = 715000.00
+    human_capital_loss: float = 158000.00
+    business_sabotage: float = 365597.56
+    property_division: float = 108000.00
+    alimony_in_solido: float = 300000.00
+    marital_fault_damages: float = 350000.00
+
+    @property
+    def subtotal(self) -> float:
+        return (self.homemaker_contributions + self.human_capital_loss +
+                self.business_sabotage + self.property_division +
+                self.alimony_in_solido + self.marital_fault_damages)
+
+    def to_dict(self) -> dict:
+        return {
+            "homemaker_contributions": self.homemaker_contributions,
+            "human_capital_loss": self.human_capital_loss,
+            "business_sabotage": self.business_sabotage,
+            "property_division": self.property_division,
+            "alimony_in_solido": self.alimony_in_solido,
+            "marital_fault_damages": self.marital_fault_damages,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Tier2Damages":
+        return cls(**d)
+
+
+@dataclass
+class Tier3Punitive:
+    assault_punitive: float = 554468.00
+    economic_destruction_punitive: float = 200000.00
+
+    @property
+    def total(self) -> float:
+        return self.assault_punitive + self.economic_destruction_punitive
+
+    def to_dict(self) -> dict:
+        return {
+            "assault_punitive": self.assault_punitive,
+            "economic_destruction_punitive": self.economic_destruction_punitive,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Tier3Punitive":
+        return cls(**d)
+
+
+@dataclass
+class BusinessSabotageDetail:
+    physical_property: float = 8800.00
+    # Modeling career
+    modeling_immediate_recovery: float = 6125.00
+    modeling_forced_leave_23mo: float = 70437.50
+    modeling_slam_contract_loss: float = 45000.00
+    modeling_future_5yr: float = 192951.69
+    # Coletti & Co.
+    coletti_co_base_annual: float = 20000.00
+    coletti_co_years_closed: float = 1.92
+    coletti_co_growth_adj: float = 3843.94
+
+    @property
+    def modeling_total(self) -> float:
+        return (self.modeling_immediate_recovery + self.modeling_forced_leave_23mo +
+                self.modeling_slam_contract_loss + self.modeling_future_5yr)
+
+    @property
+    def coletti_co_lost_revenue(self) -> float:
+        return self.coletti_co_base_annual * self.coletti_co_years_closed
+
+    @property
+    def coletti_co_total(self) -> float:
+        return self.coletti_co_lost_revenue + self.coletti_co_growth_adj
+
+    @property
+    def grand_total(self) -> float:
+        return self.physical_property + self.modeling_total + self.coletti_co_total
+
+    def to_dict(self) -> dict:
+        return {
+            "physical_property": self.physical_property,
+            "modeling_immediate_recovery": self.modeling_immediate_recovery,
+            "modeling_forced_leave_23mo": self.modeling_forced_leave_23mo,
+            "modeling_slam_contract_loss": self.modeling_slam_contract_loss,
+            "modeling_future_5yr": self.modeling_future_5yr,
+            "coletti_co_base_annual": self.coletti_co_base_annual,
+            "coletti_co_years_closed": self.coletti_co_years_closed,
+            "coletti_co_growth_adj": self.coletti_co_growth_adj,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "BusinessSabotageDetail":
+        return cls(**d)
+
+
+@dataclass
+class CaseValuation:
+    case_dates: CaseDates = field(default_factory=CaseDates)
+    income_fraud: IncomeFraud = field(default_factory=IncomeFraud)
+    colettis_income: ColettisIncome = field(default_factory=ColettisIncome)
+    tier1: Tier1Relief = field(default_factory=Tier1Relief)
+    tier2: Tier2Damages = field(default_factory=Tier2Damages)
+    tier3: Tier3Punitive = field(default_factory=Tier3Punitive)
+    sabotage: BusinessSabotageDetail = field(default_factory=BusinessSabotageDetail)
+    premeditation_score: float = 1.0
+    premeditation_assessment: str = "HIGHLY PREMEDITATED"
+    premeditation_event_count: int = 10
+
+    @property
+    def total_capped(self) -> float:
+        return self.tier1.subtotal + self.tier2.subtotal + self.tier3.total
+
+    @property
+    def total_uncapped(self) -> float:
+        return self.total_capped + self.tier1.pendente_lite_monthly * 12
+
+    def to_dict(self) -> dict:
+        return {
+            "case_dates": self.case_dates.to_dict(),
+            "income_fraud": self.income_fraud.to_dict(),
+            "colettis_income": self.colettis_income.to_dict(),
+            "tier1": self.tier1.to_dict(),
+            "tier2": self.tier2.to_dict(),
+            "tier3": self.tier3.to_dict(),
+            "sabotage": self.sabotage.to_dict(),
+            "premeditation_score": self.premeditation_score,
+            "premeditation_assessment": self.premeditation_assessment,
+            "premeditation_event_count": self.premeditation_event_count,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "CaseValuation":
+        obj = cls()
+        if "case_dates" in d:
+            obj.case_dates = CaseDates.from_dict(d["case_dates"])
+        if "income_fraud" in d:
+            obj.income_fraud = IncomeFraud.from_dict(d["income_fraud"])
+        if "colettis_income" in d:
+            obj.colettis_income = ColettisIncome.from_dict(d["colettis_income"])
+        if "tier1" in d:
+            obj.tier1 = Tier1Relief.from_dict(d["tier1"])
+        if "tier2" in d:
+            obj.tier2 = Tier2Damages.from_dict(d["tier2"])
+        if "tier3" in d:
+            obj.tier3 = Tier3Punitive.from_dict(d["tier3"])
+        if "sabotage" in d:
+            obj.sabotage = BusinessSabotageDetail.from_dict(d["sabotage"])
+        obj.premeditation_score = d.get("premeditation_score", obj.premeditation_score)
+        obj.premeditation_assessment = d.get("premeditation_assessment", obj.premeditation_assessment)
+        obj.premeditation_event_count = d.get("premeditation_event_count", obj.premeditation_event_count)
+        return obj
+
+
+# ── Income Disparity Tracker ──────────────────────────────────────────────────
+
+@dataclass
+class IncomeDisparity:
+    """Tracks the gap between sworn income disclosures and verified actual income."""
+    sworn_monthly_net: float = 4389.80
+    verified_monthly_net: float = 9983.18
+    tracking_months: int = 22
+    sequestered_hard_assets: float = 205642.80
+
+    def monthly_understatement(self) -> float:
+        return self.verified_monthly_net - self.sworn_monthly_net
+
+    def cumulative_understatement(self) -> float:
+        return self.monthly_understatement() * self.tracking_months
+
+    def understatement_pct(self) -> float:
+        if self.sworn_monthly_net == 0:
+            return 0.0
+        return (self.monthly_understatement() / self.sworn_monthly_net) * 100
+
+    def total_concealed_value(self) -> float:
+        return self.cumulative_understatement() + self.sequestered_hard_assets
+
+    def to_dict(self) -> dict:
+        return {
             "sworn_monthly_net": self.sworn_monthly_net,
             "verified_monthly_net": self.verified_monthly_net,
-            "monthly_delta": monthly_delta,
             "tracking_months": self.tracking_months,
-            "total_withheld_cash": total_withheld_cash,
             "sequestered_hard_assets": self.sequestered_hard_assets,
-            "total_shielded_capital": total_shielded_capital,
-            "coletti_co_lifetime_net": self.coletti_co_lifetime_net,
-            "annualized_verified_income": annualized_verified_income,
-            "economic_asymmetry_factor": economic_asymmetry_factor,
-            "review_note": "Working forensic calculation; verify all source numbers before court use."
         }
 
-        out_path = Path(OUTPUT_FOLDER) / "Court_Ready_FINANCIAL_Calculus.json"
-        out_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
-
-        print("\nCOLETTI OS FINANCIAL CALCULUS")
-        print("-" * 60)
-        print(f"Sworn Monthly Net:            ${self.sworn_monthly_net:,.2f}")
-        print(f"Verified Monthly Net:         ${self.verified_monthly_net:,.2f}")
-        print(f"Monthly Delta:                ${monthly_delta:,.2f}")
-        print(f"{self.tracking_months}-Month Cash Difference:     ${total_withheld_cash:,.2f}")
-        print(f"Sequestered Hard Assets:      ${self.sequestered_hard_assets:,.2f}")
-        print(f"Total Shielded Capital:       ${total_shielded_capital:,.2f}")
-        print(f"Economic Asymmetry Factor:    {economic_asymmetry_factor:,.2f}x")
-        print(f"\n[SUCCESS] Calculus exported to {out_path}")
-
-        return results
-
-    def run_full_system(self):
-        print(f"Running {self.system_id}")
-        print("=" * 70)
-
-        financial_df = self.process_ocr_batch(mode="FINANCIAL")
-        self.run_financial_calculus()
-        self.generate_variance_table()
-        self.generate_litigation_dashboard()
-        self.export_evidence_ledger()
-
-        return financial_df
+    @classmethod
+    def from_dict(cls, d: dict) -> "IncomeDisparity":
+        return cls(**d)
 
 
-if __name__ == "__main__":
-    os_core = ColettiOSCore()
+# ── Master Controller ─────────────────────────────────────────────────────────
 
-    os_core.add_financial_observation(
-        source="Working verified-income constant",
-        observation_date="2026-05-20",
-        observed_monthly_net=9983.18,
-        employer_or_source="Verified financial records / working calculation",
-        notes="Subject to source-document verification.",
-        confidence="Working Baseline"
-    )
+class ColettiOS:
+    VERSION = "2.5.5"
+    SYSTEM_ID = "ColettiOS_v2.5.5_PROD"
 
-    os_core.translate_batch_to_court_safe(
-        [
-            "They lied about income and hid money.",
-            "The car situation destroyed my ability to stabilize.",
-            "Discovery has been ignored and I need the court to intervene."
-        ],
-        mode="Judge"
-    )
+    def __init__(self):
+        self.boot_time = datetime.now()
+        self.forensics = ForensicLedger(
+            institution="First Florida Credit Union",
+            target_account="XXXX-0094",
+            known_balance=0.00,
+        )
+        self.litigation = LitigationDocket()
+        self.enterprise = EnterpriseManagement()
+        self.income_disparity = IncomeDisparity()
+        self.case_valuation = CaseValuation()
+        self._seed_environment()
 
-    os_core.run_full_system()
+    def _seed_environment(self):
+        self.litigation.motions = [
+            LegalMotion(
+                title="Motion to Confirm Rule 36 Deemed Admissions",
+                date_filed="2026-02-18",
+                hearing_date="2026-05-29",
+                status="Pending Judicial Signature",
+                strategic_objective="Lock in 27 counts of asset dissipation.",
+            ),
+            LegalMotion(
+                title="Emergency Motion for Immediate Disqualification",
+                date_filed="2026-05-10",
+                hearing_date="2026-05-29",
+                status="Active",
+                strategic_objective="Neutralize opposing counsel via RPC violations.",
+            ),
+        ]
+        self.litigation.active_subpoenas = [
+            "Dreamliner HQ – Payroll Manifests",
+            "First Florida Credit Union – Unredacted Ledgers",
+        ]
+
+        # Pre-loaded FFCU ledger — confirmed transactions from subpoena returns
+        self.forensics.transactions = [
+            Transaction(
+                effective_date="2023-05-12",
+                amount=700.00,
+                description="Lyons HR LLC Payroll",
+                category="income",
+                is_marital_dissipation=False,
+                balance_after=2959.37,
+            ),
+            Transaction(
+                effective_date="2023-05-29",
+                amount=3498.90,
+                description="PayPal *ColettiAndBrown",
+                category="coletti_brown_entity",
+                is_marital_dissipation=True,   # funds diverted to joint entity without consent
+                balance_after=314.52,
+            ),
+            Transaction(
+                effective_date="2023-10-27",
+                amount=700.00,
+                description="Lyons HR LLC Payroll",
+                category="income",
+                is_marital_dissipation=False,
+                balance_after=3005.46,
+            ),
+            Transaction(
+                effective_date="2023-11-28",
+                amount=50.00,
+                description="Capital One Auto",
+                category="vehicle",
+                is_marital_dissipation=True,   # personal vehicle during withholding period
+                balance_after=2902.92,
+            ),
+            Transaction(
+                effective_date="2024-01-09",
+                amount=2961.12,
+                description="American Homes 4 Rent",
+                category="housing",
+                is_marital_dissipation=True,   # housing paid while withholding court-ordered support
+                balance_after=14.21,
+            ),
+        ]
+
+        # Tactical status — updated after ceasefire expiry May 18, 2026
+        self.tactical_status = {
+            "ceasefire_expired": True,
+            "ceasefire_date": "2026-05-18",
+            "ceasefire_time": "4:30 PM CST",
+            "active_strategy": "Full evidentiary preparation for May 29th hearing.",
+            "counter_measure": (
+                "Starvation tactics by opposing counsel neutralized. "
+                "No further settlement negotiations. Proceeding with "
+                "Disqualification Motion and Rule 36 Default confirmation."
+            ),
+            "dissipation_payroll_diverted": 11125.00,
+            "dissipation_housing_withheld": 7858.62,
+        }
+
+
+    def decree_barometer(self) -> dict:
+        """
+        Composite favorability score toward a final decree.
+
+        Five pillars, 20 pts each = 100 pts max.
+        Returns the score breakdown and a verdict label.
+        """
+        scores = {}
+
+        # ── 1. Procedural Dominance (20 pts) ─────────────────────────────────
+        proc = 0
+        if self.litigation.rule_36_days_default >= 89:
+            proc += 12   # full default established
+        elif self.litigation.rule_36_days_default > 30:
+            proc += 6
+        active_motions = sum(
+            1 for m in self.litigation.motions
+            if m.status.lower() in ("active", "pending judicial signature")
+        )
+        proc += min(active_motions * 3, 8)   # up to 8 pts for filed motions
+        scores["Procedural Dominance"] = min(proc, 20)
+
+        # ── 2. Financial Evidence (20 pts) ────────────────────────────────────
+        fin = 0
+        fin += min(len(self.forensics.transactions) * 2, 8)  # up to 8 for volume
+        dis_rate = self.forensics.dissipation_rate()
+        if dis_rate >= 60:
+            fin += 8
+        elif dis_rate >= 30:
+            fin += 4
+        fin += min(len(self.litigation.active_subpoenas) * 2, 4)
+        scores["Financial Evidence"] = min(fin, 20)
+
+        # ── 3. Income Fraud Proof (20 pts) ───────────────────────────────────
+        idp = self.income_disparity
+        inc = 0
+        if idp.understatement_pct() >= 100:
+            inc += 12
+        elif idp.understatement_pct() >= 50:
+            inc += 7
+        if idp.tracking_months >= 18:
+            inc += 5
+        elif idp.tracking_months >= 6:
+            inc += 2
+        if idp.sequestered_hard_assets > 100_000:
+            inc += 3
+        scores["Income Fraud Proof"] = min(inc, 20)
+
+        # ── 4. Asset & Damages Quantification (20 pts) ───────────────────────
+        cv = self.case_valuation
+        dam = 0
+        if cv.tier1.subtotal > 0:
+            dam += 5
+        if cv.tier2.subtotal > 0:
+            dam += 8
+        if cv.tier3.total > 0:
+            dam += 4
+        if cv.premeditation_score >= 0.8:
+            dam += 3
+        scores["Damages Quantified"] = min(dam, 20)
+
+        # ── 5. Strategic Position (20 pts) ───────────────────────────────────
+        strat = 0
+        # Counsel disqualification motion is a major leverage multiplier
+        disq = any(
+            "disqualification" in m.title.lower()
+            for m in self.litigation.motions
+        )
+        if disq:
+            strat += 8
+        # Active enterprise (shows financial independence)
+        if len(self.enterprise.active_portfolios) > 0:
+            strat += 4
+        # Ceasefire expired = no settlement = forcing judicial resolution
+        ts = getattr(self, "tactical_status", {})
+        if ts.get("ceasefire_expired"):
+            strat += 4
+        if self.litigation.evaluate_docket_leverage() >= 140:
+            strat += 4
+        scores["Strategic Position"] = min(strat, 20)
+
+        total = sum(scores.values())
+
+        if total >= 90:
+            verdict = "DECREE IMMINENT"
+            color   = "#3fb950"
+        elif total >= 75:
+            verdict = "DOMINANT POSITION"
+            color   = "#58a6ff"
+        elif total >= 55:
+            verdict = "STRONG ADVANTAGE"
+            color   = "#d29922"
+        elif total >= 35:
+            verdict = "BUILDING LEVERAGE"
+            color   = "#f0883e"
+        else:
+            verdict = "EARLY STAGE"
+            color   = "#f85149"
+
+        return {
+            "total": total,
+            "max": 100,
+            "pct": total,
+            "verdict": verdict,
+            "color": color,
+            "pillars": scores,
+        }
+
+    # ── Serialisation ─────────────────────────────────────────────────────────
+
+    def to_dict(self) -> dict:
+        return {
+            "forensics": {
+                "institution": self.forensics.institution,
+                "target_account": self.forensics.target_account,
+                "known_balance": self.forensics.known_balance,
+                "transactions": [t.to_dict() for t in self.forensics.transactions],
+            },
+            "litigation": {
+                "case_number": self.litigation.case_number,
+                "jurisdiction": self.litigation.jurisdiction,
+                "judge": self.litigation.judge,
+                "rule_36_days_default": self.litigation.rule_36_days_default,
+                "motions": [m.to_dict() for m in self.litigation.motions],
+                "active_subpoenas": self.litigation.active_subpoenas,
+            },
+            "enterprise": {
+                "firm_name": self.enterprise.firm_name,
+                "founder": self.enterprise.founder,
+                "portfolios": [c.to_dict() for c in self.enterprise.active_portfolios],
+            },
+            "income_disparity": self.income_disparity.to_dict(),
+            "case_valuation": self.case_valuation.to_dict(),
+        }
+
+    def load_dict(self, data: dict):
+        f = data.get("forensics", {})
+        self.forensics.institution = f.get("institution", self.forensics.institution)
+        self.forensics.target_account = f.get("target_account", self.forensics.target_account)
+        self.forensics.known_balance = f.get("known_balance", self.forensics.known_balance)
+        self.forensics.transactions = [Transaction.from_dict(t) for t in f.get("transactions", [])]
+
+        l = data.get("litigation", {})
+        self.litigation.case_number = l.get("case_number", self.litigation.case_number)
+        self.litigation.jurisdiction = l.get("jurisdiction", self.litigation.jurisdiction)
+        self.litigation.judge = l.get("judge", self.litigation.judge)
+        self.litigation.rule_36_days_default = l.get("rule_36_days_default", self.litigation.rule_36_days_default)
+        self.litigation.motions = [LegalMotion.from_dict(m) for m in l.get("motions", [])]
+        self.litigation.active_subpoenas = l.get("active_subpoenas", self.litigation.active_subpoenas)
+
+        e = data.get("enterprise", {})
+        self.enterprise.firm_name = e.get("firm_name", self.enterprise.firm_name)
+        self.enterprise.founder = e.get("founder", self.enterprise.founder)
+        self.enterprise.active_portfolios = [AdvisoryClient.from_dict(c) for c in e.get("portfolios", [])]
+
+        if "income_disparity" in data:
+            self.income_disparity = IncomeDisparity.from_dict(data["income_disparity"])
+        if "case_valuation" in data:
+            self.case_valuation = CaseValuation.from_dict(data["case_valuation"])
