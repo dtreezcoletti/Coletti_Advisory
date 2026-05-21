@@ -13,14 +13,15 @@ import pandas as pd
 try:
     import pdfplumber
     PDFPLUMBER_AVAILABLE = True
-except ImportError:
+except Exception:
     PDFPLUMBER_AVAILABLE = False
+    pdfplumber = None  # type: ignore[assignment]
 
 try:
     from PIL import Image
     import pytesseract
     TESSERACT_AVAILABLE = True
-except ImportError:
+except Exception:
     TESSERACT_AVAILABLE = False
 
 
