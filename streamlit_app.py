@@ -3725,6 +3725,446 @@ elif page == "Delta Monitor":
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# PAGE: MULTI-SOURCE RECONCILIATION
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Multi-Source Reconciliation":
+    import pandas as _pd_msr
+    import re as _re_msr
+    import io as _io_msr
+
+    st.markdown("""
+    <div class="hud-header">
+    ══════════════════════════════════════════════════════<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MULTI-SOURCE RECONCILIATION &nbsp;·&nbsp; CASE 24D-1003<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Coletti v. Brown &nbsp;·&nbsp; Cross-Source Account Matrix<br>
+    ══════════════════════════════════════════════════════
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown(
+        "Upload multiple bank statements (CSV or plain-text exports). "
+        "The engine tags each transaction by source, extracts every account reference, "
+        "and flags any account that appears as a destination but has **no uploaded statement** — "
+        "identifying potentially hidden or undisclosed accounts."
+    )
+    st.divider()
+
+    _msr_files = st.file_uploader(
+        "Upload bank statements (CSV or TXT — multiple files supported)",
+        type=["csv", "txt"],
+        accept_multiple_files=True,
+        key="msr_uploader",
+    )
+
+    # ── Account-reference regex: 4-12 digit strings or "ending in XXXX" patterns ──
+    _ACCT_RE = _re_msr.compile(
+        r"\b(?:ending\s+in\s+(\d{3,6})|acct(?:ount)?[#\s:\-]*(\d{4,12})|(?<!\d)(\d{4,12})(?!\d))\b",
+        _re_msr.IGNORECASE,
+    )
+
+    def _extract_accounts(text: str) -> list:
+        results = []
+        for m in _ACCT_RE.finditer(str(text)):
+            hit = m.group(1) or m.group(2) or m.group(3)
+            if hit:
+                results.append(hit.strip())
+        return results
+
+    def _parse_csv_file(raw_bytes: bytes, filename: str):
+        try:
+            df = _pd_msr.read_csv(_io_msr.BytesIO(raw_bytes))
+            rename = {}
+            for col in df.columns:
+                cl = col.strip().lower()
+                if cl in ("date", "transaction date", "effective date", "trans date"):
+                    rename[col] = "Date"
+                elif cl in ("description", "memo", "details", "narrative", "payee"):
+                    rename[col] = "Description"
+                elif cl in ("amount", "debit", "credit", "transaction amount"):
+                    rename[col] = "Amount"
+            df = df.rename(columns=rename)
+            for needed in ("Date", "Description", "Amount"):
+                if needed not in df.columns:
+                    df[needed] = ""
+            df["Source_File"] = filename
+            return df[["Date", "Description", "Amount", "Source_File"]]
+        except Exception:
+            return _pd_msr.DataFrame(columns=["Date", "Description", "Amount", "Source_File"])
+
+    def _parse_txt_file(raw_bytes: bytes, filename: str):
+        _LINE_RE = _re_msr.compile(
+            r"(\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}|\d{4}-\d{2}-\d{2})"
+            r".{0,80}?"
+            r"(\$?\-?[\d,]+\.\d{2})",
+            _re_msr.IGNORECASE,
+        )
+        rows = []
+        try:
+            text = raw_bytes.decode("utf-8", errors="replace")
+            for line in text.splitlines():
+                m = _LINE_RE.search(line)
+                if m:
+                    rows.append({
+                        "Date": m.group(1),
+                        "Description": line.strip(),
+                        "Amount": m.group(2).replace("$", "").replace(",", ""),
+                        "Source_File": filename,
+                    })
+        except Exception:
+            pass
+        return _pd_msr.DataFrame(rows, columns=["Date", "Description", "Amount", "Source_File"])
+
+    if _msr_files:
+        _msr_frames = []
+        _uploaded_names = []
+        for _uf in _msr_files:
+            _fname = _uf.name
+            _uploaded_names.append(_fname)
+            _raw = _uf.getvalue()
+            if _fname.lower().endswith(".csv"):
+                _df_part = _parse_csv_file(_raw, _fname)
+            else:
+                _df_part = _parse_txt_file(_raw, _fname)
+            _msr_frames.append(_df_part)
+
+        _master_df = _pd_msr.concat(_msr_frames, ignore_index=True) if _msr_frames else _pd_msr.DataFrame()
+
+        # Extract all account references from Description column
+        _acct_map: dict = {}
+        for _, _msr_row in _master_df.iterrows():
+            _refs = _extract_accounts(str(_msr_row.get("Description", "")))
+            for _ref in _refs:
+                _acct_map.setdefault(_ref, set()).add(_msr_row["Source_File"])
+
+        # Build cross-reference matrix
+        _matrix_rows = []
+        for _acct, _files_mentioning in sorted(_acct_map.items()):
+            # Heuristic: a statement "covers" an account if the last-4 digits appear in the filename
+            _has_statement = any(_acct[-4:] in _fn for _fn in _uploaded_names)
+            _status = "MATCHED" if _has_statement else "MISSING"
+            _matrix_rows.append({
+                "Account_Ref": _acct,
+                "Mentioned_In_Files": ", ".join(sorted(_files_mentioning)),
+                "Has_Statement": "Yes" if _has_statement else "No",
+                "Status": _status,
+            })
+
+        _matrix_df = _pd_msr.DataFrame(_matrix_rows)
+        _missing_count = int((_matrix_df["Status"] == "MISSING").sum()) if not _matrix_df.empty else 0
+        _total_accts = len(_matrix_df)
+
+        # KPI Row
+        st.markdown("<div class='section-header'>[ RECONCILIATION SUMMARY ]</div>", unsafe_allow_html=True)
+        _kc1, _kc2, _kc3, _kc4 = st.columns(4)
+        with _kc1:
+            metric_card("Files Uploaded", str(len(_msr_files)), "Statements ingested")
+        with _kc2:
+            metric_card("Total Transactions", str(len(_master_df)), "Across all sources")
+        with _kc3:
+            metric_card("Accounts Identified", str(_total_accts), "Unique account refs found")
+        with _kc4:
+            metric_card(
+                "Unmatched Accounts",
+                str(_missing_count),
+                "No statement uploaded — potential hidden accounts",
+                "#f85149" if _missing_count > 0 else "#3fb950",
+            )
+
+        st.divider()
+
+        if _missing_count > 0:
+            st.error(
+                f"WARNING: {_missing_count} account reference(s) appear as destinations in uploaded "
+                "statements but have NO corresponding statement uploaded. "
+                "These may represent hidden or undisclosed accounts."
+            )
+
+        # Account Reference Matrix
+        st.markdown("<div class='section-header'>[ ACCOUNT REFERENCE MATRIX ]</div>", unsafe_allow_html=True)
+        if not _matrix_df.empty:
+            def _msr_style_row(row):
+                if row["Status"] == "MISSING":
+                    return ["background-color: #2d1116; color: #f85149"] * len(row)
+                return [""] * len(row)
+
+            st.dataframe(
+                _matrix_df.style.apply(_msr_style_row, axis=1),
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.info("No account references extracted from the uploaded files.")
+
+        st.divider()
+
+        # Master Ledger
+        st.markdown("<div class='section-header'>[ MASTER LEDGER — ALL SOURCES COMBINED ]</div>", unsafe_allow_html=True)
+        if not _master_df.empty:
+            try:
+                _sorted_master = _master_df.sort_values("Date").reset_index(drop=True)
+            except Exception:
+                _sorted_master = _master_df.reset_index(drop=True)
+            st.dataframe(_sorted_master, use_container_width=True, hide_index=True)
+            _csv_master = _sorted_master.to_csv(index=False).encode()
+            st.download_button(
+                "Download Master Ledger (CSV)",
+                data=_csv_master,
+                file_name=f"master_ledger_{date.today().isoformat()}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+        else:
+            st.warning(
+                "No transactions could be parsed from the uploaded files. "
+                "Ensure CSVs have Date, Description, and Amount columns, "
+                "or that TXT exports contain dated transaction lines."
+            )
+    else:
+        st.info(
+            "Upload one or more bank statement files above to begin. "
+            "CSV files should contain Date, Description, and Amount columns. "
+            "TXT files are parsed line-by-line for date/amount patterns."
+        )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: CONTRADICTION MATRIX
+# ════════════════════════════════════════════════════════════════════════════
+
+elif page == "Contradiction Matrix":
+    import pandas as _pd_cm
+
+    st.markdown("""
+    <div class="hud-header">
+    ══════════════════════════════════════════════════════<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;CONTRADICTION MATRIX &nbsp;·&nbsp; CASE 24D-1003<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Coletti v. Brown &nbsp;·&nbsp; Sworn vs. Verified Figures<br>
+    ══════════════════════════════════════════════════════
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown(
+        "Enter figures from sworn documents (affidavit, tax return, financial disclosure). "
+        "The engine compares them against forensically verified data and flags numerical contradictions."
+    )
+    st.divider()
+
+    # Pull verified figures from session state
+    _idp_cm = sys.income_disparity
+    _cv_cm  = sys.case_valuation
+
+    _verified_monthly_net  = _idp_cm.verified_monthly_net
+    _verified_annual_gross = _cv_cm.income_fraud.verified_total
+    _known_sequestered     = _idp_cm.sequestered_hard_assets
+
+    # Two-column layout
+    _col_sworn, _col_verified = st.columns(2)
+
+    with _col_sworn:
+        st.markdown("<div class='section-header'>[ SWORN / DISCLOSED FIGURES ]</div>", unsafe_allow_html=True)
+        st.caption("Enter values from the opposing party's affidavit, tax return, or financial disclosure.")
+        _sworn_monthly_net  = st.number_input(
+            "Sworn Monthly Net Income ($)",
+            min_value=0.0, value=float(_idp_cm.sworn_monthly_net),
+            format="%.2f", key="cm_sworn_monthly_net",
+        )
+        _sworn_annual_gross = st.number_input(
+            "Sworn Annual Gross Income ($)",
+            min_value=0.0, value=float(_idp_cm.sworn_monthly_net * 12),
+            format="%.2f", key="cm_sworn_annual_gross",
+        )
+        _disclosed_liquid   = st.number_input(
+            "Disclosed Liquid Assets ($)",
+            min_value=0.0, value=0.0,
+            format="%.2f", key="cm_disclosed_liquid",
+        )
+        _disclosed_realty   = st.number_input(
+            "Disclosed Real Property Value ($)",
+            min_value=0.0, value=0.0,
+            format="%.2f", key="cm_disclosed_realty",
+        )
+        _disclosed_expenses = st.number_input(
+            "Disclosed Monthly Expenses ($)",
+            min_value=0.0, value=0.0,
+            format="%.2f", key="cm_disclosed_expenses",
+        )
+
+    with _col_verified:
+        st.markdown("<div class='section-header'>[ VERIFIED / FORENSIC FIGURES ]</div>", unsafe_allow_html=True)
+        st.caption("Pulled automatically from Income Disparity and Case Valuation modules.")
+        metric_card(
+            "Verified Monthly Net Income",
+            f"${_verified_monthly_net:,.2f}",
+            "Forensic reconstruction — income_disparity.verified_monthly_net",
+            "#f85149",
+        )
+        metric_card(
+            "Verified Annual Gross Income",
+            f"${_verified_annual_gross:,.2f}",
+            "W-2 + 1099 confirmed — case_valuation.income_fraud.verified_total",
+            "#f85149",
+        )
+        metric_card(
+            "Known Sequestered Assets",
+            f"${_known_sequestered:,.2f}",
+            "income_disparity.sequestered_hard_assets",
+            "#d29922",
+        )
+        st.markdown(
+            "<div style='color:#8b949e; font-size:12px; margin-top:8px;'>"
+            "Liquid assets, real property, and monthly expenses have no pre-loaded "
+            "forensic figure — sworn values are compared against known sequestered assets "
+            "where applicable; otherwise zero is the verified baseline."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+    st.divider()
+
+    # Build contradiction matrix
+    def _cm_status(delta_pct: float) -> str:
+        abs_pct = abs(delta_pct)
+        if abs_pct < 5:
+            return "Consistent"
+        elif abs_pct <= 20:
+            return "Review"
+        else:
+            return "CONTRADICTION"
+
+    _CM_FIELDS = [
+        {"field": "Monthly Net Income",       "sworn": _sworn_monthly_net,  "verified": _verified_monthly_net},
+        {"field": "Annual Gross Income",       "sworn": _sworn_annual_gross, "verified": _verified_annual_gross},
+        {"field": "Sequestered / Liquid Assets", "sworn": _disclosed_liquid, "verified": _known_sequestered},
+        {"field": "Real Property Value",       "sworn": _disclosed_realty,  "verified": 0.0},
+        {"field": "Monthly Expenses",          "sworn": _disclosed_expenses, "verified": 0.0},
+    ]
+
+    _cm_rows = []
+    _contradictions = []
+    _review_items = []
+
+    for _f in _CM_FIELDS:
+        _delta = _f["sworn"] - _f["verified"]
+        _denom = _f["verified"] if _f["verified"] != 0 else (_f["sworn"] if _f["sworn"] != 0 else 1.0)
+        _delta_pct = (_delta / _denom) * 100
+        _status = _cm_status(_delta_pct)
+        _cm_rows.append({
+            "Field":           _f["field"],
+            "Sworn Amount":    f"${_f['sworn']:,.2f}",
+            "Verified Amount": f"${_f['verified']:,.2f}",
+            "Delta":           f"${_delta:+,.2f}",
+            "Delta %":         f"{_delta_pct:+.1f}%",
+            "Status":          _status,
+        })
+        if _status == "CONTRADICTION":
+            _contradictions.append((_f["field"], _f["sworn"], _f["verified"], _delta, _delta_pct))
+        elif _status == "Review":
+            _review_items.append((_f["field"], _f["sworn"], _f["verified"], _delta, _delta_pct))
+
+    _cm_df = _pd_cm.DataFrame(_cm_rows)
+
+    st.markdown("<div class='section-header'>[ CONTRADICTION MATRIX ]</div>", unsafe_allow_html=True)
+
+    def _highlight_cm(row):
+        s = row["Status"]
+        if s == "CONTRADICTION":
+            return ["background-color: #2d1116; color: #f85149; font-weight: 700"] * len(row)
+        elif s == "Review":
+            return ["background-color: #2d1f0a; color: #d29922"] * len(row)
+        else:
+            return ["background-color: #0d2b1a; color: #3fb950"] * len(row)
+
+    st.dataframe(
+        _cm_df.style.apply(_highlight_cm, axis=1),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    # Summary KPIs
+    st.divider()
+    _sk1, _sk2, _sk3 = st.columns(3)
+    with _sk1:
+        metric_card(
+            "Contradictions Found",
+            str(len(_contradictions)),
+            ">20% variance — court-material discrepancies",
+            "#f85149" if _contradictions else "#3fb950",
+        )
+    with _sk2:
+        metric_card(
+            "Flagged for Review",
+            str(len(_review_items)),
+            "5-20% variance — warrants examination",
+            "#d29922" if _review_items else "#3fb950",
+        )
+    with _sk3:
+        metric_card(
+            "Consistent Fields",
+            str(len(_CM_FIELDS) - len(_contradictions) - len(_review_items)),
+            "<5% variance",
+            "#3fb950",
+        )
+
+    st.divider()
+
+    # Auto-generated court-safe paragraph
+    st.markdown("<div class='section-header'>[ COURT-READY SUMMARY PARAGRAPH ]</div>", unsafe_allow_html=True)
+
+    if _contradictions or _review_items:
+        _all_items = _contradictions + _review_items
+        _parts = []
+        for _fld, _sw, _vr, _dl, _dp in _all_items:
+            _parts.append(
+                f"{_fld}: sworn amount of ${_sw:,.2f} compared to the forensically verified "
+                f"figure of ${_vr:,.2f}, reflecting a discrepancy of ${abs(_dl):,.2f} "
+                f"({abs(_dp):.1f}%)"
+            )
+        _court_para = (
+            "The record reflects the following material discrepancies between sworn disclosures "
+            f"and forensically verified figures: {'; '.join(_parts)}. "
+            "These discrepancies are not attributable to rounding or estimation error and are "
+            "inconsistent with the standard of candor required by sworn financial disclosure. "
+            "Petitioner respectfully submits that these figures warrant judicial inquiry and, "
+            "where applicable, an adverse inference instruction."
+        )
+    else:
+        _court_para = (
+            "Based on the figures entered, no material discrepancies (>5% variance) were "
+            "identified between sworn disclosures and forensically verified figures. "
+            "The sworn disclosure appears consistent with the forensic record at this time."
+        )
+
+    st.markdown(
+        f'<div class="metric-card" style="border-left: 4px solid '
+        f'{"#f85149" if _contradictions else "#3fb950"};">'
+        '<div class="metric-label">Filing-Ready Paragraph — copy directly into motion or brief</div>'
+        f'<div style="color:#c9d1d9; font-size:14px; line-height:1.8; margin-top:10px;">'
+        f'{_court_para}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+    st.text_area(
+        "Selectable court paragraph",
+        value=_court_para,
+        height=160,
+        key="cm_court_para",
+        label_visibility="collapsed",
+    )
+
+    st.divider()
+
+    _cm_csv = _cm_df.to_csv(index=False).encode()
+    st.download_button(
+        "Download Contradiction Matrix (CSV)",
+        data=_cm_csv,
+        file_name=f"contradiction_matrix_{date.today().isoformat()}.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # PAGE: DATA EXPORT
 # ════════════════════════════════════════════════════════════════════════════
 
