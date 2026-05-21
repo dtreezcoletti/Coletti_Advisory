@@ -126,7 +126,7 @@ if "adv_config" not in st.session_state:
         "entity_config": {
             "card_endings": {},
             "geographic_rules": {},
-            "behavioral_tags": {},
+            "behavioral_tags": {"lyons hr llc": "Robert", "lyons hr": "Robert"},
             "p2p_identifiers": {},
         },
     }

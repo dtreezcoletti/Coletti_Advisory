@@ -494,6 +494,23 @@ class ColettiOS:
             "First Florida Credit Union – Unredacted Ledgers",
         ]
 
+        self.forensics.transactions = [
+            Transaction(
+                effective_date="2023-05-12",
+                amount=700.0,
+                description="Lyons HR LLC Payroll",
+                category="income_diversion",
+                is_marital_dissipation=True,
+            ),
+            Transaction(
+                effective_date="2023-10-27",
+                amount=700.0,
+                description="Lyons HR LLC Payroll",
+                category="income_diversion",
+                is_marital_dissipation=True,
+            ),
+        ]
+
     # ── Serialisation ─────────────────────────────────────────────────────────
 
     def to_dict(self) -> dict:
