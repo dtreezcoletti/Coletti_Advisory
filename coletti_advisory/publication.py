@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 import os
@@ -189,7 +188,7 @@ def sync_drafts(
         if record is None:
             updated[report_type] = ReportPublicationRecord(report_type=report_type, draft_hash=fingerprint)
             continue
-        if record.draft_hash != fingerprint and record.status != PublicationStatus.PUBLISHED:
+        if record.draft_hash != fingerprint:
             record.revision += 1
             record.draft_hash = fingerprint
             record.status = PublicationStatus.DRAFT
@@ -198,6 +197,8 @@ def sync_drafts(
             record.approved_by = None
             record.approved_at = None
             record.review_note = None
+            # Preserve the last published snapshot and its publication metadata.
+            # A new draft must never silently replace an already released report.
     return updated
 
 
@@ -223,19 +224,27 @@ def publish_report(record: ReportPublicationRecord, *, actor: str, report: dict[
         raise ValueError("Report must be approved before publication")
     if record.draft_hash != report_fingerprint(report):
         raise ValueError("Approved draft changed; return report to review")
+
+    published_at = utc_now_iso()
     snapshot = json.loads(json.dumps(report, default=str))
     snapshot["document_status"] = "PUBLISHED"
+    snapshot["publication"] = {
+        "revision": record.revision,
+        "published_by": actor,
+        "published_at": published_at,
+        "draft_hash": record.draft_hash,
+    }
     record.published_snapshot = snapshot
     record.status = PublicationStatus.PUBLISHED
     record.published_by = actor
-    record.published_at = utc_now_iso()
+    record.published_at = published_at
     record.revoked_by = None
     record.revoked_at = None
 
 
 def revoke_report(record: ReportPublicationRecord, *, actor: str) -> None:
-    if record.status != PublicationStatus.PUBLISHED:
-        raise ValueError("Only published reports can be revoked")
+    if record.published_snapshot is None:
+        raise ValueError("No published report exists to revoke")
     record.status = PublicationStatus.REVOKED
     record.revoked_by = actor
     record.revoked_at = utc_now_iso()
@@ -245,5 +254,5 @@ def published_reports(records: dict[str, ReportPublicationRecord]) -> dict[str, 
     return {
         report_type: record.published_snapshot
         for report_type, record in records.items()
-        if record.status == PublicationStatus.PUBLISHED and record.published_snapshot is not None
+        if record.status != PublicationStatus.REVOKED and record.published_snapshot is not None
     }
