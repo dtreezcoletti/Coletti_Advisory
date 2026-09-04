@@ -6,6 +6,14 @@ import os
 
 import streamlit as st
 
+from .analysis import (
+    build_analytical_issues,
+    build_cross_record_comparison,
+    build_operations_reconstruction,
+    build_records_reconstruction,
+    build_state_counts,
+    build_summary,
+)
 from .auth import demo_principal, require_authenticated_principal
 from .core_adapter import HttpColettiOSAdapter, SyntheticCoreAdapter
 from .intake import ingest_file
@@ -123,6 +131,79 @@ def _identity_panel(principal) -> str:
     return selected
 
 
+def _workspace_pages(principal) -> list[str]:
+    pages = ["Command Center", "Engagements"]
+    if principal.can(Permission.UPLOAD):
+        pages.append("Intake")
+    if principal.can(Permission.ANALYZE) or principal.can(Permission.REVIEW):
+        pages.append("Evidence")
+    if principal.can(Permission.REVIEW):
+        pages.append("Review Center")
+    if principal.can(Permission.ANALYZE):
+        pages.append("Analysis")
+    pages.append("Reports")
+    if principal.can(Permission.MANAGE_USERS):
+        pages.append("Administration")
+    return pages
+
+
+def _show_table(rows: list[dict], *, empty_message: str) -> None:
+    if rows:
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+    else:
+        st.info(empty_message)
+
+
+def _render_analysis(manifest: dict) -> None:
+    st.title("Analysis")
+    st.caption("Internal reconstruction workspace · source-linked · human-reviewed · not a licensed professional determination")
+
+    summary = build_summary(manifest)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Sources reviewed", summary["sources"])
+    c2.metric("Record propositions", summary["propositions"])
+    c3.metric("Inconsistencies", summary["inconsistencies"])
+    c4.metric("Open issues", summary["open_issues"])
+
+    st.subheader("Reconstruction Overview")
+    state_rows = build_state_counts(manifest)
+    _show_table(state_rows, empty_message="No evidence-state data is available for this engagement yet.")
+
+    records_tab, operations_tab, comparison_tab, issues_tab = st.tabs(
+        ["Records Reconstruction", "Operations Reconstruction", "Cross-Record Comparison", "Analytical Issues"]
+    )
+
+    with records_tab:
+        st.caption("Record-derived propositions with their supporting source IDs, filenames, evidence states, and review status.")
+        _show_table(
+            build_records_reconstruction(manifest),
+            empty_message="No record-derived propositions have been created yet.",
+        )
+
+    with operations_tab:
+        st.caption(
+            "Operational record inputs and unresolved follow-ups. This view does not infer process deviations unless the records support them."
+        )
+        _show_table(
+            build_operations_reconstruction(manifest),
+            empty_message="No operational record inputs are available yet.",
+        )
+
+    with comparison_tab:
+        st.caption("Side-by-side record statements where the current evidence set identifies a conflict requiring review.")
+        _show_table(
+            build_cross_record_comparison(manifest),
+            empty_message="No cross-record inconsistencies are currently recorded.",
+        )
+
+    with issues_tab:
+        st.caption("Issues are classified without converting them into legal, accounting, investigative, or other licensed conclusions.")
+        _show_table(
+            build_analytical_issues(manifest),
+            empty_message="No analytical issues are currently open.",
+        )
+
+
 def run() -> None:
     st.set_page_config(page_title="Coletti & Co. | ColettiOS", page_icon="◈", layout="wide")
     app_mode, storage_backend, core_backend, principal, core, storage = _runtime()
@@ -130,10 +211,7 @@ def run() -> None:
     engagement_id = _identity_panel(principal)
     engagement_name = _workspace_label(engagement_id)
 
-    page = st.sidebar.radio(
-        "Workspace",
-        ["Command Center", "Engagements", "Intake", "Evidence", "Review Center", "Analysis", "Reports", "Administration"],
-    )
+    page = st.sidebar.radio("Workspace", _workspace_pages(principal))
     manifest = core.manifest(engagement_id)
 
     if page == "Command Center":
@@ -155,6 +233,9 @@ def run() -> None:
         st.dataframe(rows, use_container_width=True)
 
     elif page == "Intake":
+        if not principal.can(Permission.UPLOAD):
+            st.error("Your role does not permit source uploads.")
+            st.stop()
         st.title("Secure Intake")
         if app_mode == "demo":
             st.info("Demo uploads are AES-256-GCM encrypted on ephemeral local storage and may disappear on restart. Use synthetic files only.")
@@ -179,6 +260,9 @@ def run() -> None:
             st.rerun()
 
     elif page == "Evidence":
+        if not (principal.can(Permission.ANALYZE) or principal.can(Permission.REVIEW)):
+            st.error("Your role does not permit access to the internal evidence workspace.")
+            st.stop()
         st.title("Evidence Workspace")
         st.subheader("Sources")
         st.dataframe(list(manifest.get("sources", {}).values()), use_container_width=True)
@@ -188,15 +272,19 @@ def run() -> None:
         st.dataframe(list(manifest.get("contradictions", {}).values()), use_container_width=True)
 
     elif page == "Review Center":
+        if not principal.can(Permission.REVIEW):
+            st.error("Your role does not permit review access.")
+            st.stop()
         st.title("Review Center")
         st.subheader("Open escalations")
         st.dataframe(list(manifest.get("escalations", {}).values()), use_container_width=True)
         st.caption("ColettiOS preserves conflicts until a documented human resolution occurs.")
 
     elif page == "Analysis":
-        st.title("Analysis")
-        st.write("Financial reconstruction, timelines, relationship analysis, and record comparisons attach here through released ColettiOS interfaces.")
-        st.json({"source_states": manifest.get("source_states", {})})
+        if not principal.can(Permission.ANALYZE):
+            st.error("Your role does not permit analysis access.")
+            st.stop()
+        _render_analysis(manifest)
 
     elif page == "Reports":
         st.title("Reports")
