@@ -10,7 +10,7 @@ from .auth import demo_principal, require_authenticated_principal
 from .core_adapter import HttpColettiOSAdapter, SyntheticCoreAdapter
 from .intake import ingest_file
 from .models import Permission
-from .security import SECURITY_CONTROLS, validate_runtime
+from .security import SECURITY_CONTROLS, validate_production_configuration, validate_runtime
 from .storage import EncryptedLocalDemoStorage, GoogleCloudEncryptedStorage, decode_master_key
 from .synthetic import SYNTHETIC_ENGAGEMENT
 
@@ -23,49 +23,75 @@ def _secret(name: str, default: str = "") -> str:
     return str(value)
 
 
+def _show_gate_errors(errors: list[str]) -> None:
+    st.error("Production security gate is closed.")
+    for error in errors:
+        st.write(f"• {error}")
+    st.stop()
+
+
 def _runtime():
     app_mode = _secret("APP_MODE", "demo").lower()
     storage_backend = _secret("STORAGE_BACKEND", "local_demo").lower()
     core_backend = _secret("COLETTIOS_BACKEND", "synthetic").lower()
-    session_ttl = int(_secret("SESSION_TTL_MINUTES", "480"))
+    session_ttl_raw = _secret("SESSION_TTL_MINUTES", "480")
+
+    production_config = {
+        "GCS_BUCKET": _secret("GCS_BUCKET"),
+        "GCP_SERVICE_ACCOUNT_JSON": _secret("GCP_SERVICE_ACCOUNT_JSON"),
+        "STORAGE_MASTER_KEY": _secret("STORAGE_MASTER_KEY"),
+        "COLETTIOS_API_URL": _secret("COLETTIOS_API_URL"),
+        "COLETTIOS_API_TOKEN": _secret("COLETTIOS_API_TOKEN"),
+        "AUTHZ_REGISTRY_JSON": _secret("AUTHZ_REGISTRY_JSON"),
+        "SESSION_TTL_MINUTES": session_ttl_raw,
+    }
+    preflight_errors = validate_production_configuration(app_mode=app_mode, config=production_config)
+    if preflight_errors:
+        _show_gate_errors(preflight_errors)
+
+    try:
+        session_ttl = int(session_ttl_raw)
+    except ValueError:
+        if app_mode == "production":
+            _show_gate_errors(["SESSION_TTL_MINUTES must be an integer"])
+        session_ttl = 480
+
     principal = require_authenticated_principal(app_mode=app_mode, session_ttl_minutes=session_ttl)
     if principal is None:
         principal = demo_principal()
 
+    runtime_errors = validate_runtime(
+        app_mode=app_mode,
+        storage_backend=storage_backend,
+        core_backend=core_backend,
+        authenticated=principal.authenticated,
+    )
+    if runtime_errors:
+        _show_gate_errors(runtime_errors)
+
     if "_coletti_core" not in st.session_state:
         if core_backend == "http":
             st.session_state["_coletti_core"] = HttpColettiOSAdapter(
-                _secret("COLETTIOS_API_URL"), _secret("COLETTIOS_API_TOKEN")
+                production_config["COLETTIOS_API_URL"], production_config["COLETTIOS_API_TOKEN"]
             )
         else:
             st.session_state["_coletti_core"] = SyntheticCoreAdapter()
 
     if "_coletti_storage" not in st.session_state:
-        key_value = _secret("STORAGE_MASTER_KEY")
+        key_value = production_config["STORAGE_MASTER_KEY"]
         if not key_value and app_mode == "demo":
             key_value = base64.urlsafe_b64encode(os.urandom(32)).decode()
             st.session_state["_demo_storage_key"] = key_value
         key = decode_master_key(key_value)
         if storage_backend == "gcs":
             st.session_state["_coletti_storage"] = GoogleCloudEncryptedStorage(
-                bucket_name=_secret("GCS_BUCKET"),
-                service_account_json=_secret("GCP_SERVICE_ACCOUNT_JSON"),
+                bucket_name=production_config["GCS_BUCKET"],
+                service_account_json=production_config["GCP_SERVICE_ACCOUNT_JSON"],
                 master_key=key,
             )
         else:
             st.session_state["_coletti_storage"] = EncryptedLocalDemoStorage(".secure_store", key)
 
-    errors = validate_runtime(
-        app_mode=app_mode,
-        storage_backend=storage_backend,
-        core_backend=core_backend,
-        authenticated=principal.authenticated,
-    )
-    if errors:
-        st.error("Production security gate is closed.")
-        for error in errors:
-            st.write(f"• {error}")
-        st.stop()
     return app_mode, storage_backend, core_backend, principal, st.session_state["_coletti_core"], st.session_state["_coletti_storage"]
 
 
