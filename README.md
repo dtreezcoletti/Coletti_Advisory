@@ -1,28 +1,31 @@
 # Coletti & Co.
 
-Coletti & Co. is the commercial implementation layer that uses released ColettiOS capabilities to perform defined record-analysis and operational-reconstruction services for future clients.
+Coletti & Co. is the commercial application layer for the private ColettiOS provenance-first record analysis core.
 
-## Boundary
+## Current replacement architecture
 
-This repository is **not** the ColettiOS core repository and must not contain private historical case facts, real-case demonstrations, settlement information, personal evidentiary source material, or hard-coded client assumptions.
+`Streamlit UI -> OIDC identity -> RBAC/engagement authorization -> encrypted intake -> ColettiOS adapter -> private ColettiOS service`
 
-Commercial code should consume generalized ColettiOS interfaces and add only:
+The public repository contains no approved real-client or historical-case data. The default application mode is a synthetic demonstration. Real client data must not be entered while `APP_MODE=demo`.
 
-- service definitions;
-- intake and client-workspace logic;
-- contracts and scope controls;
-- report presentation;
-- engagement operations;
-- client-specific configuration stored outside reusable source code.
+## Authentication
 
-## Marketing firewall
+The app uses Streamlit OIDC (`st.login`, `st.user`, `st.logout`) for identity. Password verification remains with the configured identity provider. Coletti & Co. owns authorization through a server-side allowlist/registry and enforces role and engagement access separately.
 
-Historical matters may teach methodology, but public demonstrations must use synthetic data only.
+## Storage
 
-`historical lesson -> generalized ColettiOS rule -> synthetic demonstration -> Coletti & Co. service`
+Demo mode uses client-side AES-256-GCM encryption on ephemeral local storage. Production mode fails closed unless Google Cloud Storage is configured; bytes are encrypted before upload and plaintext SHA-256 hashes are registered as source integrity metadata.
 
-## Current migration status
+## ColettiOS boundary
 
-This repository contains legacy modules from an earlier case-driven build. Those modules are being reviewed and generalized. Real-case constants are not considered approved commercial architecture.
+The commercial repository does not duplicate private ColettiOS engine logic. `HttpColettiOSAdapter` defines the released service contract. Production mode requires an HTTPS ColettiOS service URL and server-side service token.
 
-See `PROJECT_BOUNDARY.md` and `MIGRATION_REGISTER.md`.
+## Run
+
+```bash
+pip install -e .[dev]
+streamlit run streamlit_app.py
+pytest
+```
+
+See `SECURITY_RELEASE_GATE.md`, `PROJECT_BOUNDARY.md`, and `MIGRATION_REGISTER.md`.

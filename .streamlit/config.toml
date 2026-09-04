@@ -1,0 +1,9 @@
+[server]
+headless = true
+enableCORS = true
+enableXsrfProtection = true
+
+[client]
+showErrorDetails = false
+
+theme.base = "light"
