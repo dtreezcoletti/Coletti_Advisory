@@ -18,6 +18,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.3,<10"]
 
+[tool.setuptools.packages.find]
+include = ["coletti_advisory*"]
+exclude = ["services*", "tests*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
