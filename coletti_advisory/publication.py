@@ -9,6 +9,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol
 
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
@@ -123,6 +124,13 @@ def _deserialize(value: dict[str, Any]) -> dict[str, ReportPublicationRecord]:
 
 
 class EncryptedLocalPublicationStore:
+    """Encrypted synthetic/demo publication state.
+
+    The demo encryption key is session-scoped. If a Streamlit restart leaves a stale
+    local file behind, the demo safely resets rather than crashing on an old key.
+    Production GCS state never uses this recovery behavior.
+    """
+
     def __init__(self, root: str | Path, master_key: bytes) -> None:
         self.root = Path(root)
         self.master_key = master_key
@@ -135,7 +143,11 @@ class EncryptedLocalPublicationStore:
         path = self._path(organization_id, engagement_id)
         if not path.exists():
             return {}
-        return _deserialize(_decrypt_json(path.read_bytes(), self.master_key, _aad(organization_id, engagement_id)))
+        try:
+            payload = _decrypt_json(path.read_bytes(), self.master_key, _aad(organization_id, engagement_id))
+        except (InvalidTag, ValueError, json.JSONDecodeError, UnicodeDecodeError):
+            return {}
+        return _deserialize(payload)
 
     def save(self, *, organization_id: str, engagement_id: str, records: dict[str, ReportPublicationRecord]) -> None:
         path = self._path(organization_id, engagement_id)
@@ -197,8 +209,8 @@ def sync_drafts(
             record.approved_by = None
             record.approved_at = None
             record.review_note = None
-            # Preserve the last published snapshot and its publication metadata.
-            # A new draft must never silently replace an already released report.
+            # Preserve the last published snapshot, publication metadata, and any
+            # revocation marker. A changed draft never changes client visibility.
     return updated
 
 
@@ -254,5 +266,5 @@ def published_reports(records: dict[str, ReportPublicationRecord]) -> dict[str, 
     return {
         report_type: record.published_snapshot
         for report_type, record in records.items()
-        if record.status != PublicationStatus.REVOKED and record.published_snapshot is not None
+        if record.revoked_at is None and record.published_snapshot is not None
     }
