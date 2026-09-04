@@ -61,7 +61,8 @@ def test_analytical_issues_use_boundary_safe_classifications_and_verification_ro
     assert all(row["Supporting sources"] for row in rows)
     assert all(row["Verification recommendation"] for row in rows)
     assert all(row["Potential verifier"] for row in rows)
-    assert any("financial/accounting professional" in row["Potential verifier"] for row in rows)
+    assert any("record custodian" in row["Potential verifier"] for row in rows)
+    assert any("professional" in row["Potential verifier"] for row in rows)
 
 
 def test_state_counts_are_operator_readable():
