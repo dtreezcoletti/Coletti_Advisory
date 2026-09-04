@@ -43,6 +43,15 @@ def test_publication_state_persists_encrypted(tmp_path):
     assert loaded[report_name].review_note == "Reviewed source links"
 
 
+def test_demo_store_resets_if_old_session_key_cannot_decrypt(tmp_path):
+    first_store = EncryptedLocalPublicationStore(tmp_path, os.urandom(32))
+    records = sync_drafts({}, _bundle())
+    first_store.save(organization_id=ORG, engagement_id=ENGAGEMENT, records=records)
+
+    restarted_store = EncryptedLocalPublicationStore(tmp_path, os.urandom(32))
+    assert restarted_store.load(organization_id=ORG, engagement_id=ENGAGEMENT) == {}
+
+
 def test_report_requires_review_then_approval_before_publish():
     bundle = _bundle()
     records = sync_drafts({}, bundle)
@@ -112,4 +121,25 @@ def test_revocation_removes_client_visibility_but_preserves_snapshot():
 
     assert record.status == PublicationStatus.REVOKED
     assert record.published_snapshot is not None
+    assert report_name not in published_reports(records)
+
+
+def test_revoked_snapshot_stays_hidden_when_new_draft_is_generated():
+    bundle = _bundle()
+    records = sync_drafts({}, bundle)
+    report_name, report = next(iter(bundle.items()))
+    record = records[report_name]
+
+    send_to_review(record, actor="owner")
+    approve_report(record, actor="owner")
+    publish_report(record, actor="owner", report=report)
+    revoke_report(record, actor="owner")
+
+    changed_bundle = _bundle()
+    changed_bundle[report_name] = dict(changed_bundle[report_name])
+    changed_bundle[report_name]["purpose"] = changed_bundle[report_name]["purpose"] + " New post-revocation draft."
+    sync_drafts(records, changed_bundle)
+
+    assert record.status == PublicationStatus.DRAFT
+    assert record.revoked_at is not None
     assert report_name not in published_reports(records)
