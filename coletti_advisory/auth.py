@@ -4,6 +4,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from uuid import uuid4
 
 import streamlit as st
@@ -18,6 +19,7 @@ class AuthorizationRecord:
     organization_id: str
     role: Role
     engagement_ids: tuple[str, ...]
+    enabled: bool = True
 
 
 class AuthorizationRegistry:
@@ -35,11 +37,40 @@ class AuthorizationRegistry:
                 organization_id=str(item["organization_id"]),
                 role=Role(str(item["role"])),
                 engagement_ids=normalize_engagements(item.get("engagement_ids", [])),
+                enabled=bool(item.get("enabled", True)),
             )
         return cls(records)
 
     def resolve(self, email: str) -> AuthorizationRecord | None:
         return self._records.get(email.lower())
+
+
+def validate_oidc_claim_times(
+    claims: dict[str, Any],
+    *,
+    now: datetime | None = None,
+    clock_skew_seconds: int = 60,
+) -> None:
+    """Enforce OIDC identity-token issuance and expiration claims.
+
+    Streamlit exposes parsed identity-token claims through st.user but does not
+    implicitly expire authentication when the token's ``exp`` time passes. The
+    commercial boundary therefore checks ``iat`` and ``exp`` on every rerun.
+    """
+    now = now or datetime.now(timezone.utc)
+    now_ts = now.timestamp()
+    try:
+        issued_at = float(claims["iat"])
+        expires_at = float(claims["exp"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("OIDC identity token is missing valid iat/exp claims") from exc
+
+    if issued_at > now_ts + clock_skew_seconds:
+        raise ValueError("OIDC identity token issuance time is in the future")
+    if expires_at <= issued_at:
+        raise ValueError("OIDC identity token expiration is invalid")
+    if now_ts >= expires_at - clock_skew_seconds:
+        raise ValueError("OIDC identity token has expired")
 
 
 def _secrets_get(name: str, default=None):
@@ -56,20 +87,25 @@ def _auth_is_configured() -> bool:
         return False
 
 
-def _user_value(name: str, default: str = "") -> str:
+def _user_claim(name: str, default=None):
     try:
-        value = st.user.get(name, default)
+        return st.user.get(name, default)
     except Exception:
-        value = getattr(st.user, name, default)
-    return str(value or default)
+        return getattr(st.user, name, default)
+
+
+def _user_value(name: str, default: str = "") -> str:
+    return str(_user_claim(name, default) or default)
 
 
 def require_authenticated_principal(*, app_mode: str, session_ttl_minutes: int) -> Principal | None:
     """Use Streamlit OIDC for identity; authorization remains application-owned.
 
-    Password verification, signed identity-token validation, nonce/state handling,
-    and the identity-provider session are delegated to the configured OIDC
-    provider and Streamlit. Coletti & Co. separately enforces authorization.
+    Password verification, cryptographic identity-token validation, nonce/state
+    handling, and provider-session behavior are delegated to the configured OIDC
+    provider and Streamlit. Coletti & Co. separately enforces token expiration,
+    application-session lifetime, account authorization, roles, and engagement
+    access.
 
     In demo mode, missing OIDC configuration returns None so the synthetic demo
     can remain public. Production mode fails closed.
@@ -88,13 +124,21 @@ def require_authenticated_principal(*, app_mode: str, session_ttl_minutes: int) 
             st.login(provider)
         st.stop()
 
+    claims = {"iat": _user_claim("iat"), "exp": _user_claim("exp")}
+    try:
+        validate_oidc_claim_times(claims)
+    except ValueError:
+        st.warning("Your identity token expired or is invalid. Please authenticate again.")
+        st.logout()
+        st.stop()
+
     now = datetime.now(timezone.utc)
     started_key = "_coletti_auth_started_at"
     if started_key not in st.session_state:
         st.session_state[started_key] = now.isoformat()
     started = datetime.fromisoformat(st.session_state[started_key])
     if now - started > timedelta(minutes=session_ttl_minutes):
-        st.warning("Your Coletti & Co. session expired. Please authenticate again.")
+        st.warning("Your Coletti & Co. application session expired. Please authenticate again.")
         st.logout()
         st.stop()
 
@@ -105,7 +149,7 @@ def require_authenticated_principal(*, app_mode: str, session_ttl_minutes: int) 
 
     registry_raw = str(_secrets_get("AUTHZ_REGISTRY_JSON", "{}"))
     record = AuthorizationRegistry.from_json(registry_raw).resolve(email)
-    if record is None:
+    if record is None or not record.enabled:
         st.error("Your identity is verified, but this account is not authorized for Coletti & Co.")
         if st.button("Log out"):
             st.logout()
