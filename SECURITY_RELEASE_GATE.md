@@ -11,10 +11,12 @@
 
 - ✅ real login through Streamlit OIDC
 - ✅ password verification delegated to the configured identity provider; Coletti & Co. never stores plaintext passwords
-- ✅ signed OIDC identity/session validation
+- ✅ OIDC identity verification delegated to Streamlit/Authlib, including the provider flow and signed identity token processing
+- ✅ explicit `iat` / `exp` identity-token lifetime enforcement on every authenticated rerun
 - ✅ application session expiration
-- ✅ re-authentication after application session expiry
-- ✅ logout
+- ✅ re-authentication after identity-token or application-session expiry
+- ✅ logout through `st.logout()`; current Streamlit also signs out of the identity provider when supported by the configured OIDC provider
+- ✅ application authorization revocation through `AUTHZ_REGISTRY_JSON` (`enabled=false`)
 - ✅ RBAC enforcement
 - ✅ engagement-level authorization
 - ✅ authenticated upload pipeline
@@ -48,8 +50,8 @@ The workspace selector is authorization, not identity. Users may only see engage
 
 Production mode fails closed unless all three are true:
 
-1. a real authenticated principal is present;
+1. a real authenticated principal is present and its token/session lifetime is valid;
 2. durable encrypted Google Cloud Storage is configured; and
 3. the commercial app is connected to the separately deployed private ColettiOS service adapter.
 
-Synthetic mode is intentionally available without OIDC so the public demonstration can be viewed without exposing or accepting real client data.
+Synthetic mode is intentionally available without OIDC so the public demonstration can be viewed without exposing approved client data. Demo uploads are explicitly synthetic-only and use encrypted ephemeral storage.
