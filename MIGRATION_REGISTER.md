@@ -2,37 +2,29 @@
 
 Status date: 2026-09-04
 
-## Objective
+## Replacement branch objective
 
-Remove historical case facts and case-driven assumptions from the commercial code path. Replace them with configuration, generalized interfaces, or synthetic fixtures.
+Retire the case-driven Streamlit dashboard and replace the active commercial code path with a synthetic, configuration-driven Coletti & Co. application that consumes ColettiOS through a defined interface.
 
-## Completed
+## Completed on `release/coletti2-migration-2026-09-04`
 
-- `README.md` now defines the commercial boundary.
-- `PROJECT_BOUNDARY.md` establishes allowed/prohibited content.
-- `forensic_engine.py` no longer seeds real historical case data; its default demonstration is synthetic and metadata is configurable.
+- legacy case UI removed from the active entrypoint;
+- historical/default case constants removed with retired legacy modules;
+- duplicated core modules retired from the commercial branch;
+- synthetic fixture is the only default engagement;
+- Streamlit OIDC authentication path added;
+- RBAC and engagement authorization added;
+- application session expiration and logout added;
+- authenticated actor context propagated through the ColettiOS adapter contract;
+- AES-256-GCM encrypted intake storage added;
+- SHA-256 source hashing added;
+- durable Google Cloud Storage backend implemented for production configuration;
+- synthetic adapter retained only for public demonstration mode;
+- production mode fails closed without authenticated identity, GCS, and private ColettiOS HTTP adapter;
+- CORS/XSRF protections restored in Streamlit configuration.
 
-## Open migration items
+## Remaining deployment boundary
 
-| File | Known issue | Required action |
-|---|---|---|
-| `coletti_os.py` | Historical transaction/example constants are embedded in reusable code | Extract reusable logic to ColettiOS core; replace examples with synthetic fixtures |
-| `coletti_os_core.py` | Real case number/name and financial constants are hard-coded | Retire as core authority; migrate generalized logic to private ColettiOS repository |
-| `forensic_v27.py` | Case-specific production/request text is embedded | Convert to neutral template with injected engagement metadata |
-| `pdf_ingestion.py` | Historical case identity appears in reusable module metadata | Remove case identity and keep parser generic |
-| `excel_export.py` | Historical case identity is hard-coded into exports | Read engagement metadata from configuration |
-| `streamlit_app.py` | Real-case labels, valuation screens, and entity-specific rules appear in public UI code | Replace with synthetic demo workspace and configuration-driven UI |
+The public Git history predates this cleanup and may still contain retired historical material. Current-branch cleanup does not erase prior commits. Repository visibility/history remediation is therefore a separate administrative action.
 
-## Release gate
-
-Coletti & Co. is not commercially production-ready until:
-
-1. a repository scan returns zero prohibited historical identifiers in the active commercial code path;
-2. all demonstrations use synthetic fixtures;
-3. client facts are supplied by engagement configuration/data rather than source-code defaults;
-4. released ColettiOS functionality is consumed through a defined interface instead of duplicated commercial core code;
-5. output language distinguishes record-derived observations from professional determinations.
-
-## Important repository-history note
-
-Removing identifiers from the current branch does not erase them from prior public Git history. Historical exposure therefore requires a separate repository-privacy/history-remediation decision in addition to code cleanup.
+The live `coletti2.streamlit.app` cutover must not accept real client data until OIDC secrets, authorization registry, durable storage credentials, and the private ColettiOS service endpoint are configured.
