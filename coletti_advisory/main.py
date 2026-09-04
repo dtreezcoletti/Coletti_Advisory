@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import json
 import os
-from uuid import uuid4
 
 import streamlit as st
 
@@ -17,7 +16,11 @@ from .synthetic import SYNTHETIC_ENGAGEMENT
 
 
 def _secret(name: str, default: str = "") -> str:
-    return str(st.secrets.get(name, os.environ.get(name, default)))
+    try:
+        value = st.secrets.get(name, os.environ.get(name, default))
+    except Exception:
+        value = os.environ.get(name, default)
+    return str(value)
 
 
 def _runtime():
@@ -66,24 +69,40 @@ def _runtime():
     return app_mode, storage_backend, core_backend, principal, st.session_state["_coletti_core"], st.session_state["_coletti_storage"]
 
 
-def _identity_panel(principal, engagement_id: str):
+def _workspace_label(engagement_id: str) -> str:
+    if engagement_id == SYNTHETIC_ENGAGEMENT["engagement_id"]:
+        return SYNTHETIC_ENGAGEMENT["name"]
+    return engagement_id
+
+
+def _identity_panel(principal) -> str:
     if principal.authenticated:
         st.sidebar.success(f"Authenticated as: {principal.display_name}")
         st.sidebar.caption(f"Role: {principal.role.value.replace('_', ' ').title()}")
     else:
         st.sidebar.info("Synthetic demo session — no client identity or client data")
-    st.sidebar.caption(f"Authorized workspace: {engagement_id}")
+
+    options = list(principal.engagement_ids)
+    selected = st.sidebar.selectbox(
+        "Authorized workspace",
+        options,
+        format_func=_workspace_label,
+    )
+    if not principal.can_access(selected):
+        st.error("Workspace authorization failed.")
+        st.stop()
+
     if principal.authenticated and st.sidebar.button("Log out"):
         st.logout()
+    return selected
 
 
 def run() -> None:
     st.set_page_config(page_title="Coletti & Co. | ColettiOS", page_icon="◈", layout="wide")
     app_mode, storage_backend, core_backend, principal, core, storage = _runtime()
 
-    engagement_id = principal.engagement_ids[0]
-    engagement_name = SYNTHETIC_ENGAGEMENT["name"] if engagement_id == "eng-synthetic-demo" else engagement_id
-    _identity_panel(principal, engagement_name)
+    engagement_id = _identity_panel(principal)
+    engagement_name = _workspace_label(engagement_id)
 
     page = st.sidebar.radio(
         "Workspace",
@@ -106,12 +125,13 @@ def run() -> None:
 
     elif page == "Engagements":
         st.title("Engagements")
-        st.dataframe([{"Workspace": engagement_name, "ID": engagement_id, "Status": "ACTIVE"}], use_container_width=True)
+        rows = [{"Workspace": _workspace_label(eid), "ID": eid, "Status": "ACTIVE"} for eid in principal.engagement_ids]
+        st.dataframe(rows, use_container_width=True)
 
     elif page == "Intake":
         st.title("Secure Intake")
         if app_mode == "demo":
-            st.info("Demo uploads are AES-256-GCM encrypted on ephemeral local storage and may disappear on restart.")
+            st.info("Demo uploads are AES-256-GCM encrypted on ephemeral local storage and may disappear on restart. Use synthetic files only.")
         classification = st.selectbox("Document classification", ["Operational Audit", "Business Record", "Financial Record", "Correspondence", "Other"])
         uploaded = st.file_uploader("Upload a source record")
         if st.button("Register source", type="primary", disabled=uploaded is None):
@@ -134,9 +154,8 @@ def run() -> None:
 
     elif page == "Evidence":
         st.title("Evidence Workspace")
-        sources = list(manifest.get("sources", {}).values())
         st.subheader("Sources")
-        st.dataframe(sources, use_container_width=True)
+        st.dataframe(list(manifest.get("sources", {}).values()), use_container_width=True)
         st.subheader("Propositions")
         st.dataframe(list(manifest.get("propositions", {}).values()), use_container_width=True)
         st.subheader("Contradictions")
