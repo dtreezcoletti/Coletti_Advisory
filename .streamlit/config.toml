@@ -6,4 +6,5 @@ enableXsrfProtection = true
 [client]
 showErrorDetails = false
 
-theme.base = "light"
+[theme]
+base = "light"
