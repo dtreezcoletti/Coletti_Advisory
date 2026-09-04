@@ -18,6 +18,7 @@ from .auth import demo_principal, require_authenticated_principal
 from .core_adapter import HttpColettiOSAdapter, SyntheticCoreAdapter
 from .intake import ingest_file
 from .models import Permission
+from .reporting import build_publication_gate, build_report_bundle
 from .security import SECURITY_CONTROLS, validate_production_configuration, validate_runtime
 from .storage import EncryptedLocalDemoStorage, GoogleCloudEncryptedStorage, decode_master_key
 from .synthetic import SYNTHETIC_ENGAGEMENT
@@ -204,13 +205,113 @@ def _render_analysis(manifest: dict) -> None:
         )
 
 
+def _render_review_center(manifest: dict) -> None:
+    st.title("Review Center")
+    st.caption("Human review sits between internal analysis and any client-facing report publication.")
+
+    issues = build_analytical_issues(manifest)
+    gate = build_publication_gate(manifest)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Analytical issues", len(issues))
+    c2.metric("Verification routes", gate["verification_recommendation_count"])
+    c3.metric("Publishing gate", gate["status"])
+
+    st.subheader("Analytical Review Queue")
+    _show_table(issues, empty_message="No analytical issues are currently awaiting review.")
+
+    st.subheader("Open ColettiOS Escalations")
+    _show_table(
+        list((manifest.get("escalations") or {}).values()),
+        empty_message="No ColettiOS escalations are currently open.",
+    )
+
+    if gate["status"] == "REVIEW REQUIRED":
+        st.warning("Client publication is blocked until the analytical review queue is explicitly addressed by an authorized reviewer.")
+    else:
+        st.info("The record set is ready for explicit reviewer approval; it is not automatically published.")
+    st.caption(gate["rule"])
+
+
+def _render_report_section(title: str, value) -> None:
+    st.subheader(title)
+    if isinstance(value, list):
+        _show_table(value, empty_message=f"No {title.lower()} are available in this draft.")
+    elif isinstance(value, dict):
+        if value:
+            st.json(value)
+        else:
+            st.info(f"No {title.lower()} are available in this draft.")
+    else:
+        st.write(value)
+
+
+def _render_internal_reports(manifest: dict) -> None:
+    st.title("Reports")
+    st.caption("Controlled report drafting · populated from the shared analysis layer · client publication remains gated")
+
+    gate = build_publication_gate(manifest)
+    reports = build_report_bundle(manifest)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Report drafts", len(reports))
+    c2.metric("Items requiring review", gate["review_required_count"])
+    c3.metric("Publishing gate", gate["status"])
+
+    if gate["status"] == "REVIEW REQUIRED":
+        st.warning("These are internal drafts. The publishing gate is closed pending human review.")
+    else:
+        st.info("Drafts are ready for explicit reviewer approval. Nothing is published automatically.")
+
+    tabs = st.tabs(list(reports.keys()))
+    for tab, (report_name, report) in zip(tabs, reports.items()):
+        with tab:
+            st.subheader(report_name)
+            st.caption(report["document_status"])
+            st.write(report["purpose"])
+            st.info(report["boundary"])
+
+            for key, value in report.items():
+                if key in {"report_type", "document_status", "purpose", "boundary"}:
+                    continue
+                _render_report_section(key.replace("_", " ").title(), value)
+
+            export = json.dumps(report, indent=2, default=str)
+            safe_name = report_name.lower().replace(" ", "_") + "_draft.json"
+            st.download_button(
+                f"Download {report_name} draft",
+                export,
+                file_name=safe_name,
+                mime="application/json",
+                key=f"download-{safe_name}",
+            )
+
+    with st.expander("Publishing gate details"):
+        st.json(gate)
+
+
+def _render_client_reports(manifest: dict) -> None:
+    st.title("Reports")
+    st.caption("Client-facing report delivery")
+    published = manifest.get("published_reports") or {}
+    if not published:
+        st.info("No reports have been published to this workspace yet.")
+        return
+
+    if isinstance(published, dict):
+        rows = list(published.values())
+    elif isinstance(published, list):
+        rows = published
+    else:
+        rows = []
+    _show_table(rows, empty_message="No reports have been published to this workspace yet.")
+
+
 def run() -> None:
     st.set_page_config(page_title="Coletti & Co. | ColettiOS", page_icon="◈", layout="wide")
     app_mode, storage_backend, core_backend, principal, core, storage = _runtime()
 
     engagement_id = _identity_panel(principal)
-    engagement_name = _workspace_label(engagement_id)
-
     page = st.sidebar.radio("Workspace", _workspace_pages(principal))
     manifest = core.manifest(engagement_id)
 
@@ -219,11 +320,24 @@ def run() -> None:
         st.caption("Commercial interface powered by ColettiOS contracts")
         if app_mode == "demo":
             st.warning("SYNTHETIC DEMO ONLY — do not upload real client, legal, medical, financial, or identifying records.")
+
+        summary = build_summary(manifest)
+        gate = build_publication_gate(manifest)
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Sources", len(manifest.get("sources", {})))
-        c2.metric("Propositions", len(manifest.get("propositions", {})))
-        c3.metric("Contradictions", len(manifest.get("contradictions", {})))
-        c4.metric("Open escalations", len(manifest.get("escalations", {})))
+        c1.metric("Sources", summary["sources"])
+        c2.metric("Propositions", summary["propositions"])
+        c3.metric("Inconsistencies", summary["inconsistencies"])
+        c4.metric("Open issues", summary["open_issues"])
+
+        st.subheader("Engagement Workflow")
+        w1, w2, w3, w4, w5 = st.columns(5)
+        w1.metric("1 · Intake", summary["sources"])
+        w2.metric("2 · Evidence", summary["propositions"])
+        w3.metric("3 · Analysis", summary["inconsistencies"])
+        w4.metric("4 · Review", gate["review_required_count"])
+        w5.metric("5 · Reports", gate["status"])
+        st.caption("Intake → Evidence → Analysis → Human Review → Report Drafts → Publishing Gate → Client")
+
         st.subheader("Current operating boundary")
         st.write("Records → traceable propositions → conflicts/gaps → human review → auditable output.")
 
@@ -275,10 +389,7 @@ def run() -> None:
         if not principal.can(Permission.REVIEW):
             st.error("Your role does not permit review access.")
             st.stop()
-        st.title("Review Center")
-        st.subheader("Open escalations")
-        st.dataframe(list(manifest.get("escalations", {}).values()), use_container_width=True)
-        st.caption("ColettiOS preserves conflicts until a documented human resolution occurs.")
+        _render_review_center(manifest)
 
     elif page == "Analysis":
         if not principal.can(Permission.ANALYZE):
@@ -287,10 +398,10 @@ def run() -> None:
         _render_analysis(manifest)
 
     elif page == "Reports":
-        st.title("Reports")
-        export = json.dumps(manifest, indent=2, default=str)
-        st.download_button("Download evidence manifest", export, file_name="colettios_synthetic_manifest.json", mime="application/json")
-        st.caption("Reports distinguish record-derived observations from professional determinations.")
+        if principal.can(Permission.ANALYZE) or principal.can(Permission.REVIEW):
+            _render_internal_reports(manifest)
+        else:
+            _render_client_reports(manifest)
 
     elif page == "Administration":
         st.title("Administration & Security")
