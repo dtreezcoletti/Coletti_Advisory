@@ -42,6 +42,20 @@ class AuthorizationRegistry:
         return self._records.get(email.lower())
 
 
+def _secrets_get(name: str, default=None):
+    try:
+        return st.secrets.get(name, default)
+    except Exception:
+        return default
+
+
+def _auth_is_configured() -> bool:
+    try:
+        return "auth" in st.secrets
+    except Exception:
+        return False
+
+
 def _user_value(name: str, default: str = "") -> str:
     try:
         value = st.user.get(name, default)
@@ -53,11 +67,14 @@ def _user_value(name: str, default: str = "") -> str:
 def require_authenticated_principal(*, app_mode: str, session_ttl_minutes: int) -> Principal | None:
     """Use Streamlit OIDC for identity; authorization remains application-owned.
 
+    Password verification, signed identity-token validation, nonce/state handling,
+    and the identity-provider session are delegated to the configured OIDC
+    provider and Streamlit. Coletti & Co. separately enforces authorization.
+
     In demo mode, missing OIDC configuration returns None so the synthetic demo
     can remain public. Production mode fails closed.
     """
-    auth_configured = "auth" in st.secrets
-    if not auth_configured:
+    if not _auth_is_configured():
         if app_mode == "demo":
             return None
         st.error("Authentication is not configured. Production access is disabled.")
@@ -67,7 +84,7 @@ def require_authenticated_principal(*, app_mode: str, session_ttl_minutes: int) 
         st.title("Coletti & Co.")
         st.caption("Secure ColettiOS workspace")
         if st.button("Log in", type="primary"):
-            provider = str(st.secrets.get("AUTH_PROVIDER", "google"))
+            provider = str(_secrets_get("AUTH_PROVIDER", "google"))
             st.login(provider)
         st.stop()
 
@@ -86,7 +103,7 @@ def require_authenticated_principal(*, app_mode: str, session_ttl_minutes: int) 
         st.error("The identity provider did not return an email address.")
         st.stop()
 
-    registry_raw = str(st.secrets.get("AUTHZ_REGISTRY_JSON", "{}"))
+    registry_raw = str(_secrets_get("AUTHZ_REGISTRY_JSON", "{}"))
     record = AuthorizationRegistry.from_json(registry_raw).resolve(email)
     if record is None:
         st.error("Your identity is verified, but this account is not authorized for Coletti & Co.")
