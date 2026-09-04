@@ -429,6 +429,40 @@ def _render_client_reports(records: dict) -> None:
             )
 
 
+def _render_internal_command_center(manifest: dict, reports: dict, records: dict) -> None:
+    summary = build_summary(manifest)
+    gate = build_publication_gate(manifest)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Sources", summary["sources"])
+    c2.metric("Propositions", summary["propositions"])
+    c3.metric("Inconsistencies", summary["inconsistencies"])
+    c4.metric("Open issues", summary["open_issues"])
+
+    st.subheader("Engagement Workflow")
+    w1, w2, w3, w4, w5, w6 = st.columns(6)
+    w1.metric("1 · Intake", summary["sources"])
+    w2.metric("2 · Evidence", summary["propositions"])
+    w3.metric("3 · Analysis", summary["inconsistencies"])
+    w4.metric("4 · Review", gate["review_required_count"])
+    w5.metric("5 · Drafts", len(reports))
+    w6.metric("6 · Published", len(published_reports(records)))
+    st.caption("Intake → Evidence → Analysis → Human Review → Report Drafts → Publishing Gate → Client")
+
+    st.subheader("Current operating boundary")
+    st.write("Records → traceable propositions → conflicts/gaps → human review → auditable output.")
+
+
+def _render_client_command_center(manifest: dict, records: dict) -> None:
+    published_count = len(published_reports(records))
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Records submitted", len(manifest.get("sources", {})))
+    c2.metric("Reports available", published_count)
+    c3.metric("Workspace", "Active")
+    st.subheader("Engagement Status")
+    st.write("Upload records → Coletti & Co. processing/review → published reports")
+    st.caption("Internal propositions, analytical issues, reviewer notes, and draft reports are not exposed in the client workspace.")
+
+
 def run() -> None:
     st.set_page_config(page_title="Coletti & Co. | ColettiOS", page_icon="◈", layout="wide")
     app_mode, storage_backend, core_backend, principal, core, storage, publication_store = _runtime()
@@ -437,9 +471,10 @@ def run() -> None:
     page = st.sidebar.radio("Workspace", _workspace_pages(principal))
     manifest = core.manifest(engagement_id)
 
-    reports = build_report_bundle(manifest)
+    internal_user = principal.can(Permission.ANALYZE) or principal.can(Permission.REVIEW)
+    reports = build_report_bundle(manifest) if internal_user else {}
     records = _load_publication_records(publication_store, principal, engagement_id)
-    if principal.can(Permission.ANALYZE) or principal.can(Permission.REVIEW):
+    if internal_user:
         records = sync_drafts(records, reports)
         _save_publication_records(publication_store, principal, engagement_id, records)
 
@@ -448,27 +483,10 @@ def run() -> None:
         st.caption("Commercial interface powered by ColettiOS contracts")
         if app_mode == "demo":
             st.warning("SYNTHETIC DEMO ONLY — do not upload real client, legal, medical, financial, or identifying records.")
-
-        summary = build_summary(manifest)
-        gate = build_publication_gate(manifest)
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Sources", summary["sources"])
-        c2.metric("Propositions", summary["propositions"])
-        c3.metric("Inconsistencies", summary["inconsistencies"])
-        c4.metric("Open issues", summary["open_issues"])
-
-        st.subheader("Engagement Workflow")
-        w1, w2, w3, w4, w5, w6 = st.columns(6)
-        w1.metric("1 · Intake", summary["sources"])
-        w2.metric("2 · Evidence", summary["propositions"])
-        w3.metric("3 · Analysis", summary["inconsistencies"])
-        w4.metric("4 · Review", gate["review_required_count"])
-        w5.metric("5 · Drafts", len(reports))
-        w6.metric("6 · Published", len(published_reports(records)))
-        st.caption("Intake → Evidence → Analysis → Human Review → Report Drafts → Publishing Gate → Client")
-
-        st.subheader("Current operating boundary")
-        st.write("Records → traceable propositions → conflicts/gaps → human review → auditable output.")
+        if internal_user:
+            _render_internal_command_center(manifest, reports, records)
+        else:
+            _render_client_command_center(manifest, records)
 
     elif page == "Engagements":
         st.title("Engagements")
@@ -527,7 +545,7 @@ def run() -> None:
         _render_analysis(manifest)
 
     elif page == "Reports":
-        if principal.can(Permission.ANALYZE) or principal.can(Permission.REVIEW):
+        if internal_user:
             _render_internal_reports(manifest, reports, records)
         else:
             _render_client_reports(records)
