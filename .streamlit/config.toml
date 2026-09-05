@@ -6,6 +6,10 @@ maxUploadSize = 200
 maxMessageSize = 200
 disconnectedSessionTTL = 600
 
+[browser]
+serverAddress = "coletti2.streamlit.app"
+serverPort = 443
+
 [client]
 showErrorDetails = false
 
