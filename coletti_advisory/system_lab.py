@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import importlib.metadata
+import platform
+
+import requests
 import streamlit as st
 
+from .intake import ingest_file
 from .models import Permission
 from .security import SECURITY_CONTROLS
 
@@ -14,6 +19,8 @@ SYSTEM_LAB_SECTIONS = (
     "Audit & Diagnostics",
 )
 
+CORE_REPOSITORY = "dtreezcoletti/ColettiOS"
+COMMERCIAL_REPOSITORY = "dtreezcoletti/Coletti_Advisory"
 
 CORE_ACCEPTANCE_MATRIX = (
     ("AC-01", "Source required for propositions"),
@@ -34,29 +41,95 @@ def can_access_system_lab(principal) -> bool:
     return principal.can(Permission.MANAGE_USERS)
 
 
-def _render_core_test_lab() -> None:
+@st.cache_data(ttl=180, show_spinner=False)
+def _latest_actions_run(repository: str, branch: str = "main") -> dict | None:
+    """Read the latest public GitHub Actions run without granting the app write access."""
+    url = f"https://api.github.com/repos/{repository}/actions/runs"
+    try:
+        response = requests.get(
+            url,
+            params={"branch": branch, "per_page": 1},
+            headers={
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "coletti-system-lab",
+            },
+            timeout=5,
+        )
+        response.raise_for_status()
+        runs = response.json().get("workflow_runs") or []
+    except (requests.RequestException, ValueError) as exc:
+        return {"error": exc.__class__.__name__}
+
+    if not runs:
+        return None
+
+    run = runs[0]
+    return {
+        "name": run.get("name") or "GitHub Actions",
+        "status": run.get("status") or "unknown",
+        "conclusion": run.get("conclusion"),
+        "sha": run.get("head_sha") or "",
+        "updated_at": run.get("updated_at") or "",
+        "url": run.get("html_url") or "",
+        "event": run.get("event") or "",
+    }
+
+
+def _live_gate_label(run: dict | None) -> str:
+    if not run or run.get("error"):
+        return "UNAVAILABLE"
+    if run.get("status") != "completed":
+        return str(run.get("status") or "unknown").upper()
+    if run.get("conclusion") == "success":
+        return "PASS"
+    conclusion = str(run.get("conclusion") or "unknown").upper()
+    return f"FAIL · {conclusion}"
+
+
+def _short_sha(run: dict | None) -> str:
+    if not run:
+        return "—"
+    sha = str(run.get("sha") or "")
+    return sha[:10] if sha else "—"
+
+
+def _render_core_test_lab(core_run: dict | None) -> None:
     st.subheader("Core Test Lab")
     st.caption(
         "Owner/admin diagnostic surface for the controlled ColettiOS Core acceptance gate. "
-        "This view does not expose test controls to client or ordinary analyst workspaces."
+        "The live column reflects the latest full Core main-branch CI gate, which compiles Core, runs the complete pytest suite, and builds the container."
     )
+    live_gate = _live_gate_label(core_run)
     rows = [
         {
             "Acceptance test": test_id,
             "Invariant": invariant,
             "Controlled baseline": "PASS",
-            "Live run": "Not connected",
+            "Latest Core gate": live_gate,
         }
         for test_id, invariant in CORE_ACCEPTANCE_MATRIX
     ]
     st.dataframe(rows, use_container_width=True, hide_index=True)
-    st.info(
-        "Controlled Core v1.0 baseline is accepted. The next wiring step is to feed current GitHub Actions "
-        "or a signed clean-room result artifact into the Live run column."
-    )
+
+    if live_gate == "PASS":
+        st.success(f"Latest ColettiOS Core main gate: PASS · {_short_sha(core_run)}")
+    elif live_gate in {"QUEUED", "IN_PROGRESS", "REQUESTED", "WAITING", "PENDING"}:
+        st.info(f"Latest ColettiOS Core main gate: {live_gate} · {_short_sha(core_run)}")
+    else:
+        st.warning(
+            f"Latest ColettiOS Core main gate: {live_gate}. The controlled v1.0 baseline remains preserved; investigate before treating newer code as accepted."
+        )
 
 
-def _render_clean_room(manifest: dict) -> None:
+def _render_clean_room(
+    manifest: dict,
+    *,
+    app_mode: str,
+    principal,
+    engagement_id: str,
+    storage,
+    core,
+) -> None:
     st.subheader("Sandbox / Clean Room")
     st.caption(
         "Synthetic-only inspection area. Nothing shown here changes client evidence, reviewer conclusions, "
@@ -67,6 +140,47 @@ def _render_clean_room(manifest: dict) -> None:
     c2.metric("Propositions", len(manifest.get("propositions") or {}))
     c3.metric("Contradictions", len(manifest.get("contradictions") or {}))
     c4.metric("Escalations", len(manifest.get("escalations") or {}))
+
+    st.markdown("**Synthetic intake path probe**")
+    st.caption(
+        "This bypasses the browser file-picker widget but exercises the same server-side intake path: "
+        "authorization → encrypted storage → SHA-256 integrity hash → Core source registration → authenticated audit event."
+    )
+    if app_mode != "demo":
+        st.warning("The one-click probe is disabled outside demo mode. Production-path E2E requires its own controlled synthetic acceptance procedure.")
+    else:
+        if st.button("Run synthetic intake probe", type="primary", key="system-lab-intake-probe"):
+            result = ingest_file(
+                principal=principal,
+                engagement_id=engagement_id,
+                filename="SYNTHETIC_SYSTEM_LAB_INTAKE_PROBE.txt",
+                data=(
+                    b"COLETTI & CO. SYNTHETIC INTAKE PROBE\n"
+                    b"No real client, legal, medical, financial, or identifying information.\n"
+                ),
+                classification="Synthetic Diagnostic Record",
+                storage=storage,
+                core=core,
+            )
+            st.session_state["_last_system_lab_intake_probe"] = {
+                "source_id": result["source"]["source_id"],
+                "content_hash": result["storage"]["content_hash"],
+                "storage_uri": result["storage"]["storage_uri"],
+                "encrypted": result["storage"]["encrypted"],
+            }
+            st.rerun()
+
+        probe = st.session_state.get("_last_system_lab_intake_probe")
+        if probe:
+            st.success(f"Last synthetic intake probe passed · {probe['source_id']}")
+            st.write(
+                {
+                    "encrypted": probe["encrypted"],
+                    "sha256": probe["content_hash"],
+                    "storage_uri": probe["storage_uri"],
+                }
+            )
+            st.caption("Confirm the matching SOURCE_REGISTERED actor/event below in Audit & Diagnostics.")
 
     states = manifest.get("source_states") or {}
     if states:
@@ -83,13 +197,31 @@ def _render_clean_room(manifest: dict) -> None:
         st.json(manifest)
 
 
-def _render_ci_releases() -> None:
+def _render_run_card(label: str, repository: str, run: dict | None) -> None:
+    gate = _live_gate_label(run)
+    with st.container(border=True):
+        st.markdown(f"**{label}**")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Gate", gate)
+        c2.metric("Main SHA", _short_sha(run))
+        c3.metric("Workflow", str((run or {}).get("name") or "—"))
+        if run and run.get("updated_at"):
+            st.caption(f"Updated: {run['updated_at']} · Event: {run.get('event') or '—'}")
+        if run and run.get("url"):
+            st.link_button(f"Open {label} workflow", run["url"])
+        if run and run.get("error"):
+            st.warning(f"Live CI lookup unavailable ({run['error']}). Controlled baselines are unchanged.")
+        st.caption(repository)
+
+
+def _render_ci_releases(core_run: dict | None, commercial_run: dict | None) -> None:
     st.subheader("CI & Releases")
-    st.caption("Release and test-gate visibility without giving the Streamlit server arbitrary shell execution.")
-    st.write("**Core acceptance gate:** Controlled")
-    st.write("**Live GitHub Actions feed:** Not connected to this UI yet")
-    st.write("**Recommended production behavior:** Read signed/authorized CI results; do not execute arbitrary test commands from the hosted app.")
-    st.info("This section is intentionally read-only until the CI result feed is wired.")
+    st.caption(
+        "Read-only live release/test visibility. The hosted app reads public GitHub Actions metadata and has no permission to execute shell commands or mutate either repository."
+    )
+    _render_run_card("ColettiOS Core", CORE_REPOSITORY, core_run)
+    _render_run_card("Coletti & Co. Commercial", COMMERCIAL_REPOSITORY, commercial_run)
+    st.info("CI data is cached for three minutes to avoid unnecessary GitHub API traffic.")
 
 
 def _render_security_gate(app_mode: str, storage_backend: str, core_backend: str) -> None:
@@ -99,7 +231,7 @@ def _render_security_gate(app_mode: str, storage_backend: str, core_backend: str
         st.write(f"{'✅' if implemented else '🔨'} {label}")
 
 
-def _render_audit(manifest: dict) -> None:
+def _render_audit(manifest: dict, commercial_run: dict | None) -> None:
     st.subheader("Audit & Diagnostics")
     audit_log = manifest.get("audit_log") or []
     if audit_log:
@@ -107,9 +239,18 @@ def _render_audit(manifest: dict) -> None:
     else:
         st.info("No audit events are currently available for this workspace.")
 
-    with st.expander("Runtime manifest diagnostics"):
+    try:
+        streamlit_version = importlib.metadata.version("streamlit")
+    except importlib.metadata.PackageNotFoundError:
+        streamlit_version = "unknown"
+
+    with st.expander("Runtime diagnostics", expanded=True):
         st.write(
             {
+                "streamlit_version": streamlit_version,
+                "python_version": platform.python_version(),
+                "latest_commercial_main_sha": _short_sha(commercial_run),
+                "latest_commercial_ci_gate": _live_gate_label(commercial_run),
                 "sources": len(manifest.get("sources") or {}),
                 "propositions": len(manifest.get("propositions") or {}),
                 "reviewer_conclusions": len(manifest.get("reviewer_conclusions") or {}),
@@ -119,9 +260,22 @@ def _render_audit(manifest: dict) -> None:
                 "audit_events": len(audit_log),
             }
         )
+        st.caption(
+            "Latest commercial main SHA is repository state, not a cryptographic claim that Community Cloud has already activated that exact revision. Runtime Streamlit/Python versions are reported by this running process."
+        )
 
 
-def render_system_lab(*, principal, manifest: dict, app_mode: str, storage_backend: str, core_backend: str) -> None:
+def render_system_lab(
+    *,
+    principal,
+    manifest: dict,
+    app_mode: str,
+    storage_backend: str,
+    core_backend: str,
+    engagement_id: str,
+    storage,
+    core,
+) -> None:
     if not can_access_system_lab(principal):
         st.error("Your role does not permit access to the System Lab.")
         st.stop()
@@ -129,14 +283,24 @@ def render_system_lab(*, principal, manifest: dict, app_mode: str, storage_backe
     st.title("System Lab")
     st.caption("Owner / Admin only · synthetic testing · release diagnostics · security visibility")
 
+    core_run = _latest_actions_run(CORE_REPOSITORY)
+    commercial_run = _latest_actions_run(COMMERCIAL_REPOSITORY)
+
     core_tab, clean_tab, ci_tab, security_tab, audit_tab = st.tabs(SYSTEM_LAB_SECTIONS)
     with core_tab:
-        _render_core_test_lab()
+        _render_core_test_lab(core_run)
     with clean_tab:
-        _render_clean_room(manifest)
+        _render_clean_room(
+            manifest,
+            app_mode=app_mode,
+            principal=principal,
+            engagement_id=engagement_id,
+            storage=storage,
+            core=core,
+        )
     with ci_tab:
-        _render_ci_releases()
+        _render_ci_releases(core_run, commercial_run)
     with security_tab:
         _render_security_gate(app_mode, storage_backend, core_backend)
     with audit_tab:
-        _render_audit(manifest)
+        _render_audit(manifest, commercial_run)

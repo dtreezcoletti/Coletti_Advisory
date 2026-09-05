@@ -33,6 +33,11 @@ def _render_secure_intake(*, app_mode, principal, engagement_id, storage, core) 
             "Demo uploads are AES-256-GCM encrypted on ephemeral local storage and may disappear on restart. "
             "Use synthetic files only."
         )
+        st.warning(
+            "Android/Chrome currently has a confirmed Streamlit file-picker timeout bug. For this synthetic test, "
+            "choose the file promptly after opening the picker. If the tile turns red, use Reset upload control. "
+            "System Lab → Clean Room can test the server-side intake path without the mobile picker."
+        )
 
     classification = st.selectbox(
         "Document classification",
@@ -162,6 +167,9 @@ def run() -> None:
             app_mode=app_mode,
             storage_backend=storage_backend,
             core_backend=core_backend,
+            engagement_id=engagement_id,
+            storage=storage,
+            core=core,
         )
 
     elif page == "Administration":
