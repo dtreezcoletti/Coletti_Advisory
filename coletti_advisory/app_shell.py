@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
 import streamlit as st
 
 from . import main as app
+from .document_processing import extract_candidate_statements
 from .models import Permission
 from .system_lab import render_system_lab
 
@@ -22,6 +25,10 @@ def _intake_upload_key(generation: int) -> str:
     return f"secure-intake-upload-{generation}"
 
 
+def _processing_queue() -> dict[str, dict]:
+    return st.session_state.setdefault("_document_processing_queue", {})
+
+
 def _render_secure_intake(*, app_mode, principal, engagement_id, storage, core) -> None:
     if not principal.can(Permission.UPLOAD):
         st.error("Your role does not permit source uploads.")
@@ -38,6 +45,16 @@ def _render_secure_intake(*, app_mode, principal, engagement_id, storage, core) 
             "choose the file promptly after opening the picker. If the tile turns red, use Reset upload control. "
             "System Lab → Clean Room can test the server-side intake path without the mobile picker."
         )
+
+    last_intake = st.session_state.pop("_last_intake_result", None)
+    if last_intake:
+        st.success(f"Source intake completed · {last_intake['source_id']}")
+        st.caption(
+            f"Extraction: {last_intake['candidate_count']} candidate statement(s) queued for human review · "
+            f"method: {last_intake['extraction_method']}"
+        )
+        for warning in last_intake.get("warnings", []):
+            st.warning(warning)
 
     classification = st.selectbox(
         "Document classification",
@@ -69,23 +86,218 @@ def _render_secure_intake(*, app_mode, principal, engagement_id, storage, core) 
         status_col.success(f"Ready to register: {uploaded.name} · {uploaded.size / 1024:.1f} KB")
 
     if st.button("Register source", type="primary", disabled=uploaded is None):
+        data = uploaded.getvalue()
         result = app.ingest_file(
             principal=principal,
             engagement_id=engagement_id,
             filename=uploaded.name,
-            data=uploaded.getvalue(),
+            data=data,
             classification=classification,
             storage=storage,
             core=core,
         )
-        st.success("Source intake completed")
-        st.write("✓ Engagement authorization verified")
-        st.write("✓ File encrypted before storage")
-        st.write("✓ SHA-256 content hash generated")
-        st.write(f"✓ Source {result['source']['source_id']} registered")
-        st.write("✓ Audit actor recorded")
+        extraction = extract_candidate_statements(uploaded.name, data)
+        source_id = result["source"]["source_id"]
+        _processing_queue()[source_id] = {
+            "source_id": source_id,
+            "filename": uploaded.name,
+            **extraction.to_dict(),
+        }
+        st.session_state["_last_intake_result"] = {
+            "source_id": source_id,
+            "candidate_count": len(extraction.candidates),
+            "extraction_method": extraction.extraction_method,
+            "warnings": list(extraction.warnings),
+        }
         st.session_state["_intake_upload_generation"] = generation + 1
         st.rerun()
+
+
+def _render_extraction_review(*, principal, engagement_id: str, core) -> None:
+    st.subheader("Extracted Statement Review")
+    st.caption(
+        "Extraction never becomes evidence automatically. An authorized analyst must explicitly promote a candidate "
+        "before ColettiOS treats it as a source-linked proposition."
+    )
+    queue = _processing_queue()
+    if not queue:
+        st.info("No extracted statements are waiting for review in this session.")
+        return
+
+    source_id = st.selectbox(
+        "Source awaiting review",
+        list(queue.keys()),
+        format_func=lambda value: f"{value} · {queue[value].get('filename', value)}",
+        key="processing-source",
+    )
+    entry = queue[source_id]
+    for warning in entry.get("warnings", []):
+        st.warning(warning)
+
+    candidates = entry.get("candidates") or []
+    if not candidates:
+        st.info("This source has no deterministic text candidates. Keep the source registered and route it for manual review/OCR as needed.")
+        if st.button("Dismiss empty extraction queue", key=f"dismiss-{source_id}"):
+            queue.pop(source_id, None)
+            st.rerun()
+        return
+
+    st.dataframe(
+        [
+            {
+                "Candidate": item["candidate_id"],
+                "Locator": item["locator"],
+                "Record-derived text": item["text"],
+                "Method": item["extraction_method"],
+            }
+            for item in candidates
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    if not principal.can(Permission.ANALYZE):
+        st.info("Your role may inspect extracted statements but cannot promote them to propositions.")
+        return
+
+    by_id = {item["candidate_id"]: item for item in candidates}
+    selected = st.multiselect(
+        "Promote selected candidates",
+        list(by_id.keys()),
+        format_func=lambda value: f"{by_id[value]['locator']} · {by_id[value]['text'][:100]}",
+        key=f"promote-{source_id}",
+    )
+    acknowledged = st.checkbox(
+        "I verified that the selected statements accurately reflect this source. Promotion creates source-linked Core propositions; it does not declare them independently true.",
+        key=f"promote-ack-{source_id}",
+    )
+    if st.button(
+        "Promote to propositions",
+        type="primary",
+        disabled=not selected or not acknowledged,
+        key=f"promote-button-{source_id}",
+    ):
+        auth_context = principal.auth_context(engagement_id)
+        for candidate_id in selected:
+            candidate = by_id[candidate_id]
+            proposition_id = f"PROP-{uuid4().hex[:12].upper()}"
+            core.add_proposition(
+                {
+                    "proposition_id": proposition_id,
+                    "text": f"[{candidate['locator']}] {candidate['text']}",
+                    "source_ids": [source_id],
+                },
+                auth_context,
+            )
+        selected_set = set(selected)
+        entry["candidates"] = [item for item in candidates if item["candidate_id"] not in selected_set]
+        if not entry["candidates"]:
+            queue.pop(source_id, None)
+        st.rerun()
+
+
+def _render_contradiction_reconciliation(*, principal, engagement_id: str, core, manifest: dict) -> None:
+    st.subheader("Cross-Record Review")
+    propositions = manifest.get("propositions") or {}
+    contradictions = manifest.get("contradictions") or {}
+    reconciliations = manifest.get("reconciliations") or {}
+
+    if len(propositions) >= 2 and principal.can(Permission.REVIEW):
+        proposition_ids = list(propositions.keys())
+        left = st.selectbox("Proposition A", proposition_ids, key="contradiction-left")
+        right_options = [value for value in proposition_ids if value != left]
+        right = st.selectbox("Proposition B", right_options, key="contradiction-right")
+        reason = st.text_area(
+            "Why these record-derived propositions conflict",
+            key="contradiction-reason",
+            placeholder="Describe the specific inconsistency shown by the records.",
+        )
+        if st.button("Record contradiction", disabled=not reason.strip(), key="record-contradiction"):
+            core.record_contradiction(
+                {
+                    "contradiction_id": f"CON-{uuid4().hex[:12].upper()}",
+                    "proposition_a": left,
+                    "proposition_b": right,
+                    "reason": reason.strip(),
+                },
+                principal.auth_context(engagement_id),
+            )
+            st.rerun()
+    else:
+        st.caption("At least two propositions and review permission are required to record a contradiction.")
+
+    st.markdown("**Recorded contradictions**")
+    if contradictions:
+        st.dataframe(list(contradictions.values()), use_container_width=True, hide_index=True)
+    else:
+        st.info("No contradictions are currently recorded.")
+
+    if contradictions and principal.can(Permission.REVIEW):
+        contradiction_id = st.selectbox("Contradiction to reconcile", list(contradictions.keys()), key="reconcile-contradiction")
+        contradiction = contradictions[contradiction_id]
+        related_props = [contradiction["proposition_a"], contradiction["proposition_b"]]
+        outcome = st.text_input(
+            "Reconciliation outcome",
+            key="reconciliation-outcome",
+            placeholder="Example: variance remains unresolved pending third-party confirmation",
+        )
+        rationale = st.text_area(
+            "Reviewer rationale",
+            key="reconciliation-rationale",
+            placeholder="State what the record supports and what remains unresolved. Do not silently promote one source over another.",
+        )
+        acknowledged = st.checkbox(
+            "I understand this is a reviewer reconciliation record, separate from the underlying source evidence.",
+            key="reconciliation-ack",
+        )
+        if st.button(
+            "Record reconciliation",
+            disabled=not outcome.strip() or not rationale.strip() or not acknowledged,
+            key="record-reconciliation",
+        ):
+            core.record_reconciliation(
+                {
+                    "reconciliation_id": f"REC-{uuid4().hex[:12].upper()}",
+                    "proposition_ids": related_props,
+                    "contradiction_ids": [contradiction_id],
+                    "outcome": outcome.strip(),
+                    "rationale": rationale.strip(),
+                },
+                principal.auth_context(engagement_id),
+            )
+            st.rerun()
+
+    st.markdown("**Reviewer reconciliations**")
+    if reconciliations:
+        st.dataframe(list(reconciliations.values()), use_container_width=True, hide_index=True)
+    else:
+        st.caption("No reviewer reconciliation has been recorded yet.")
+
+
+def _render_evidence_workspace(*, principal, engagement_id: str, core, manifest: dict) -> None:
+    if not (principal.can(Permission.ANALYZE) or principal.can(Permission.REVIEW)):
+        st.error("Your role does not permit access to the internal evidence workspace.")
+        st.stop()
+
+    st.title("Evidence Workspace")
+    st.subheader("Sources")
+    st.dataframe(list(manifest.get("sources", {}).values()), use_container_width=True)
+
+    _render_extraction_review(principal=principal, engagement_id=engagement_id, core=core)
+
+    st.subheader("Propositions")
+    propositions = list((manifest.get("propositions") or {}).values())
+    if propositions:
+        st.dataframe(propositions, use_container_width=True, hide_index=True)
+    else:
+        st.info("No propositions have been promoted from source records yet.")
+
+    _render_contradiction_reconciliation(
+        principal=principal,
+        engagement_id=engagement_id,
+        core=core,
+        manifest=manifest,
+    )
 
 
 def run() -> None:
@@ -131,16 +343,12 @@ def run() -> None:
         )
 
     elif page == "Evidence":
-        if not (principal.can(Permission.ANALYZE) or principal.can(Permission.REVIEW)):
-            st.error("Your role does not permit access to the internal evidence workspace.")
-            st.stop()
-        st.title("Evidence Workspace")
-        st.subheader("Sources")
-        st.dataframe(list(manifest.get("sources", {}).values()), use_container_width=True)
-        st.subheader("Propositions")
-        st.dataframe(list(manifest.get("propositions", {}).values()), use_container_width=True)
-        st.subheader("Contradictions")
-        st.dataframe(list(manifest.get("contradictions", {}).values()), use_container_width=True)
+        _render_evidence_workspace(
+            principal=principal,
+            engagement_id=engagement_id,
+            core=core,
+            manifest=manifest,
+        )
 
     elif page == "Review Center":
         if not principal.can(Permission.REVIEW):

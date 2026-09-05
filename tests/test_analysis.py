@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from coletti_advisory.analysis import (
     build_analytical_issues,
     build_cross_record_comparison,
@@ -52,6 +54,28 @@ def test_cross_record_comparison_preserves_both_statements_and_sources():
     assert "Independent third-party verification recommended" in row["Verification recommendation"]
     assert "professional" in row["Verification recommendation"].lower()
     assert row["Potential verifier"]
+
+
+def test_reconciliation_is_visible_but_does_not_replace_underlying_contradiction():
+    manifest = deepcopy(SYNTHETIC_MANIFEST)
+    manifest["reconciliations"] = {
+        "REC-1": {
+            "reconciliation_id": "REC-1",
+            "proposition_ids": ["PROP-DEMO-001", "PROP-DEMO-002"],
+            "contradiction_ids": ["CON-DEMO-001"],
+            "outcome": "Variance remains unresolved",
+            "actor": "usr-reviewer",
+            "rationale": "Both records remain preserved pending custodian confirmation.",
+        }
+    }
+    comparison = build_cross_record_comparison(manifest)[0]
+    assert comparison["Review status"] == "Reviewer reconciliation recorded"
+    assert comparison["Reconciliation outcome"] == "Variance remains unresolved"
+    assert comparison["Record statement A"] != comparison["Record statement B"]
+
+    issue = next(row for row in build_analytical_issues(manifest) if row["Issue"] == "CON-DEMO-001")
+    assert issue["Status"] == "Reviewer reconciliation recorded"
+    assert issue["Reconciled by"] == "usr-reviewer"
 
 
 def test_analytical_issues_use_boundary_safe_classifications_and_verification_routing():
