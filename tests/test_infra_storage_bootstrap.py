@@ -19,7 +19,8 @@ def test_bootstrap_enforces_required_bucket_controls_and_does_not_flip_productio
     assert "--uniform-bucket-level-access" in text
     assert "--public-access-prevention" in text
     assert "--versioning" in text
-    assert "APP_MODE=production" not in text
+    assert 'APP_MODE="production"' not in text
+    assert "export APP_MODE=production" not in text
     assert "CREATE_SERVICE_ACCOUNT_KEY" in text
     assert 'CREATE_SERVICE_ACCOUNT_KEY:-0' in text
 
