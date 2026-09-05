@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import importlib.metadata
+import os
 import platform
+import tempfile
 
 import requests
 import streamlit as st
 
+from .core_adapter import SyntheticCoreAdapter
 from .intake import ingest_file
 from .models import Permission
 from .security import SECURITY_CONTROLS
+from .storage import EncryptedLocalDemoStorage
 
 
 SYSTEM_LAB_SECTIONS = (
@@ -93,6 +97,16 @@ def _short_sha(run: dict | None) -> str:
     return sha[:10] if sha else "—"
 
 
+def _diagnostic_intake_runtime():
+    """Return a session-isolated synthetic Core and encrypted ephemeral store for System Lab probes."""
+    if "_system_lab_probe_core" not in st.session_state:
+        st.session_state["_system_lab_probe_core"] = SyntheticCoreAdapter()
+    if "_system_lab_probe_storage" not in st.session_state:
+        root = os.path.join(tempfile.gettempdir(), "coletti_system_lab_secure_store")
+        st.session_state["_system_lab_probe_storage"] = EncryptedLocalDemoStorage(root, os.urandom(32))
+    return st.session_state["_system_lab_probe_core"], st.session_state["_system_lab_probe_storage"]
+
+
 def _render_core_test_lab(core_run: dict | None) -> None:
     st.subheader("Core Test Lab")
     st.caption(
@@ -127,29 +141,29 @@ def _render_clean_room(
     app_mode: str,
     principal,
     engagement_id: str,
-    storage,
-    core,
 ) -> None:
     st.subheader("Sandbox / Clean Room")
     st.caption(
-        "Synthetic-only inspection area. Nothing shown here changes client evidence, reviewer conclusions, "
-        "or published reports."
+        "Synthetic-only inspection area. Clean Room probes use separate diagnostic state and do not mutate the active engagement, reviewer conclusions, or report drafts."
     )
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Sources", len(manifest.get("sources") or {}))
+    c1.metric("Active workspace sources", len(manifest.get("sources") or {}))
     c2.metric("Propositions", len(manifest.get("propositions") or {}))
     c3.metric("Contradictions", len(manifest.get("contradictions") or {}))
     c4.metric("Escalations", len(manifest.get("escalations") or {}))
 
     st.markdown("**Synthetic intake path probe**")
     st.caption(
-        "This bypasses the browser file-picker widget but exercises the same server-side intake path: "
-        "authorization → encrypted storage → SHA-256 integrity hash → Core source registration → authenticated audit event."
+        "This bypasses the browser file-picker widget but exercises the same server-side intake classes: "
+        "authorization → AES-GCM encrypted local demo storage → SHA-256 integrity hash → Core source registration → authenticated audit event. "
+        "It runs against a separate diagnostic Core and separate ephemeral encrypted store."
     )
     if app_mode != "demo":
         st.warning("The one-click probe is disabled outside demo mode. Production-path E2E requires its own controlled synthetic acceptance procedure.")
     else:
-        if st.button("Run synthetic intake probe", type="primary", key="system-lab-intake-probe"):
+        diagnostic_core, diagnostic_storage = _diagnostic_intake_runtime()
+        if st.button("Run isolated synthetic intake probe", type="primary", key="system-lab-intake-probe"):
+            before_active_source_count = len(manifest.get("sources") or {})
             result = ingest_file(
                 principal=principal,
                 engagement_id=engagement_id,
@@ -159,32 +173,57 @@ def _render_clean_room(
                     b"No real client, legal, medical, financial, or identifying information.\n"
                 ),
                 classification="Synthetic Diagnostic Record",
-                storage=storage,
-                core=core,
+                storage=diagnostic_storage,
+                core=diagnostic_core,
             )
+            diagnostic_manifest = diagnostic_core.manifest(engagement_id)
+            source_id = result["source"]["source_id"]
+            matching_events = [
+                event
+                for event in diagnostic_manifest.get("audit_log", [])
+                if event.get("event_type") == "SOURCE_REGISTERED" and event.get("subject_id") == source_id
+            ]
             st.session_state["_last_system_lab_intake_probe"] = {
-                "source_id": result["source"]["source_id"],
+                "source_id": source_id,
                 "content_hash": result["storage"]["content_hash"],
                 "storage_uri": result["storage"]["storage_uri"],
                 "encrypted": result["storage"]["encrypted"],
+                "evidence_state": (diagnostic_manifest.get("source_states") or {}).get(source_id),
+                "audit_actor": matching_events[-1].get("actor") if matching_events else None,
+                "audit_event": bool(matching_events),
+                "active_source_count_before": before_active_source_count,
             }
             st.rerun()
 
         probe = st.session_state.get("_last_system_lab_intake_probe")
         if probe:
-            st.success(f"Last synthetic intake probe passed · {probe['source_id']}")
+            active_source_count_now = len(manifest.get("sources") or {})
+            isolation_ok = active_source_count_now == probe["active_source_count_before"]
+            passed = (
+                probe["encrypted"] is True
+                and probe["evidence_state"] == "INGESTED"
+                and probe["audit_event"] is True
+                and isolation_ok
+            )
+            if passed:
+                st.success(f"Isolated synthetic intake probe: PASS · {probe['source_id']}")
+            else:
+                st.error("Isolated synthetic intake probe did not satisfy every diagnostic invariant.")
             st.write(
                 {
                     "encrypted": probe["encrypted"],
                     "sha256": probe["content_hash"],
                     "storage_uri": probe["storage_uri"],
+                    "evidence_state": probe["evidence_state"],
+                    "authenticated_audit_actor": probe["audit_actor"],
+                    "audit_event_recorded": probe["audit_event"],
+                    "active_engagement_unchanged": isolation_ok,
                 }
             )
-            st.caption("Confirm the matching SOURCE_REGISTERED actor/event below in Audit & Diagnostics.")
 
     states = manifest.get("source_states") or {}
     if states:
-        st.write("Evidence states")
+        st.write("Active workspace evidence states")
         st.dataframe(
             [{"Source": source_id, "State": state} for source_id, state in states.items()],
             use_container_width=True,
@@ -193,7 +232,7 @@ def _render_clean_room(
     else:
         st.info("No synthetic evidence-state data is currently loaded in this workspace.")
 
-    with st.expander("Synthetic manifest inspector"):
+    with st.expander("Active synthetic manifest inspector"):
         st.json(manifest)
 
 
@@ -273,8 +312,6 @@ def render_system_lab(
     storage_backend: str,
     core_backend: str,
     engagement_id: str,
-    storage,
-    core,
 ) -> None:
     if not can_access_system_lab(principal):
         st.error("Your role does not permit access to the System Lab.")
@@ -295,8 +332,6 @@ def render_system_lab(
             app_mode=app_mode,
             principal=principal,
             engagement_id=engagement_id,
-            storage=storage,
-            core=core,
         )
     with ci_tab:
         _render_ci_releases(core_run, commercial_run)
