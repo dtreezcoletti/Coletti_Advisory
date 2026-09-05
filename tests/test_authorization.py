@@ -2,7 +2,11 @@ from datetime import datetime, timezone
 
 import pytest
 
-from coletti_advisory.auth import AuthorizationRegistry, validate_oidc_claim_times
+from coletti_advisory.auth import (
+    AuthorizationRegistry,
+    validate_oidc_claim_times,
+    validate_oidc_identity_claims,
+)
 from coletti_advisory.models import Permission, Principal, Role
 
 
@@ -43,6 +47,56 @@ def test_invalid_oidc_claim_times_are_rejected():
         validate_oidc_claim_times({"iat": 3_000, "exp": 4_000}, now=now)
     with pytest.raises(ValueError):
         validate_oidc_claim_times({"iat": 1_000}, now=now)
+
+
+def test_verified_oidc_identity_is_accepted():
+    now = datetime.fromtimestamp(2_000, tz=timezone.utc)
+    validate_oidc_identity_claims(
+        {
+            "iat": 1_000,
+            "exp": 3_000,
+            "sub": "google-subject-123",
+            "email": "owner@example.com",
+            "email_verified": True,
+        },
+        now=now,
+    )
+
+
+def test_oidc_identity_requires_subject_email_and_verified_email():
+    now = datetime.fromtimestamp(2_000, tz=timezone.utc)
+    base = {
+        "iat": 1_000,
+        "exp": 3_000,
+        "sub": "google-subject-123",
+        "email": "owner@example.com",
+        "email_verified": True,
+    }
+
+    for missing in ("sub", "email"):
+        claims = dict(base)
+        claims.pop(missing)
+        with pytest.raises(ValueError):
+            validate_oidc_identity_claims(claims, now=now)
+
+    claims = dict(base)
+    claims["email_verified"] = False
+    with pytest.raises(ValueError, match="not verified"):
+        validate_oidc_identity_claims(claims, now=now)
+
+
+def test_oidc_verified_email_accepts_provider_string_true():
+    now = datetime.fromtimestamp(2_000, tz=timezone.utc)
+    validate_oidc_identity_claims(
+        {
+            "iat": 1_000,
+            "exp": 3_000,
+            "sub": "google-subject-123",
+            "email": "owner@example.com",
+            "email_verified": "true",
+        },
+        now=now,
+    )
 
 
 def test_principal_cannot_access_unassigned_engagement():
