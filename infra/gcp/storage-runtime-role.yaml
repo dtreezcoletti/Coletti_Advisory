@@ -1,0 +1,10 @@
+title: Coletti Advisory Storage Runtime
+description: Least-privilege runtime access for the Coletti & Co. production storage service account.
+stage: GA
+includedPermissions:
+  - storage.buckets.get
+  - storage.objects.create
+  - storage.objects.get
+  - storage.objects.list
+  - storage.objects.update
+  - storage.objects.delete
