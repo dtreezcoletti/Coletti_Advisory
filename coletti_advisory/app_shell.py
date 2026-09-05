@@ -168,8 +168,6 @@ def run() -> None:
             storage_backend=storage_backend,
             core_backend=core_backend,
             engagement_id=engagement_id,
-            storage=storage,
-            core=core,
         )
 
     elif page == "Administration":
