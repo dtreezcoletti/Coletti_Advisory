@@ -18,6 +18,71 @@ def _workspace_pages(principal) -> list[str]:
     return pages
 
 
+def _intake_upload_key(generation: int) -> str:
+    return f"secure-intake-upload-{generation}"
+
+
+def _render_secure_intake(*, app_mode, principal, engagement_id, storage, core) -> None:
+    if not principal.can(Permission.UPLOAD):
+        st.error("Your role does not permit source uploads.")
+        st.stop()
+
+    st.title("Secure Intake")
+    if app_mode == "demo":
+        st.info(
+            "Demo uploads are AES-256-GCM encrypted on ephemeral local storage and may disappear on restart. "
+            "Use synthetic files only."
+        )
+
+    classification = st.selectbox(
+        "Document classification",
+        ["Operational Audit", "Business Record", "Financial Record", "Correspondence", "Other"],
+    )
+
+    generation = int(st.session_state.get("_intake_upload_generation", 0))
+    upload_key = _intake_upload_key(generation)
+    uploaded = st.file_uploader(
+        "Upload a source record",
+        key=upload_key,
+        max_upload_size=200,
+        help=(
+            "If a mobile upload shows a red ! or stalls after returning from the Android file picker, "
+            "tap Reset upload control and choose the file again."
+        ),
+    )
+
+    reset_col, status_col = st.columns([1, 2])
+    if reset_col.button("Reset upload control", key=f"reset-{upload_key}"):
+        st.session_state["_intake_upload_generation"] = generation + 1
+        st.rerun()
+
+    if uploaded is None:
+        status_col.caption(
+            "Mobile recovery: if the file tile turns red, reset the upload control rather than refreshing the whole app."
+        )
+    else:
+        status_col.success(f"Ready to register: {uploaded.name} · {uploaded.size / 1024:.1f} KB")
+
+    if st.button("Register source", type="primary", disabled=uploaded is None):
+        result = app.ingest_file(
+            principal=principal,
+            engagement_id=engagement_id,
+            filename=uploaded.name,
+            data=uploaded.getvalue(),
+            classification=classification,
+            storage=storage,
+            core=core,
+        )
+        st.success("Source intake completed")
+        st.write("✓ Engagement authorization verified")
+        st.write("✓ File encrypted before storage")
+        st.write("✓ SHA-256 content hash generated")
+        st.write(f"✓ Source {result['source']['source_id']} registered")
+        st.write("✓ Audit actor recorded")
+        st.session_state["_intake_upload_generation"] = generation + 1
+        st.rerun()
+
+
 def run() -> None:
     st.set_page_config(page_title="Coletti & Co. | ColettiOS", page_icon="◈", layout="wide")
     app_mode, storage_backend, core_backend, principal, core, storage, publication_store = app._runtime()
@@ -52,34 +117,13 @@ def run() -> None:
         st.dataframe(rows, use_container_width=True)
 
     elif page == "Intake":
-        if not principal.can(Permission.UPLOAD):
-            st.error("Your role does not permit source uploads.")
-            st.stop()
-        st.title("Secure Intake")
-        if app_mode == "demo":
-            st.info("Demo uploads are AES-256-GCM encrypted on ephemeral local storage and may disappear on restart. Use synthetic files only.")
-        classification = st.selectbox(
-            "Document classification",
-            ["Operational Audit", "Business Record", "Financial Record", "Correspondence", "Other"],
+        _render_secure_intake(
+            app_mode=app_mode,
+            principal=principal,
+            engagement_id=engagement_id,
+            storage=storage,
+            core=core,
         )
-        uploaded = st.file_uploader("Upload a source record")
-        if st.button("Register source", type="primary", disabled=uploaded is None):
-            result = app.ingest_file(
-                principal=principal,
-                engagement_id=engagement_id,
-                filename=uploaded.name,
-                data=uploaded.getvalue(),
-                classification=classification,
-                storage=storage,
-                core=core,
-            )
-            st.success("Source intake completed")
-            st.write("✓ Engagement authorization verified")
-            st.write("✓ File encrypted before storage")
-            st.write("✓ SHA-256 content hash generated")
-            st.write(f"✓ Source {result['source']['source_id']} registered")
-            st.write("✓ Audit actor recorded")
-            st.rerun()
 
     elif page == "Evidence":
         if not (principal.can(Permission.ANALYZE) or principal.can(Permission.REVIEW)):
