@@ -1,6 +1,11 @@
 .streamlit/secrets.toml
 .secure_store/
 
+# Production infrastructure secrets (never commit)
+infra/gcp/*-service-account.json
+infra/gcp/*master-key*.txt
+infra/gcp/*.key.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
