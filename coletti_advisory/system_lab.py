@@ -6,6 +6,7 @@ import platform
 import requests
 import streamlit as st
 
+from .intake import ingest_file
 from .models import Permission
 from .security import SECURITY_CONTROLS
 
@@ -120,7 +121,15 @@ def _render_core_test_lab(core_run: dict | None) -> None:
         )
 
 
-def _render_clean_room(manifest: dict) -> None:
+def _render_clean_room(
+    manifest: dict,
+    *,
+    app_mode: str,
+    principal,
+    engagement_id: str,
+    storage,
+    core,
+) -> None:
     st.subheader("Sandbox / Clean Room")
     st.caption(
         "Synthetic-only inspection area. Nothing shown here changes client evidence, reviewer conclusions, "
@@ -131,6 +140,47 @@ def _render_clean_room(manifest: dict) -> None:
     c2.metric("Propositions", len(manifest.get("propositions") or {}))
     c3.metric("Contradictions", len(manifest.get("contradictions") or {}))
     c4.metric("Escalations", len(manifest.get("escalations") or {}))
+
+    st.markdown("**Synthetic intake path probe**")
+    st.caption(
+        "This bypasses the browser file-picker widget but exercises the same server-side intake path: "
+        "authorization → encrypted storage → SHA-256 integrity hash → Core source registration → authenticated audit event."
+    )
+    if app_mode != "demo":
+        st.warning("The one-click probe is disabled outside demo mode. Production-path E2E requires its own controlled synthetic acceptance procedure.")
+    else:
+        if st.button("Run synthetic intake probe", type="primary", key="system-lab-intake-probe"):
+            result = ingest_file(
+                principal=principal,
+                engagement_id=engagement_id,
+                filename="SYNTHETIC_SYSTEM_LAB_INTAKE_PROBE.txt",
+                data=(
+                    b"COLETTI & CO. SYNTHETIC INTAKE PROBE\n"
+                    b"No real client, legal, medical, financial, or identifying information.\n"
+                ),
+                classification="Synthetic Diagnostic Record",
+                storage=storage,
+                core=core,
+            )
+            st.session_state["_last_system_lab_intake_probe"] = {
+                "source_id": result["source"]["source_id"],
+                "content_hash": result["storage"]["content_hash"],
+                "storage_uri": result["storage"]["storage_uri"],
+                "encrypted": result["storage"]["encrypted"],
+            }
+            st.rerun()
+
+        probe = st.session_state.get("_last_system_lab_intake_probe")
+        if probe:
+            st.success(f"Last synthetic intake probe passed · {probe['source_id']}")
+            st.write(
+                {
+                    "encrypted": probe["encrypted"],
+                    "sha256": probe["content_hash"],
+                    "storage_uri": probe["storage_uri"],
+                }
+            )
+            st.caption("Confirm the matching SOURCE_REGISTERED actor/event below in Audit & Diagnostics.")
 
     states = manifest.get("source_states") or {}
     if states:
@@ -215,7 +265,17 @@ def _render_audit(manifest: dict, commercial_run: dict | None) -> None:
         )
 
 
-def render_system_lab(*, principal, manifest: dict, app_mode: str, storage_backend: str, core_backend: str) -> None:
+def render_system_lab(
+    *,
+    principal,
+    manifest: dict,
+    app_mode: str,
+    storage_backend: str,
+    core_backend: str,
+    engagement_id: str,
+    storage,
+    core,
+) -> None:
     if not can_access_system_lab(principal):
         st.error("Your role does not permit access to the System Lab.")
         st.stop()
@@ -230,7 +290,14 @@ def render_system_lab(*, principal, manifest: dict, app_mode: str, storage_backe
     with core_tab:
         _render_core_test_lab(core_run)
     with clean_tab:
-        _render_clean_room(manifest)
+        _render_clean_room(
+            manifest,
+            app_mode=app_mode,
+            principal=principal,
+            engagement_id=engagement_id,
+            storage=storage,
+            core=core,
+        )
     with ci_tab:
         _render_ci_releases(core_run, commercial_run)
     with security_tab:
