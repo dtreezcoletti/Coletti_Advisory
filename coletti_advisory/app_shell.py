@@ -8,6 +8,7 @@ from . import main as app
 from .document_processing import extract_candidate_statements
 from .models import Permission
 from .system_lab import render_system_lab
+from .workspaces import live_workspace_gate_errors, workspace_environment, workspace_label
 
 
 def _workspace_pages(principal) -> list[str]:
@@ -19,6 +20,36 @@ def _workspace_pages(principal) -> list[str]:
             admin_index = len(pages)
         pages.insert(admin_index, "System Lab")
     return pages
+
+
+def _identity_panel(principal) -> str:
+    if principal.authenticated:
+        st.sidebar.success(f"Authenticated as: {principal.display_name}")
+        st.sidebar.caption(f"Role: {principal.role.value.replace('_', ' ').title()}")
+    else:
+        st.sidebar.info("Synthetic demo session — no client identity or client data")
+
+    options = list(principal.engagement_ids)
+    selected = st.sidebar.selectbox(
+        "Authorized workspace",
+        options,
+        format_func=workspace_label,
+    )
+    if not principal.can_access(selected):
+        st.error("Workspace authorization failed.")
+        st.stop()
+
+    environment = workspace_environment(selected)
+    if environment == "LIVE":
+        st.sidebar.warning("LIVE workspace · real operational data")
+    elif environment == "DEMO":
+        st.sidebar.caption("DEMO workspace · synthetic data only")
+    else:
+        st.sidebar.caption("Authorized engagement workspace")
+
+    if principal.authenticated and st.sidebar.button("Log out"):
+        st.logout()
+    return selected
 
 
 def _intake_upload_key(generation: int) -> str:
@@ -304,7 +335,20 @@ def run() -> None:
     st.set_page_config(page_title="Coletti & Co. | ColettiOS", page_icon="◈", layout="wide")
     app_mode, storage_backend, core_backend, principal, core, storage, publication_store = app._runtime()
 
-    engagement_id = app._identity_panel(principal)
+    engagement_id = _identity_panel(principal)
+    gate_errors = live_workspace_gate_errors(
+        engagement_id,
+        app_mode=app_mode,
+        storage_backend=storage_backend,
+        core_backend=core_backend,
+        authenticated=principal.authenticated,
+    )
+    if gate_errors:
+        st.error("Coletti & Co. Live is configured but locked until the production gate is open.")
+        for error in gate_errors:
+            st.write(f"• {error}")
+        st.stop()
+
     page = st.sidebar.radio("Workspace", _workspace_pages(principal))
     manifest = core.manifest(engagement_id)
 
@@ -318,8 +362,11 @@ def run() -> None:
     if page == "Command Center":
         st.title("Coletti & Co.")
         st.caption("Commercial interface powered by ColettiOS contracts")
-        if app_mode == "demo":
+        environment = workspace_environment(engagement_id)
+        if environment == "DEMO":
             st.warning("SYNTHETIC DEMO ONLY — do not upload real client, legal, medical, financial, or identifying records.")
+        elif environment == "LIVE":
+            st.success("LIVE WORKSPACE — authenticated production Core and durable encrypted storage are active.")
         if internal_user:
             app._render_internal_command_center(manifest, reports, records)
         else:
@@ -328,7 +375,12 @@ def run() -> None:
     elif page == "Engagements":
         st.title("Engagements")
         rows = [
-            {"Workspace": app._workspace_label(eid), "ID": eid, "Status": "ACTIVE"}
+            {
+                "Workspace": workspace_label(eid),
+                "Environment": workspace_environment(eid),
+                "ID": eid,
+                "Status": "ACTIVE",
+            }
             for eid in principal.engagement_ids
         ]
         st.dataframe(rows, use_container_width=True)
