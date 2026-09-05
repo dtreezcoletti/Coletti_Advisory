@@ -41,6 +41,14 @@ def _proposition_index(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
     }
 
 
+def _reconciliation_for(manifest: dict[str, Any], contradiction_id: str) -> dict[str, Any] | None:
+    for reconciliation in reversed(_values(manifest, "reconciliations")):
+        contradiction_ids = [str(value) for value in reconciliation.get("contradiction_ids", [])]
+        if contradiction_id in contradiction_ids:
+            return reconciliation
+    return None
+
+
 def _source_display(source_ids: Iterable[str], sources: dict[str, dict[str, Any]]) -> str:
     labels: list[str] = []
     for source_id in source_ids:
@@ -185,6 +193,8 @@ def build_cross_record_comparison(manifest: dict[str, Any]) -> list[dict[str, An
     sources = _source_index(manifest)
     rows: list[dict[str, Any]] = []
     for contradiction in _values(manifest, "contradictions"):
+        contradiction_id = str(contradiction.get("contradiction_id", ""))
+        reconciliation = _reconciliation_for(manifest, contradiction_id)
         left_id = str(contradiction.get("proposition_a", ""))
         right_id = str(contradiction.get("proposition_b", ""))
         left = propositions.get(left_id, {})
@@ -199,14 +209,17 @@ def build_cross_record_comparison(manifest: dict[str, Any]) -> list[dict[str, An
         )
         rows.append(
             {
-                "Comparison": contradiction.get("contradiction_id", ""),
+                "Comparison": contradiction_id,
                 "Classification": "Inconsistency",
                 "Record statement A": left.get("text", left_id),
                 "Sources A": _source_display(left_sources, sources),
                 "Record statement B": right.get("text", right_id),
                 "Sources B": _source_display(right_sources, sources),
                 "Why it matters": contradiction.get("reason", ""),
-                "Review status": "Requires review",
+                "Review status": "Reviewer reconciliation recorded" if reconciliation else "Requires review",
+                "Reconciliation outcome": (reconciliation or {}).get("outcome", "—"),
+                "Reviewer rationale": (reconciliation or {}).get("rationale", "—"),
+                "Reconciled by": (reconciliation or {}).get("actor", "—"),
                 "Verification recommendation": recommendation,
                 "Potential verifier": target,
             }
@@ -219,6 +232,8 @@ def build_analytical_issues(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
 
     for contradiction in _values(manifest, "contradictions"):
+        contradiction_id = str(contradiction.get("contradiction_id", ""))
+        reconciliation = _reconciliation_for(manifest, contradiction_id)
         prop_index = _proposition_index(manifest)
         source_ids: list[str] = []
         for prop_id in (contradiction.get("proposition_a"), contradiction.get("proposition_b")):
@@ -232,11 +247,14 @@ def build_analytical_issues(manifest: dict[str, Any]) -> list[dict[str, Any]]:
         )
         rows.append(
             {
-                "Issue": contradiction.get("contradiction_id", ""),
+                "Issue": contradiction_id,
                 "Classification": "Inconsistency",
                 "Description": contradiction.get("reason", ""),
                 "Supporting sources": _source_display(unique_ids, sources),
-                "Status": "Human review required",
+                "Status": "Reviewer reconciliation recorded" if reconciliation else "Human review required",
+                "Reconciliation outcome": (reconciliation or {}).get("outcome", "—"),
+                "Reviewer rationale": (reconciliation or {}).get("rationale", "—"),
+                "Reconciled by": (reconciliation or {}).get("actor", "—"),
                 "Verification recommendation": recommendation,
                 "Potential verifier": target,
             }
@@ -258,6 +276,9 @@ def build_analytical_issues(manifest: dict[str, Any]) -> list[dict[str, Any]]:
                 "Description": escalation.get("reason") or escalation.get("subject", ""),
                 "Supporting sources": _source_display(source_ids, sources),
                 "Status": escalation.get("status", "OPEN"),
+                "Reconciliation outcome": "—",
+                "Reviewer rationale": "—",
+                "Reconciled by": "—",
                 "Verification recommendation": recommendation,
                 "Potential verifier": target,
             }
