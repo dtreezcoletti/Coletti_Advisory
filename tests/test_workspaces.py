@@ -1,4 +1,4 @@
-from colettio_advisory.workspaces import (
+from coletti_advisory.workspaces import (
     LIVE_WORKSPACE_ID,
     live_workspace_gate_errors,
     workspace_environment,
