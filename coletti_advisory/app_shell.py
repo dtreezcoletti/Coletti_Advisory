@@ -1,0 +1,133 @@
+from __future__ import annotations
+
+import streamlit as st
+
+from . import main as app
+from .models import Permission
+from .system_lab import render_system_lab
+
+
+def _workspace_pages(principal) -> list[str]:
+    pages = app._workspace_pages(principal)
+    if principal.can(Permission.MANAGE_USERS) and "System Lab" not in pages:
+        try:
+            admin_index = pages.index("Administration")
+        except ValueError:
+            admin_index = len(pages)
+        pages.insert(admin_index, "System Lab")
+    return pages
+
+
+def run() -> None:
+    st.set_page_config(page_title="Coletti & Co. | ColettiOS", page_icon="◈", layout="wide")
+    app_mode, storage_backend, core_backend, principal, core, storage, publication_store = app._runtime()
+
+    engagement_id = app._identity_panel(principal)
+    page = st.sidebar.radio("Workspace", _workspace_pages(principal))
+    manifest = core.manifest(engagement_id)
+
+    internal_user = principal.can(Permission.ANALYZE) or principal.can(Permission.REVIEW)
+    reports = app.build_report_bundle(manifest) if internal_user else {}
+    records = app._load_publication_records(publication_store, principal, engagement_id)
+    if internal_user:
+        records = app.sync_drafts(records, reports)
+        app._save_publication_records(publication_store, principal, engagement_id, records)
+
+    if page == "Command Center":
+        st.title("Coletti & Co.")
+        st.caption("Commercial interface powered by ColettiOS contracts")
+        if app_mode == "demo":
+            st.warning("SYNTHETIC DEMO ONLY — do not upload real client, legal, medical, financial, or identifying records.")
+        if internal_user:
+            app._render_internal_command_center(manifest, reports, records)
+        else:
+            app._render_client_command_center(manifest, records)
+
+    elif page == "Engagements":
+        st.title("Engagements")
+        rows = [
+            {"Workspace": app._workspace_label(eid), "ID": eid, "Status": "ACTIVE"}
+            for eid in principal.engagement_ids
+        ]
+        st.dataframe(rows, use_container_width=True)
+
+    elif page == "Intake":
+        if not principal.can(Permission.UPLOAD):
+            st.error("Your role does not permit source uploads.")
+            st.stop()
+        st.title("Secure Intake")
+        if app_mode == "demo":
+            st.info("Demo uploads are AES-256-GCM encrypted on ephemeral local storage and may disappear on restart. Use synthetic files only.")
+        classification = st.selectbox(
+            "Document classification",
+            ["Operational Audit", "Business Record", "Financial Record", "Correspondence", "Other"],
+        )
+        uploaded = st.file_uploader("Upload a source record")
+        if st.button("Register source", type="primary", disabled=uploaded is None):
+            result = app.ingest_file(
+                principal=principal,
+                engagement_id=engagement_id,
+                filename=uploaded.name,
+                data=uploaded.getvalue(),
+                classification=classification,
+                storage=storage,
+                core=core,
+            )
+            st.success("Source intake completed")
+            st.write("✓ Engagement authorization verified")
+            st.write("✓ File encrypted before storage")
+            st.write("✓ SHA-256 content hash generated")
+            st.write(f"✓ Source {result['source']['source_id']} registered")
+            st.write("✓ Audit actor recorded")
+            st.rerun()
+
+    elif page == "Evidence":
+        if not (principal.can(Permission.ANALYZE) or principal.can(Permission.REVIEW)):
+            st.error("Your role does not permit access to the internal evidence workspace.")
+            st.stop()
+        st.title("Evidence Workspace")
+        st.subheader("Sources")
+        st.dataframe(list(manifest.get("sources", {}).values()), use_container_width=True)
+        st.subheader("Propositions")
+        st.dataframe(list(manifest.get("propositions", {}).values()), use_container_width=True)
+        st.subheader("Contradictions")
+        st.dataframe(list(manifest.get("contradictions", {}).values()), use_container_width=True)
+
+    elif page == "Review Center":
+        if not principal.can(Permission.REVIEW):
+            st.error("Your role does not permit review access.")
+            st.stop()
+        app._render_review_center(manifest, reports, records, publication_store, principal, engagement_id)
+
+    elif page == "Analysis":
+        if not principal.can(Permission.ANALYZE):
+            st.error("Your role does not permit analysis access.")
+            st.stop()
+        app._render_analysis(manifest)
+
+    elif page == "Reports":
+        if internal_user:
+            app._render_internal_reports(manifest, reports, records)
+        else:
+            app._render_client_reports(records)
+
+    elif page == "System Lab":
+        render_system_lab(
+            principal=principal,
+            manifest=manifest,
+            app_mode=app_mode,
+            storage_backend=storage_backend,
+            core_backend=core_backend,
+        )
+
+    elif page == "Administration":
+        st.title("Administration & Security")
+        if not principal.can(Permission.MANAGE_USERS):
+            st.error("Your role does not permit administration.")
+            st.stop()
+        st.write(f"Mode: **{app_mode}** · Storage: **{storage_backend}** · Core adapter: **{core_backend}**")
+        st.subheader("Authentication & Security Release Gate")
+        for label, implemented in app.SECURITY_CONTROLS:
+            st.write(f"{'✅' if implemented else '🔨'} {label}")
+        st.subheader("Audit log")
+        st.dataframe(manifest.get("audit_log", []), use_container_width=True)
