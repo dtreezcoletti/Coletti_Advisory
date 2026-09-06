@@ -344,6 +344,9 @@ def _render_production_readiness(
     principal,
     engagement_id: str,
 ) -> None:
+    if storage is None:
+        storage = st.session_state.get("_coletti_storage")
+
     st.subheader("Production Readiness")
     st.caption("Temporary pre-launch operational verification. No readiness percentage is used.")
     st.warning(PRODUCTION_READINESS_CAVEAT)
