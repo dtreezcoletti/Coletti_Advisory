@@ -6,8 +6,10 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
+from uuid import uuid4
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -17,6 +19,20 @@ class StoredObject:
     storage_uri: str
     content_hash: str
     encrypted: bool
+
+
+@dataclass(frozen=True)
+class StorageVerificationResult:
+    status: str
+    checks: dict[str, bool]
+    evidence: dict[str, str]
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "status": self.status,
+            "checks": dict(self.checks),
+            "evidence": dict(self.evidence),
+        }
 
 
 class SecureStorage(Protocol):
@@ -43,6 +59,12 @@ def encrypt_bytes(data: bytes, key: bytes, aad: bytes) -> bytes:
     return nonce + ciphertext
 
 
+def decrypt_bytes(data: bytes, key: bytes, aad: bytes) -> bytes:
+    if len(data) < 13:
+        raise ValueError("Encrypted payload is too short")
+    return AESGCM(key).decrypt(data[:12], data[12:], aad)
+
+
 def gcs_bucket_security_errors(bucket, *, client=None) -> list[str]:
     """Return fail-closed production bucket errors without exposing credentials."""
     try:
@@ -63,6 +85,123 @@ def gcs_bucket_security_errors(bucket, *, client=None) -> list[str]:
         errors.append("GCS bucket versioning must be enabled for recovery and overwrite protection")
 
     return errors
+
+
+def verify_gcs_storage_roundtrip(
+    *,
+    bucket,
+    client,
+    master_key: bytes,
+    organization_id: str,
+    engagement_id: str,
+) -> StorageVerificationResult:
+    """Exercise the live production bucket with synthetic bytes only.
+
+    A PASS proves that the configured runtime can inspect the required bucket
+    controls, write a client-side encrypted object, read it back, authenticate
+    and decrypt it with the configured key, verify the plaintext SHA-256 and
+    metadata, and remove the exact probe generation. It intentionally does not
+    claim that authentication, Core persistence, reports, backups, or complete
+    production E2E acceptance have passed.
+    """
+
+    source_id = f"SYS-STORAGE-PROBE-{uuid4().hex}"
+    filename = "SYNTHETIC_PRODUCTION_STORAGE_PROBE.txt"
+    payload = (
+        b"COLETTI & CO. SYNTHETIC PRODUCTION STORAGE PROBE\n"
+        b"No real client, legal, medical, financial, or identifying data.\n"
+        + source_id.encode()
+    )
+    digest = hashlib.sha256(payload).hexdigest()
+    object_name = "/".join(
+        (
+            _safe(organization_id),
+            _safe(engagement_id),
+            "__system_lab__",
+            f"{_safe(source_id)}.blob",
+        )
+    )
+    aad = f"{organization_id}|{engagement_id}|{source_id}|{filename}|{digest}".encode()
+    encrypted = encrypt_bytes(payload, master_key, aad)
+    blob = bucket.blob(object_name)
+
+    checks: dict[str, bool] = {
+        "bucket_security_controls": False,
+        "encrypted_write": False,
+        "encrypted_read": False,
+        "plaintext_integrity": False,
+        "integrity_metadata": False,
+        "probe_cleanup": False,
+    }
+    evidence: dict[str, str] = {
+        "verified_at": datetime.now(timezone.utc).isoformat(),
+        "bucket": str(getattr(bucket, "name", "")),
+        "probe_object": object_name,
+        "sha256_plaintext": digest,
+    }
+
+    uploaded_generation = None
+    try:
+        security_errors = gcs_bucket_security_errors(bucket, client=client)
+        checks["bucket_security_controls"] = not security_errors
+        if security_errors:
+            evidence["bucket_gate"] = " | ".join(security_errors)
+            return StorageVerificationResult("FAIL", checks, evidence)
+
+        blob.cache_control = "no-store"
+        blob.metadata = {
+            "sha256_plaintext": digest,
+            "organization_id": organization_id,
+            "engagement_id": engagement_id,
+            "source_id": source_id,
+            "encryption": "AES-256-GCM-client-side",
+            "probe": "system-lab-production-storage",
+        }
+        blob.upload_from_string(
+            encrypted,
+            content_type="application/octet-stream",
+            if_generation_match=0,
+        )
+        checks["encrypted_write"] = True
+
+        blob.reload(client=client)
+        uploaded_generation = getattr(blob, "generation", None)
+        stored_metadata = dict(getattr(blob, "metadata", {}) or {})
+        checks["integrity_metadata"] = (
+            stored_metadata.get("sha256_plaintext") == digest
+            and stored_metadata.get("organization_id") == organization_id
+            and stored_metadata.get("engagement_id") == engagement_id
+            and stored_metadata.get("source_id") == source_id
+            and stored_metadata.get("encryption") == "AES-256-GCM-client-side"
+        )
+
+        downloaded = blob.download_as_bytes()
+        checks["encrypted_read"] = downloaded == encrypted and payload not in downloaded
+        recovered = decrypt_bytes(downloaded, master_key, aad)
+        checks["plaintext_integrity"] = (
+            recovered == payload and hashlib.sha256(recovered).hexdigest() == digest
+        )
+    except Exception as exc:
+        evidence["error_type"] = exc.__class__.__name__
+    finally:
+        if uploaded_generation is not None:
+            try:
+                generation_blob = bucket.blob(object_name, generation=uploaded_generation)
+                generation_blob.delete(if_generation_match=int(uploaded_generation))
+                checks["probe_cleanup"] = True
+            except Exception as exc:
+                evidence["cleanup_error_type"] = exc.__class__.__name__
+
+    required = (
+        "bucket_security_controls",
+        "encrypted_write",
+        "encrypted_read",
+        "plaintext_integrity",
+        "integrity_metadata",
+        "probe_cleanup",
+    )
+    status = "PASS" if all(checks[name] for name in required) else "FAIL"
+    return StorageVerificationResult(status, checks, evidence)
 
 
 class EncryptedLocalDemoStorage:
@@ -119,3 +258,12 @@ class GoogleCloudEncryptedStorage:
             if_generation_match=0,
         )
         return StoredObject(storage_uri=f"gs://{self.bucket.name}/{object_name}", content_hash=digest, encrypted=True)
+
+    def verify_operational(self, *, organization_id: str, engagement_id: str) -> StorageVerificationResult:
+        return verify_gcs_storage_roundtrip(
+            bucket=self.bucket,
+            client=self.client,
+            master_key=self.master_key,
+            organization_id=organization_id,
+            engagement_id=engagement_id,
+        )

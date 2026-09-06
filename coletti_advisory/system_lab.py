@@ -20,6 +20,7 @@ SYSTEM_LAB_SECTIONS = (
     "Clean Room",
     "CI & Releases",
     "Security Gate",
+    "Production Readiness",
     "Audit & Diagnostics",
 )
 
@@ -37,6 +38,12 @@ CORE_ACCEPTANCE_MATRIX = (
     ("AC-08", "Generalized schema behavior"),
     ("AC-09", "Unrelated synthetic engagement"),
     ("AC-10", "Zero historical-case dependency"),
+)
+
+PRODUCTION_READINESS_CAVEAT = (
+    "There is still no verified basis to declare production storage complete, private deployment fully passed, "
+    "production auth fully passed, production mode activated, finished production report flow validated, or "
+    "complete production E2E acceptance passed unless the corresponding live production verification has PASS evidence."
 )
 
 
@@ -270,6 +277,142 @@ def _render_security_gate(app_mode: str, storage_backend: str, core_backend: str
         st.write(f"{'✅' if implemented else '🔨'} {label}")
 
 
+def _production_readiness_rows(
+    *,
+    app_mode: str,
+    storage_backend: str,
+    core_backend: str,
+    storage_probe: dict | None,
+) -> list[dict[str, str]]:
+    storage_status = "NOT VERIFIED"
+    storage_basis = "Requires live production GCS roundtrip evidence."
+    if storage_probe:
+        storage_status = str(storage_probe.get("status") or "FAIL")
+        storage_basis = "Live synthetic GCS write/read/decrypt/hash/metadata/cleanup probe."
+
+    production_mode_status = "PASS" if app_mode == "production" else "NOT VERIFIED"
+    production_mode_basis = (
+        "This running process reports APP_MODE=production."
+        if production_mode_status == "PASS"
+        else "Current runtime is not production mode."
+    )
+
+    return [
+        {
+            "Control": "Production storage",
+            "Status": storage_status,
+            "Verification basis": storage_basis,
+        },
+        {
+            "Control": "Private deployment",
+            "Status": "NOT VERIFIED",
+            "Verification basis": "Requires live private deployment and protected Core service acceptance evidence.",
+        },
+        {
+            "Control": "Production authentication",
+            "Status": "NOT VERIFIED",
+            "Verification basis": "Requires login, expiration, re-authentication, logout/revocation, RBAC and engagement-isolation acceptance.",
+        },
+        {
+            "Control": "Production mode",
+            "Status": production_mode_status,
+            "Verification basis": production_mode_basis,
+        },
+        {
+            "Control": "Finished production report flow",
+            "Status": "NOT VERIFIED",
+            "Verification basis": "Requires production-path intake through approved frozen client publication.",
+        },
+        {
+            "Control": "Complete production E2E",
+            "Status": "NOT VERIFIED",
+            "Verification basis": "Requires one unrelated synthetic engagement through the complete real production stack without developer intervention.",
+        },
+    ]
+
+
+def _overall_production_readiness(rows: list[dict[str, str]]) -> str:
+    return "PRODUCTION READY" if rows and all(row.get("Status") == "PASS" for row in rows) else "NOT PRODUCTION READY"
+
+
+def _render_production_readiness(
+    *,
+    app_mode: str,
+    storage_backend: str,
+    core_backend: str,
+    storage,
+    principal,
+    engagement_id: str,
+) -> None:
+    if storage is None:
+        storage = st.session_state.get("_coletti_storage")
+
+    st.subheader("Production Readiness")
+    st.caption("Temporary pre-launch operational verification. No readiness percentage is used.")
+    st.warning(PRODUCTION_READINESS_CAVEAT)
+
+    probe = st.session_state.get("_production_storage_probe")
+    if probe and (
+        probe.get("app_mode") != app_mode
+        or probe.get("storage_backend") != storage_backend
+        or probe.get("engagement_id") != engagement_id
+    ):
+        probe = None
+
+    can_probe_storage = (
+        app_mode == "production"
+        and storage_backend == "gcs"
+        and hasattr(storage, "verify_operational")
+    )
+    if can_probe_storage:
+        st.markdown("**LR-04 / PI-006–007 · Live production storage verification**")
+        st.caption(
+            "Uses synthetic bytes only. The probe writes one client-side AES-GCM encrypted sentinel to the configured production bucket, reads it back, verifies metadata and plaintext SHA-256 after authenticated decryption, then deletes the exact probe generation."
+        )
+        if st.button("Run live production storage verification", type="primary", key="production-storage-probe"):
+            result = storage.verify_operational(
+                organization_id=principal.organization_id,
+                engagement_id=engagement_id,
+            )
+            st.session_state["_production_storage_probe"] = {
+                "app_mode": app_mode,
+                "storage_backend": storage_backend,
+                "engagement_id": engagement_id,
+                **result.as_dict(),
+            }
+            st.rerun()
+    else:
+        st.info(
+            "Live production storage verification is unavailable in this runtime. It becomes runnable only when APP_MODE=production and STORAGE_BACKEND=gcs are active with the production storage adapter."
+        )
+
+    storage_probe = probe if probe else None
+    rows = _production_readiness_rows(
+        app_mode=app_mode,
+        storage_backend=storage_backend,
+        core_backend=core_backend,
+        storage_probe=storage_probe,
+    )
+    overall = _overall_production_readiness(rows)
+    if overall == "PRODUCTION READY":
+        st.success(overall)
+    else:
+        st.error(overall)
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+    if storage_probe:
+        if storage_probe.get("status") == "PASS":
+            st.success("Production storage verification: PASS")
+        else:
+            st.error("Production storage verification: FAIL")
+        st.write(storage_probe.get("checks") or {})
+        with st.expander("Production storage verification evidence"):
+            st.json(storage_probe.get("evidence") or {})
+        st.caption(
+            "A storage PASS proves only the live storage control. It does not imply that authentication, private Core deployment, report flow, recovery, or complete production E2E acceptance has passed."
+        )
+
+
 def _render_audit(manifest: dict, commercial_run: dict | None) -> None:
     st.subheader("Audit & Diagnostics")
     audit_log = manifest.get("audit_log") or []
@@ -312,6 +455,7 @@ def render_system_lab(
     storage_backend: str,
     core_backend: str,
     engagement_id: str,
+    storage=None,
 ) -> None:
     if not can_access_system_lab(principal):
         st.error("Your role does not permit access to the System Lab.")
@@ -323,7 +467,7 @@ def render_system_lab(
     core_run = _latest_actions_run(CORE_REPOSITORY)
     commercial_run = _latest_actions_run(COMMERCIAL_REPOSITORY)
 
-    core_tab, clean_tab, ci_tab, security_tab, audit_tab = st.tabs(SYSTEM_LAB_SECTIONS)
+    core_tab, clean_tab, ci_tab, security_tab, readiness_tab, audit_tab = st.tabs(SYSTEM_LAB_SECTIONS)
     with core_tab:
         _render_core_test_lab(core_run)
     with clean_tab:
@@ -337,5 +481,14 @@ def render_system_lab(
         _render_ci_releases(core_run, commercial_run)
     with security_tab:
         _render_security_gate(app_mode, storage_backend, core_backend)
+    with readiness_tab:
+        _render_production_readiness(
+            app_mode=app_mode,
+            storage_backend=storage_backend,
+            core_backend=core_backend,
+            storage=storage,
+            principal=principal,
+            engagement_id=engagement_id,
+        )
     with audit_tab:
         _render_audit(manifest, commercial_run)
