@@ -2,7 +2,7 @@
 
 Canonical model: ColettiOS Split-Plane Security Architecture v2.0
 Commercial implementation: `docs/SPLIT_PLANE_SECURITY_IMPLEMENTATION_v2.0.md`
-Production infrastructure gate: `PRODUCTION_INFRASTRUCTURE_GATE_v1.0.md`
+Production infrastructure/security gate: `PRODUCTION_INFRASTRUCTURE_SECURITY_GATE_v2.0.md`
 
 ## Architectural declaration
 
@@ -22,8 +22,8 @@ The September 3 embedded-v4-vault deployment topology is superseded. Coletti & C
 - ✅ authenticated upload pipeline
 - ✅ plaintext SHA-256 source hashing before encryption
 - ✅ AES-256-GCM encrypted source storage implementation
-- ✅ HKDF-SHA256 source-object key derivation scoped by organization, engagement, source and key version
-- ✅ explicit storage key-version metadata
+- ✅ HKDF-SHA256 source-object key derivation scoped by organization, engagement, source and code-controlled cryptographic profile
+- ✅ cryptographic profile/key version `v1` hard-pinned for the initial release
 - ✅ GCS uniform-access / public-access-prevention / versioning gate in code
 - ✅ authenticated audit actor propagation into ColettiOS
 - ✅ source mutation protection in ColettiOS
@@ -45,7 +45,7 @@ The following may have code/design support but are **not PASS** until exercised 
 - applicable retention/legal-hold/deletion controls;
 - backup coverage for both the encrypted data plane and Core control plane;
 - isolated restore;
-- key-version/rotation procedure;
+- future key-profile rotation procedure;
 - operational logging review;
 - complete unrelated synthetic production E2E.
 
