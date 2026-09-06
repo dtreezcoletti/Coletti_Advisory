@@ -14,7 +14,13 @@ def demo_data_available(*, app_mode: str, engagement_id: str, core) -> bool:
 
 
 def _reset_demo_data(experience_shell, *, principal, engagement_id: str, core) -> None:
-    """Restore the canonical synthetic dataset and clear demo publication state."""
+    """Restore the canonical synthetic dataset and clear demo publication state.
+
+    This function intentionally does not call st.rerun(). Streamlit button callbacks
+    execute before the framework's normal full-script rerun, which prevents the
+    partial-render/blank-workspace behavior caused by forcing a rerun from inside
+    the sidebar render path.
+    """
     core.reset_demo_data()
     publication_store = experience_shell.st.session_state.get("_coletti_publication_store")
     if publication_store is not None:
@@ -24,7 +30,6 @@ def _reset_demo_data(experience_shell, *, principal, engagement_id: str, core) -
             records={},
         )
     experience_shell.st.session_state["_demo_data_loaded_notice"] = True
-    experience_shell.st.rerun()
 
 
 def patch_demo_data_control(experience_shell) -> None:
@@ -51,15 +56,7 @@ def patch_demo_data_control(experience_shell) -> None:
         ):
             return
 
-        experience_shell.st.sidebar.divider()
-        experience_shell.st.sidebar.caption("DEMONSTRATION")
-        if experience_shell.st.sidebar.button(
-            "Load Demo Data",
-            key="load_demo_data_sidebar",
-            type="primary",
-            use_container_width=True,
-            help="Restore the canonical synthetic Coletti & Co. demonstration. This control is unavailable for live client workspaces.",
-        ):
+        def reset_sidebar_demo() -> None:
             _reset_demo_data(
                 experience_shell,
                 principal=principal,
@@ -67,7 +64,18 @@ def patch_demo_data_control(experience_shell) -> None:
                 core=core,
             )
 
-        if experience_shell.st.session_state.pop("_demo_data_loaded_notice", False):
+        experience_shell.st.sidebar.divider()
+        experience_shell.st.sidebar.caption("DEMONSTRATION")
+        experience_shell.st.sidebar.button(
+            "Load Demo Data",
+            key="load_demo_data_sidebar",
+            type="primary",
+            use_container_width=True,
+            help="Restore the canonical synthetic Coletti & Co. demonstration. This control is unavailable for live client workspaces.",
+            on_click=reset_sidebar_demo,
+        )
+
+        if experience_shell.st.session_state.get("_demo_data_loaded_notice", False):
             experience_shell.st.sidebar.success("Demo data restored")
         experience_shell.st.sidebar.caption("Synthetic records only · never connected to a live client case")
 
@@ -84,20 +92,23 @@ def patch_demo_data_control(experience_shell) -> None:
         ):
             return
 
-        experience_shell.st.caption("DEMO WORKSPACE · Synthetic records only")
-        if experience_shell.st.button(
-            "Load Demo Data",
-            key="load_demo_data_main",
-            type="primary",
-            use_container_width=True,
-            help="Restore the canonical synthetic demonstration to a clean starting state.",
-        ):
+        def reset_main_demo() -> None:
             _reset_demo_data(
                 experience_shell,
                 principal=principal,
                 engagement_id=engagement_id,
                 core=core,
             )
+
+        experience_shell.st.caption("DEMO WORKSPACE · Synthetic records only")
+        experience_shell.st.button(
+            "Load Demo Data",
+            key="load_demo_data_main",
+            type="primary",
+            use_container_width=True,
+            help="Restore the canonical synthetic demonstration to a clean starting state.",
+            on_click=reset_main_demo,
+        )
 
         if experience_shell.st.session_state.pop("_demo_data_loaded_notice", False):
             experience_shell.st.success("Demo data restored")
