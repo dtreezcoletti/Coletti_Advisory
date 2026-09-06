@@ -73,7 +73,7 @@ def test_unrelated_domain_runs_through_analysis_and_reporting_without_builder_ch
     assert bundle["Exception Summary"]["report_type"] == "Exception Summary"
 
 
-def test_domain_specific_source_classes_are_not_hardcoded_in_active_analysis_or_reporting_code():
+def test_domain_specific_source_classes_are_not_hardcoded_in_analysis_reporting_or_intake_code():
     prohibited_literals = (
         '"Operational Audit"',
         '"Operational Record"',
@@ -85,6 +85,7 @@ def test_domain_specific_source_classes_are_not_hardcoded_in_active_analysis_or_
         "coletti_advisory/analysis.py",
         "coletti_advisory/reporting.py",
         "coletti_advisory/app_shell.py",
+        "coletti_advisory/main.py",
     ):
         text = (ROOT / relative).read_text()
         for literal in prohibited_literals:
