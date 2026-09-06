@@ -9,7 +9,7 @@ SYNTHETIC_MANIFEST = {
         "SRC-DEMO-001": {
             "source_id": "SRC-DEMO-001",
             "content_hash": "demo-hash-001",
-            "metadata": {"filename": "synthetic_ledger.csv", "classification": "Operational Audit"},
+            "metadata": {"filename": "synthetic_ledger.csv", "classification": "Operational Record"},
         },
         "SRC-DEMO-002": {
             "source_id": "SRC-DEMO-002",
