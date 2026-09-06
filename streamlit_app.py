@@ -1,4 +1,5 @@
 from coletti_advisory import experience_shell
+from coletti_advisory.demo_controls import patch_demo_data_control
 from coletti_advisory.luxury_mobile import apply_luxury_mobile_overrides
 from coletti_advisory.luxury_theme import apply_luxury_theme
 from coletti_advisory.mobile_ui import patch_mobile_theme
@@ -10,6 +11,10 @@ experience_shell._apply_brand_theme = apply_luxury_theme
 if not getattr(experience_shell, "_mobile_ui_patched", False):
     patch_mobile_theme(experience_shell)
     experience_shell._mobile_ui_patched = True
+
+if not getattr(experience_shell, "_demo_data_control_patched", False):
+    patch_demo_data_control(experience_shell)
+    experience_shell._demo_data_control_patched = True
 
 # The responsive layer intentionally adjusts layout/touch density. Apply a final
 # visual-only pass afterward so mobile keeps the same quiet-luxury geometry and
