@@ -15,3 +15,8 @@ showErrorDetails = false
 
 [theme]
 base = "light"
+primaryColor = "#94703B"
+backgroundColor = "#F6F3ED"
+secondaryBackgroundColor = "#FFFDF9"
+textColor = "#171715"
+font = "sans serif"

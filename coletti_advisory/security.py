@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from collections.abc import Mapping
 
 
@@ -21,7 +22,9 @@ def validate_production_configuration(*, app_mode: str, config: Mapping[str, str
     """Validate production secrets/config before constructing external backends.
 
     This is intentionally fail-closed. It validates presence and safe structure,
-    but never logs or returns secret values.
+    but never logs or returns secret values. Split-plane cryptographic profile
+    `v1` is hard-pinned in the initial release; accepting a future profile is a
+    code+test migration, not a configuration-only change.
     """
     if app_mode != "production":
         return []
@@ -54,6 +57,12 @@ def validate_production_configuration(*, app_mode: str, config: Mapping[str, str
                 errors.append("STORAGE_MASTER_KEY must decode to exactly 32 bytes")
         except Exception:
             errors.append("STORAGE_MASTER_KEY is not valid URL-safe base64")
+
+    key_version = str(config.get("STORAGE_KEY_VERSION", "v1")).strip() or "v1"
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", key_version):
+        errors.append("STORAGE_KEY_VERSION contains unsupported characters")
+    elif key_version != "v1":
+        errors.append("STORAGE_KEY_VERSION must be v1 for this release")
 
     core_url = str(config.get("COLETTIOS_API_URL", "")).strip()
     if not core_url:
@@ -105,9 +114,11 @@ def validate_production_configuration(*, app_mode: str, config: Mapping[str, str
 
 
 SECURITY_CONTROLS = [
+    ("Canonical split-plane security architecture v2", True),
     ("Secrets excluded from Git", True),
     ("Audit actors exist in ColettiOS", True),
-    ("Commercial repo owns authentication", True),
+    ("Commercial repo owns authentication and encrypted client-data plane", True),
+    ("ColettiOS owns provenance/audit control plane", True),
     ("Streamlit browser session separation", True),
     ("Real login via OIDC", True),
     ("Password verification delegated to identity provider", True),
@@ -120,7 +131,9 @@ SECURITY_CONTROLS = [
     ("Engagement-level authorization", True),
     ("Authenticated upload pipeline", True),
     ("AES-256-GCM encrypted storage implementation", True),
-    ("Verified SHA-256 file hashing", True),
+    ("HKDF-SHA256 scoped source-object data keys", True),
+    ("Cryptographic profile v1 hard-pinned for initial release", True),
+    ("Verified SHA-256 plaintext source hashing", True),
     ("Authenticated audit actor propagation", True),
     ("Production configuration preflight", True),
 ]

@@ -12,6 +12,13 @@ from typing import Any, Protocol
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from .storage import (
+    DEFAULT_STORAGE_KEY_VERSION,
+    KEY_DERIVATION_SCHEME,
+    SECURITY_ARCHITECTURE_VERSION,
+    derive_scoped_key,
+)
+
 
 class PublicationStatus(str, Enum):
     DRAFT = "DRAFT"
@@ -86,12 +93,49 @@ class ReportPublicationRecord:
 
 
 class PublicationStore(Protocol):
-    def load(self, *, organization_id: str, engagement_id: str) -> dict[str, ReportPublicationRecord]: ...
-    def save(self, *, organization_id: str, engagement_id: str, records: dict[str, ReportPublicationRecord]) -> None: ...
+    def load(
+        self,
+        *,
+        organization_id: str,
+        engagement_id: str,
+    ) -> dict[str, ReportPublicationRecord]: ...
+
+    def save(
+        self,
+        *,
+        organization_id: str,
+        engagement_id: str,
+        records: dict[str, ReportPublicationRecord],
+    ) -> None: ...
 
 
-def _aad(organization_id: str, engagement_id: str) -> bytes:
-    return f"publication-state|{organization_id}|{engagement_id}".encode()
+def _publication_key(
+    master_key: bytes,
+    *,
+    organization_id: str,
+    engagement_id: str,
+    key_version: str,
+) -> bytes:
+    return derive_scoped_key(
+        master_key,
+        purpose="publication-state",
+        organization_id=organization_id,
+        engagement_id=engagement_id,
+        object_id="publication-state",
+        key_version=key_version,
+    )
+
+
+def _aad(organization_id: str, engagement_id: str, key_version: str) -> bytes:
+    return "|".join(
+        (
+            SECURITY_ARCHITECTURE_VERSION,
+            key_version,
+            "publication-state",
+            organization_id,
+            engagement_id,
+        )
+    ).encode()
 
 
 def _encrypt_json(value: dict[str, Any], key: bytes, aad: bytes) -> bytes:
@@ -131,9 +175,16 @@ class EncryptedLocalPublicationStore:
     Production GCS state never uses this recovery behavior.
     """
 
-    def __init__(self, root: str | Path, master_key: bytes) -> None:
+    def __init__(
+        self,
+        root: str | Path,
+        master_key: bytes,
+        *,
+        key_version: str = DEFAULT_STORAGE_KEY_VERSION,
+    ) -> None:
         self.root = Path(root)
         self.master_key = master_key
+        self.key_version = key_version
 
     def _path(self, organization_id: str, engagement_id: str) -> Path:
         safe = lambda value: "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in value)
@@ -143,20 +194,55 @@ class EncryptedLocalPublicationStore:
         path = self._path(organization_id, engagement_id)
         if not path.exists():
             return {}
+        key = _publication_key(
+            self.master_key,
+            organization_id=organization_id,
+            engagement_id=engagement_id,
+            key_version=self.key_version,
+        )
         try:
-            payload = _decrypt_json(path.read_bytes(), self.master_key, _aad(organization_id, engagement_id))
+            payload = _decrypt_json(
+                path.read_bytes(),
+                key,
+                _aad(organization_id, engagement_id, self.key_version),
+            )
         except (InvalidTag, ValueError, json.JSONDecodeError, UnicodeDecodeError):
             return {}
         return _deserialize(payload)
 
-    def save(self, *, organization_id: str, engagement_id: str, records: dict[str, ReportPublicationRecord]) -> None:
+    def save(
+        self,
+        *,
+        organization_id: str,
+        engagement_id: str,
+        records: dict[str, ReportPublicationRecord],
+    ) -> None:
         path = self._path(organization_id, engagement_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(_encrypt_json(_serialize(records), self.master_key, _aad(organization_id, engagement_id)))
+        key = _publication_key(
+            self.master_key,
+            organization_id=organization_id,
+            engagement_id=engagement_id,
+            key_version=self.key_version,
+        )
+        path.write_bytes(
+            _encrypt_json(
+                _serialize(records),
+                key,
+                _aad(organization_id, engagement_id, self.key_version),
+            )
+        )
 
 
 class GoogleCloudPublicationStore:
-    def __init__(self, *, bucket_name: str, service_account_json: str, master_key: bytes) -> None:
+    def __init__(
+        self,
+        *,
+        bucket_name: str,
+        service_account_json: str,
+        master_key: bytes,
+        key_version: str = DEFAULT_STORAGE_KEY_VERSION,
+    ) -> None:
         from google.cloud import storage
         from google.oauth2 import service_account
 
@@ -165,6 +251,7 @@ class GoogleCloudPublicationStore:
         self.client = storage.Client(project=info.get("project_id"), credentials=credentials)
         self.bucket = self.client.bucket(bucket_name)
         self.master_key = master_key
+        self.key_version = key_version
 
     def _blob(self, organization_id: str, engagement_id: str):
         safe = lambda value: "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in value)
@@ -174,17 +261,48 @@ class GoogleCloudPublicationStore:
         blob = self._blob(organization_id, engagement_id)
         if not blob.exists(client=self.client):
             return {}
+        key = _publication_key(
+            self.master_key,
+            organization_id=organization_id,
+            engagement_id=engagement_id,
+            key_version=self.key_version,
+        )
         payload = blob.download_as_bytes()
-        return _deserialize(_decrypt_json(payload, self.master_key, _aad(organization_id, engagement_id)))
+        return _deserialize(
+            _decrypt_json(
+                payload,
+                key,
+                _aad(organization_id, engagement_id, self.key_version),
+            )
+        )
 
-    def save(self, *, organization_id: str, engagement_id: str, records: dict[str, ReportPublicationRecord]) -> None:
+    def save(
+        self,
+        *,
+        organization_id: str,
+        engagement_id: str,
+        records: dict[str, ReportPublicationRecord],
+    ) -> None:
         blob = self._blob(organization_id, engagement_id)
-        payload = _encrypt_json(_serialize(records), self.master_key, _aad(organization_id, engagement_id))
+        key = _publication_key(
+            self.master_key,
+            organization_id=organization_id,
+            engagement_id=engagement_id,
+            key_version=self.key_version,
+        )
+        payload = _encrypt_json(
+            _serialize(records),
+            key,
+            _aad(organization_id, engagement_id, self.key_version),
+        )
         blob.metadata = {
             "organization_id": organization_id,
             "engagement_id": engagement_id,
             "state_type": "report-publication",
             "encryption": "AES-256-GCM-client-side",
+            "security_architecture": SECURITY_ARCHITECTURE_VERSION,
+            "key_derivation": KEY_DERIVATION_SCHEME,
+            "key_version": self.key_version,
         }
         blob.upload_from_string(payload, content_type="application/octet-stream")
 
