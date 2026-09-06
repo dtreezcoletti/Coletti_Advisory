@@ -1,0 +1,16 @@
+{
+  "freeze_id": "COLETTIOS-2026-09-06-PREINSTALL-PRELAUNCH-V2",
+  "component": "Coletti & Co. commercial application and encrypted client-data plane",
+  "repository": "dtreezcoletti/Coletti_Advisory",
+  "authoritative_code_baseline_sha": "5ea6bfa4ce9e3cef4114e5844da84fbacb1c3401",
+  "freeze_branch": "freeze/preinstall-prelaunch-2026-09-06",
+  "master_freeze_repository": "dtreezcoletti/ColettiOS",
+  "master_freeze_manifest": "COLETTIOS_PREINSTALL_PRELAUNCH_FREEZE_MANIFEST_v2.0.json",
+  "master_freeze_document": "COLETTIOS_PREINSTALL_PRELAUNCH_FREEZE_v2.0.md",
+  "frozen_core_sha": "b864a5602bdca118b02e43c96590f1936934627d",
+  "frozen_deployment_shim_sha": "c6ba6fe8dea0f936f30c1bde30310edde3a9832e",
+  "production_ready": false,
+  "real_client_authorized": false,
+  "gate_status": "CLOSED — SYNTHETIC/DEMO ONLY",
+  "change_control": "The exact code baseline SHA is authoritative. Freeze metadata commits do not redefine the frozen commercial code. Future production-bound changes require a new superseding freeze."
+}
