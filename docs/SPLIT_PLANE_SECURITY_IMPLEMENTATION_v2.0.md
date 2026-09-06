@@ -59,7 +59,7 @@ The commercial data plane implements the following v2 profile:
    - organization ID;
    - engagement ID;
    - source ID;
-   - explicit storage key version.
+   - the code-controlled cryptographic profile/key version (initial release: `v1`).
 4. AES-256-GCM encrypts the source with a fresh random 96-bit nonce.
 5. Authenticated associated data binds the ciphertext to:
    - architecture version;
@@ -72,7 +72,7 @@ The commercial data plane implements the following v2 profile:
 6. The GCS object records non-secret verification metadata including security architecture, derivation scheme and key version.
 7. Original uploads are create-only (`if_generation_match=0`) and bucket versioning is mandatory.
 
-This gives source-level cryptographic domain separation while retaining one externally managed root secret for the initial deployment. A future KMS/HSM-backed root-key provider may replace secret-manager root material without changing the Core evidence model.
+This gives source-level cryptographic domain separation while retaining one externally managed root secret for the initial deployment. The initial release hard-pins cryptographic profile `v1` in code. A future key/profile version is a code-and-test migration; an operator cannot rotate cryptographic profiles merely by changing a secret or environment setting. A future KMS/HSM-backed root-key provider may replace secret-manager root material without changing the Core evidence model.
 
 ## Security metadata rule
 
@@ -102,7 +102,7 @@ The commercial layer carries the following v4 obligations forward:
 | PII/sensitive-data handling | Config/policy-owned intake classification; must not mutate evidence truth |
 | Legal hold / deletion controls | Storage-policy and operating-workflow responsibility; production proof required where engagement policy requires |
 | Backup / recovery | Restore must reconstruct encrypted source objects plus corresponding Core manifests |
-| Key rotation | Explicit `STORAGE_KEY_VERSION` plus versioned derivation; operational rotation test required before certification |
+| Key rotation | Code-controlled profile `v1` plus versioned derivation; future rotation requires a code+test migration and an operational rotation/recovery test before certification |
 
 A documented mapping is not a PASS. Controls identified as production requirements remain closed until exercised against the real production stack.
 
