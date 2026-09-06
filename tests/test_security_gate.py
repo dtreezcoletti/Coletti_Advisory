@@ -84,5 +84,12 @@ def test_production_configuration_preflight_rejects_invalid_key_version():
     assert "STORAGE_KEY_VERSION contains unsupported characters" in errors
 
 
+def test_production_configuration_preflight_rejects_unwired_future_key_version():
+    config = valid_production_config()
+    config["STORAGE_KEY_VERSION"] = "v2"
+    errors = validate_production_configuration(app_mode="production", config=config)
+    assert "STORAGE_KEY_VERSION must be v1 for this release" in errors
+
+
 def test_demo_mode_does_not_require_production_secrets():
     assert validate_production_configuration(app_mode="demo", config={}) == []
