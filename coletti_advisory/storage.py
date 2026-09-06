@@ -11,7 +11,15 @@ from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+
+SECURITY_ARCHITECTURE_VERSION = "split-plane-v2"
+KEY_DERIVATION_SCHEME = "HKDF-SHA256-v1"
+DEFAULT_STORAGE_KEY_VERSION = "v1"
+_KDF_SALT = b"ColettiOS Split-Plane Security Architecture v2"
 
 
 @dataclass(frozen=True)
@@ -19,6 +27,9 @@ class StoredObject:
     storage_uri: str
     content_hash: str
     encrypted: bool
+    security_architecture: str = SECURITY_ARCHITECTURE_VERSION
+    key_derivation: str = KEY_DERIVATION_SCHEME
+    key_version: str = DEFAULT_STORAGE_KEY_VERSION
 
 
 @dataclass(frozen=True)
@@ -36,7 +47,15 @@ class StorageVerificationResult:
 
 
 class SecureStorage(Protocol):
-    def put(self, *, organization_id: str, engagement_id: str, source_id: str, filename: str, data: bytes) -> StoredObject: ...
+    def put(
+        self,
+        *,
+        organization_id: str,
+        engagement_id: str,
+        source_id: str,
+        filename: str,
+        data: bytes,
+    ) -> StoredObject: ...
 
 
 def _safe(value: str) -> str:
@@ -46,11 +65,77 @@ def _safe(value: str) -> str:
     return cleaned
 
 
+def _validated_key_version(value: str) -> str:
+    cleaned = _safe(value)
+    if cleaned != value:
+        raise ValueError("Storage key version must use only letters, numbers, dot, underscore, or hyphen")
+    return cleaned
+
+
 def decode_master_key(value: str) -> bytes:
     raw = base64.urlsafe_b64decode(value.encode())
     if len(raw) != 32:
         raise ValueError("STORAGE_MASTER_KEY must decode to exactly 32 bytes")
     return raw
+
+
+def derive_scoped_key(
+    master_key: bytes,
+    *,
+    purpose: str,
+    organization_id: str,
+    engagement_id: str,
+    object_id: str,
+    key_version: str = DEFAULT_STORAGE_KEY_VERSION,
+) -> bytes:
+    """Derive one 256-bit key for a specific security scope.
+
+    The root key is never used directly as an AES data key. Purpose, tenant,
+    engagement, object identity, architecture version and explicit key version
+    are domain-separated through HKDF-SHA256.
+    """
+    if len(master_key) != 32:
+        raise ValueError("Root storage key must be exactly 32 bytes")
+    key_version = _validated_key_version(key_version)
+    info = "|".join(
+        (
+            SECURITY_ARCHITECTURE_VERSION,
+            KEY_DERIVATION_SCHEME,
+            purpose,
+            organization_id,
+            engagement_id,
+            object_id,
+            key_version,
+        )
+    ).encode()
+    return HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=_KDF_SALT,
+        info=info,
+    ).derive(master_key)
+
+
+def source_aad(
+    *,
+    organization_id: str,
+    engagement_id: str,
+    source_id: str,
+    filename: str,
+    digest: str,
+    key_version: str,
+) -> bytes:
+    return "|".join(
+        (
+            SECURITY_ARCHITECTURE_VERSION,
+            key_version,
+            organization_id,
+            engagement_id,
+            source_id,
+            filename,
+            digest,
+        )
+    ).encode()
 
 
 def encrypt_bytes(data: bytes, key: bytes, aad: bytes) -> bytes:
@@ -94,17 +179,19 @@ def verify_gcs_storage_roundtrip(
     master_key: bytes,
     organization_id: str,
     engagement_id: str,
+    key_version: str = DEFAULT_STORAGE_KEY_VERSION,
 ) -> StorageVerificationResult:
     """Exercise the live production bucket with synthetic bytes only.
 
     A PASS proves that the configured runtime can inspect the required bucket
-    controls, write a client-side encrypted object, read it back, authenticate
-    and decrypt it with the configured key, verify the plaintext SHA-256 and
-    metadata, and remove the exact probe generation. It intentionally does not
-    claim that authentication, Core persistence, reports, backups, or complete
-    production E2E acceptance have passed.
+    controls, derive an engagement/source-scoped data key, write an authenticated
+    encrypted object, read it back, decrypt it, verify the plaintext SHA-256 and
+    security metadata, and remove the exact probe generation. It intentionally
+    does not claim that authentication, Core persistence, reports, backups, or
+    complete production E2E acceptance have passed.
     """
 
+    key_version = _validated_key_version(key_version)
     source_id = f"SYS-STORAGE-PROBE-{uuid4().hex}"
     filename = "SYNTHETIC_PRODUCTION_STORAGE_PROBE.txt"
     payload = (
@@ -121,12 +208,28 @@ def verify_gcs_storage_roundtrip(
             f"{_safe(source_id)}.blob",
         )
     )
-    aad = f"{organization_id}|{engagement_id}|{source_id}|{filename}|{digest}".encode()
-    encrypted = encrypt_bytes(payload, master_key, aad)
+    data_key = derive_scoped_key(
+        master_key,
+        purpose="source-object",
+        organization_id=organization_id,
+        engagement_id=engagement_id,
+        object_id=source_id,
+        key_version=key_version,
+    )
+    aad = source_aad(
+        organization_id=organization_id,
+        engagement_id=engagement_id,
+        source_id=source_id,
+        filename=filename,
+        digest=digest,
+        key_version=key_version,
+    )
+    encrypted = encrypt_bytes(payload, data_key, aad)
     blob = bucket.blob(object_name)
 
     checks: dict[str, bool] = {
         "bucket_security_controls": False,
+        "scoped_key_derivation": len(data_key) == 32 and data_key != master_key,
         "encrypted_write": False,
         "encrypted_read": False,
         "plaintext_integrity": False,
@@ -138,6 +241,9 @@ def verify_gcs_storage_roundtrip(
         "bucket": str(getattr(bucket, "name", "")),
         "probe_object": object_name,
         "sha256_plaintext": digest,
+        "security_architecture": SECURITY_ARCHITECTURE_VERSION,
+        "key_derivation": KEY_DERIVATION_SCHEME,
+        "key_version": key_version,
     }
 
     uploaded_generation = None
@@ -155,6 +261,9 @@ def verify_gcs_storage_roundtrip(
             "engagement_id": engagement_id,
             "source_id": source_id,
             "encryption": "AES-256-GCM-client-side",
+            "security_architecture": SECURITY_ARCHITECTURE_VERSION,
+            "key_derivation": KEY_DERIVATION_SCHEME,
+            "key_version": key_version,
             "probe": "system-lab-production-storage",
         }
         blob.upload_from_string(
@@ -173,11 +282,14 @@ def verify_gcs_storage_roundtrip(
             and stored_metadata.get("engagement_id") == engagement_id
             and stored_metadata.get("source_id") == source_id
             and stored_metadata.get("encryption") == "AES-256-GCM-client-side"
+            and stored_metadata.get("security_architecture") == SECURITY_ARCHITECTURE_VERSION
+            and stored_metadata.get("key_derivation") == KEY_DERIVATION_SCHEME
+            and stored_metadata.get("key_version") == key_version
         )
 
         downloaded = blob.download_as_bytes()
         checks["encrypted_read"] = downloaded == encrypted and payload not in downloaded
-        recovered = decrypt_bytes(downloaded, master_key, aad)
+        recovered = decrypt_bytes(downloaded, data_key, aad)
         checks["plaintext_integrity"] = (
             recovered == payload and hashlib.sha256(recovered).hexdigest() == digest
         )
@@ -192,14 +304,7 @@ def verify_gcs_storage_roundtrip(
             except Exception as exc:
                 evidence["cleanup_error_type"] = exc.__class__.__name__
 
-    required = (
-        "bucket_security_controls",
-        "encrypted_write",
-        "encrypted_read",
-        "plaintext_integrity",
-        "integrity_metadata",
-        "probe_cleanup",
-    )
+    required = tuple(checks)
     status = "PASS" if all(checks[name] for name in required) else "FAIL"
     return StorageVerificationResult(status, checks, evidence)
 
@@ -207,24 +312,66 @@ def verify_gcs_storage_roundtrip(
 class EncryptedLocalDemoStorage:
     """Encrypted ephemeral storage for synthetic/demo use only."""
 
-    def __init__(self, root: str | Path, master_key: bytes) -> None:
+    def __init__(
+        self,
+        root: str | Path,
+        master_key: bytes,
+        *,
+        key_version: str = DEFAULT_STORAGE_KEY_VERSION,
+    ) -> None:
         self.root = Path(root)
         self.master_key = master_key
+        self.key_version = _validated_key_version(key_version)
 
-    def put(self, *, organization_id: str, engagement_id: str, source_id: str, filename: str, data: bytes) -> StoredObject:
+    def put(
+        self,
+        *,
+        organization_id: str,
+        engagement_id: str,
+        source_id: str,
+        filename: str,
+        data: bytes,
+    ) -> StoredObject:
         digest = hashlib.sha256(data).hexdigest()
         rel = Path(_safe(organization_id)) / _safe(engagement_id) / f"{_safe(source_id)}.blob"
         target = self.root / rel
         target.parent.mkdir(parents=True, exist_ok=True)
-        aad = f"{organization_id}|{engagement_id}|{source_id}|{filename}|{digest}".encode()
-        target.write_bytes(encrypt_bytes(data, self.master_key, aad))
-        return StoredObject(storage_uri=f"local-demo://{rel.as_posix()}", content_hash=digest, encrypted=True)
+        data_key = derive_scoped_key(
+            self.master_key,
+            purpose="source-object",
+            organization_id=organization_id,
+            engagement_id=engagement_id,
+            object_id=source_id,
+            key_version=self.key_version,
+        )
+        aad = source_aad(
+            organization_id=organization_id,
+            engagement_id=engagement_id,
+            source_id=source_id,
+            filename=filename,
+            digest=digest,
+            key_version=self.key_version,
+        )
+        target.write_bytes(encrypt_bytes(data, data_key, aad))
+        return StoredObject(
+            storage_uri=f"local-demo://{rel.as_posix()}",
+            content_hash=digest,
+            encrypted=True,
+            key_version=self.key_version,
+        )
 
 
 class GoogleCloudEncryptedStorage:
-    """Client-side AES-GCM encryption plus a fail-closed private GCS bucket."""
+    """Split-plane v2 source storage: scoped AES-GCM keys plus private GCS."""
 
-    def __init__(self, *, bucket_name: str, service_account_json: str, master_key: bytes) -> None:
+    def __init__(
+        self,
+        *,
+        bucket_name: str,
+        service_account_json: str,
+        master_key: bytes,
+        key_version: str = DEFAULT_STORAGE_KEY_VERSION,
+    ) -> None:
         from google.cloud import storage
         from google.oauth2 import service_account
 
@@ -233,16 +380,40 @@ class GoogleCloudEncryptedStorage:
         self.client = storage.Client(project=info.get("project_id"), credentials=credentials)
         self.bucket = self.client.bucket(bucket_name)
         self.master_key = master_key
+        self.key_version = _validated_key_version(key_version)
 
         errors = gcs_bucket_security_errors(self.bucket, client=self.client)
         if errors:
             raise RuntimeError("Production GCS security gate closed: " + " | ".join(errors))
 
-    def put(self, *, organization_id: str, engagement_id: str, source_id: str, filename: str, data: bytes) -> StoredObject:
+    def put(
+        self,
+        *,
+        organization_id: str,
+        engagement_id: str,
+        source_id: str,
+        filename: str,
+        data: bytes,
+    ) -> StoredObject:
         digest = hashlib.sha256(data).hexdigest()
         object_name = "/".join((_safe(organization_id), _safe(engagement_id), f"{_safe(source_id)}.blob"))
-        aad = f"{organization_id}|{engagement_id}|{source_id}|{filename}|{digest}".encode()
-        encrypted = encrypt_bytes(data, self.master_key, aad)
+        data_key = derive_scoped_key(
+            self.master_key,
+            purpose="source-object",
+            organization_id=organization_id,
+            engagement_id=engagement_id,
+            object_id=source_id,
+            key_version=self.key_version,
+        )
+        aad = source_aad(
+            organization_id=organization_id,
+            engagement_id=engagement_id,
+            source_id=source_id,
+            filename=filename,
+            digest=digest,
+            key_version=self.key_version,
+        )
+        encrypted = encrypt_bytes(data, data_key, aad)
         blob = self.bucket.blob(object_name)
         blob.cache_control = "no-store"
         blob.metadata = {
@@ -251,19 +422,33 @@ class GoogleCloudEncryptedStorage:
             "engagement_id": engagement_id,
             "source_id": source_id,
             "encryption": "AES-256-GCM-client-side",
+            "security_architecture": SECURITY_ARCHITECTURE_VERSION,
+            "key_derivation": KEY_DERIVATION_SCHEME,
+            "key_version": self.key_version,
         }
         blob.upload_from_string(
             encrypted,
             content_type="application/octet-stream",
             if_generation_match=0,
         )
-        return StoredObject(storage_uri=f"gs://{self.bucket.name}/{object_name}", content_hash=digest, encrypted=True)
+        return StoredObject(
+            storage_uri=f"gs://{self.bucket.name}/{object_name}",
+            content_hash=digest,
+            encrypted=True,
+            key_version=self.key_version,
+        )
 
-    def verify_operational(self, *, organization_id: str, engagement_id: str) -> StorageVerificationResult:
+    def verify_operational(
+        self,
+        *,
+        organization_id: str,
+        engagement_id: str,
+    ) -> StorageVerificationResult:
         return verify_gcs_storage_roundtrip(
             bucket=self.bucket,
             client=self.client,
             master_key=self.master_key,
             organization_id=organization_id,
             engagement_id=engagement_id,
+            key_version=self.key_version,
         )
