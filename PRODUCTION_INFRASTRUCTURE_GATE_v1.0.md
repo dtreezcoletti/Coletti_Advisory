@@ -1,55 +1,72 @@
-# Production Infrastructure Gate v1.0
+# Production Infrastructure & Security Gate v2.0
 
 Status date: 2026-09-06
 Owner: Coletti & Co. commercial deployment
-Gate status: CLOSED — SYNTHETIC/DEMO ONLY
+Gate status: **CLOSED — SYNTHETIC/DEMO ONLY**
+Canonical security authority: ColettiOS `docs/CANONICAL_SECURITY_ARCHITECTURE_v2.0.md`
+Commercial implementation profile: `docs/SPLIT_PLANE_SECURITY_IMPLEMENTATION_v2.0.md`
 
 ## Purpose
 
-This gate defines the minimum infrastructure conditions required before `coletti2.streamlit.app` may accept real client records. Passing unit tests or having production-capable code is not sufficient by itself. Every mandatory production dependency must be live, configured, validated, and evidenced.
+This gate is the only path from code-ready software to authorization for real client records. Passing unit tests, having production-capable classes, or preserving historical v4 controls in documentation is not enough. Every mandatory production control must be live, configured, exercised and evidenced on the actual production stack.
 
 ## Operational completeness rule
 
-A control is not complete merely because code exists or CI passes. Gate status uses these meanings:
+- **PASS / VERIFIED OPERATIONAL** — successfully exercised in the environment where the control must operate, with acceptance evidence retained.
+- **IMPLEMENTED / NOT VERIFIED** — code/configuration exists, but the real production path has not been proven.
+- **MISSING / FAILING** — absent, incomplete, unsafe, or demonstrably failing.
 
-- **PASS / VERIFIED OPERATIONAL** — exercised successfully in the environment where it is expected to operate, with acceptance evidence retained;
-- **IMPLEMENTED / NOT VERIFIED** — code or configuration exists, but the target production path has not been proven;
-- **MISSING / FAILING** — absent, incomplete, or demonstrably failing.
+No aggregate score can override one failed mandatory control.
 
-No aggregate percentage can override an unverified mandatory control.
+## Architectural declaration
 
-## Release rule
+The September 3 embedded-v4-vault deployment topology is superseded by Split-Plane Security Architecture v2.0.
 
-Real client data is prohibited until every item marked REQUIRED is PASS and the production end-to-end acceptance test is PASS.
+- **Coletti & Co.** is the encrypted client-data plane: identity, authorization, intake, source-byte encryption, object storage, publication state and client presentation.
+- **ColettiOS** is the private provenance/control plane: hashes, source identity, evidence states, propositions, contradictions, reconciliations, conclusions, escalations, audit events and engagement manifests.
+- Original source-file bytes do not enter Core persistence.
+- Historical v4 controls are mapped requirements, not a second live architecture.
 
-There is still no verified basis to declare production storage complete, private deployment fully passed, production auth fully passed, production mode activated, finished production report flow validated, or complete production E2E acceptance passed unless the corresponding live production verification has PASS evidence.
+## Infrastructure and security register
 
-## Infrastructure register
-
-| ID | Control | Requirement | Current status | Acceptance evidence |
-|---|---|---|---|---|
-| PI-001 | Commercial release | Tested Coletti & Co. commit pinned by deployment shim | PASS | `coletti-os` deployment shim pins tested `Coletti_Advisory` release |
-| PI-002 | Production startup preflight | App validates required production configuration before external backends are constructed | PASS | `validate_production_configuration()` plus automated tests |
-| PI-003 | Identity provider | Real OIDC provider configured in Streamlit secrets | REQUIRED / NOT VALIDATED | Successful login with production identity and valid iat/exp claims |
-| PI-004 | Authorization registry | Server-side authorization registry contains only approved users/engagements | REQUIRED / NOT VALIDATED | Approved production `AUTHZ_REGISTRY_JSON` and revocation test |
-| PI-005 | Session control | Production session TTL configured and expiration/re-authentication tested | REQUIRED / CODE READY | Expiration and re-login acceptance test |
-| PI-006 | Object storage | Private production Google Cloud Storage bucket created and credentials configured | REQUIRED / NOT DEPLOYED | `System Lab → Production Readiness` live storage probe PASS: required bucket controls + encrypted write/read + verified plaintext SHA-256/metadata + exact probe cleanup |
-| PI-007 | Client-side encryption | 32-byte production storage key provisioned outside Git | REQUIRED / NOT PROVISIONED | Same live storage probe PASS proves AES-256-GCM roundtrip with the configured production key; key value itself is never displayed or stored in evidence |
-| PI-008 | Source integrity | SHA-256 plaintext hash generated and retained as source integrity metadata | PASS / CODE | Intake and storage implementation/tests |
-| PI-009 | Private ColettiOS service | ColettiOS service deployed behind HTTPS with bearer authentication | REQUIRED / NOT DEPLOYED | `/health` reachable; protected `/v1/*` rejects missing/invalid token and accepts valid token |
-| PI-010 | ColettiOS persistence | Core evidence state stored on encrypted durable persistence, not ephemeral container filesystem | REQUIRED / NOT DEPLOYED | Restart/redeploy persistence test passes |
-| PI-011 | Commercial-to-core credential | Strong server-to-server token provisioned in both environments through secret management | REQUIRED / NOT PROVISIONED | Successful authenticated service call; invalid-token rejection test |
-| PI-012 | Engagement isolation | User cannot access an engagement outside authorization scope | REQUIRED / CODE READY | Two-engagement negative authorization test passes in production path |
-| PI-013 | Backup/recovery | Production data backup and restore procedure implemented and tested | REQUIRED / NOT IMPLEMENTED | Restore test reconstructs encrypted object and core manifest state |
-| PI-014 | Operational logging | Production failures and security-relevant events observable without logging secret values or client record contents | REQUIRED / NOT IMPLEMENTED | Logging review and controlled failure test |
-| PI-015 | Deployment rollback | Last known-good commercial release can be restored through deployment-shim pin | PASS / DESIGN | Pin-based release mechanism documented and functioning |
-| PI-016 | Git/history disposition | Historical/public repository exposure decision documented | REQUIRED / OPEN | Migration register LM-006 closed or formally accepted with remediation decision |
-| PI-017 | Production E2E | Full synthetic production-path engagement succeeds end to end | REQUIRED / NOT RUN | Signed acceptance record for production E2E suite |
-| PI-018 | Real-client authorization | Explicit real-client acceptance gate approved only after all infrastructure/report/workflow gates pass | REQUIRED / NOT AUTHORIZED | `REAL_CLIENT_ACCEPTANCE_GATE_v1.0` = PASS |
+| ID | Control | Current status | Production acceptance evidence |
+|---|---|---|---|
+| PI-001 | Tested commercial release pinned by deployment shim | PASS / DESIGN | Verified release pin |
+| PI-002 | Production startup preflight | PASS / CODE | Automated configuration tests |
+| PI-003 | Real OIDC identity provider | REQUIRED / NOT VALIDATED | Production login with valid iat/exp |
+| PI-004 | Server-side authorization registry | REQUIRED / NOT VALIDATED | Approved registry + revocation test |
+| PI-005 | Session TTL / reauthentication | REQUIRED / CODE READY | Expiry and re-login test |
+| PI-006 | Private GCS bucket | REQUIRED / NOT DEPLOYED | Live bucket probe PASS |
+| PI-007 | Root storage secret outside Git | REQUIRED / NOT PROVISIONED | Secret-manager evidence; value never displayed |
+| PI-008 | Versioned HKDF-SHA256 scoped data keys | IMPLEMENTED / NOT VERIFIED | Live probe proves derived key != root and successful decrypt/hash roundtrip |
+| PI-009 | AES-256-GCM source encryption before durable storage | IMPLEMENTED / NOT VERIFIED | Live encrypted write/read/decrypt test |
+| PI-010 | Source SHA-256 continuity | PASS / CODE; LIVE PROOF REQUIRED | GCS metadata + Core registered digest match exact synthetic plaintext |
+| PI-011 | GCS uniform access / public-access prevention / versioning | IMPLEMENTED GATE / NOT VERIFIED | Live bucket inspection PASS |
+| PI-012 | Create-only original-source upload | PASS / CODE; LIVE PROOF REQUIRED | Duplicate generation write rejected |
+| PI-013 | Private HTTPS ColettiOS service | REQUIRED / NOT DEPLOYED | Health ready; missing/invalid token rejected; valid token accepted |
+| PI-014 | Durable PostgreSQL Core persistence | REQUIRED / NOT DEPLOYED | Restart/redeploy persistence roundtrip |
+| PI-015 | Same-engagement transactional Core writes | IMPLEMENTED / NOT VERIFIED | Multi-worker concurrent mutation test preserves all state/audit events |
+| PI-016 | Different-engagement concurrency | IMPLEMENTED / NOT VERIFIED | Parallel synthetic engagements complete without global lock/cross-state |
+| PI-017 | Engagement isolation | REQUIRED / CODE READY | Two-engagement negative authorization test on production path |
+| PI-018 | Authenticated actor/session propagation | PASS / CODE; LIVE PROOF REQUIRED | Core audit event contains expected production identity context |
+| PI-019 | Intake malware screening | REQUIRED / NOT YET VERIFIED | Known-safe and test-malicious synthetic artifacts route correctly; unsafe content cannot enter active review silently |
+| PI-020 | Quarantine workflow | REQUIRED / NOT YET VERIFIED | Quarantined upload remains isolated and Core state reflects controlled quarantine path |
+| PI-021 | Sensitive-data/PII handling policy | REQUIRED / POLICY/OPS OPEN | Synthetic sensitive-data test proves routing/handling without changing evidence truth |
+| PI-022 | Retention / legal-hold controls | REQUIRED WHEN POLICY APPLIES / NOT VERIFIED | Hold prevents prohibited deletion; release/deletion is explicit and audited |
+| PI-023 | Publication-state encryption | IMPLEMENTED / NOT VERIFIED | Encrypted state survives restart and cannot be read with wrong scope/key |
+| PI-024 | Report review / approval / publish separation | PASS / CODE; LIVE PROOF REQUIRED | Changed approved draft cannot publish; client sees only published snapshot |
+| PI-025 | Backup coverage for both planes | REQUIRED / NOT IMPLEMENTED | Encrypted GCS objects + Core PostgreSQL included in independent recoverable backup |
+| PI-026 | Isolated restore | REQUIRED / NOT RUN | Restore reconstructs exact source ciphertext/integrity bridge + Core manifest without overwriting production |
+| PI-027 | Key-version / rotation procedure | REQUIRED / NOT RUN | Controlled synthetic rotation/recovery demonstrates correct key-version selection |
+| PI-028 | Operational logging without secrets/client content | REQUIRED / NOT IMPLEMENTED | Controlled failure review verifies safe telemetry |
+| PI-029 | Deployment rollback | PASS / DESIGN | Last known-good commercial release pin can be restored |
+| PI-030 | Git/history exposure disposition | REQUIRED / OPEN-HIGH | LM-006 formally closed or accepted with documented remediation decision |
+| PI-031 | Complete live production E2E | REQUIRED / NOT RUN | Unrelated synthetic engagement intake → analysis → review → publication → recovery succeeds without developer intervention |
+| PI-032 | Explicit real-client authorization | REQUIRED / NOT AUTHORIZED | Real-client acceptance gate signed only after every applicable REQUIRED row is PASS |
 
 ## Required production configuration
 
-The commercial application currently expects these deployment values outside source control:
+The commercial application expects these values outside source control:
 
 - `APP_MODE=production`
 - `STORAGE_BACKEND=gcs`
@@ -57,65 +74,42 @@ The commercial application currently expects these deployment values outside sou
 - `GCS_BUCKET`
 - `GCP_SERVICE_ACCOUNT_JSON`
 - `STORAGE_MASTER_KEY`
+- `STORAGE_KEY_VERSION` (initial release: `v1`)
 - `COLETTIOS_API_URL` using HTTPS
 - `COLETTIOS_API_TOKEN`
 - `AUTHZ_REGISTRY_JSON`
 - `SESSION_TTL_MINUTES`
-- Streamlit `[auth]` configuration and provider client credentials
+- Streamlit `[auth]` provider configuration and credentials
 
-No real secret values belong in Git.
+No real secret values belong in Git, documentation, screenshots, ordinary logs, Core manifests or client-visible metadata.
 
 ## Production-path acceptance sequence
 
-The infrastructure gate is not PASS until the following sequence succeeds using synthetic records on the real production backends:
+The gate cannot open until this exact synthetic sequence succeeds on the real production backends:
 
-1. authenticate through the configured OIDC provider;
-2. resolve the authenticated account through the production authorization registry;
-3. select only an authorized engagement;
-4. run `System Lab → Production Readiness → Run live production storage verification` and retain PASS evidence;
-5. upload a synthetic source record through normal intake;
-6. generate the plaintext SHA-256 content hash;
-7. encrypt the source before object-storage upload;
-8. confirm the object exists only in the intended engagement path;
-9. register the source through the HTTPS ColettiOS service;
-10. confirm the authenticated audit actor and engagement context are preserved;
-11. retrieve the engagement manifest after application/service restart;
-12. reject cross-engagement access;
-13. reject revoked/expired identity or authorization;
-14. restore from backup/recovery procedure;
-15. complete report/publishing-path acceptance using the actual production stack;
-16. complete one unrelated synthetic engagement from intake through frozen client-visible publication without developer intervention.
-
-## Live production storage probe scope
-
-The System Lab production-storage probe is intentionally narrow. It uses synthetic bytes only and must:
-
-1. re-inspect GCS uniform bucket-level access, public-access prevention, and versioning;
-2. write a unique AES-256-GCM client-side encrypted sentinel using the configured production key;
-3. read the exact encrypted object back from the configured production bucket;
-4. authenticate/decrypt it and reproduce the expected plaintext SHA-256;
-5. confirm organization, engagement, source, encryption, and integrity metadata;
-6. delete the exact probe object generation;
-7. return PASS only when every required storage check succeeds.
-
-A storage PASS proves only production storage. It does **not** promote private deployment, authentication, report flow, backup/recovery, or complete production E2E to PASS.
-
-## Current blockers to opening this gate
-
-The remaining blockers are deployment/operations work rather than missing architectural concepts:
-
-- production OIDC credentials/configuration;
-- private GCS bucket and service account;
-- production AES storage key;
-- deployed HTTPS ColettiOS service;
-- durable encrypted persistence for the core service;
-- server-to-server service secret;
-- backup/recovery implementation and restore test;
-- operational logging/monitoring validation;
-- Git-history disposition decision;
-- full production-path synthetic E2E test;
-- real-client acceptance authorization.
+1. authenticate through production OIDC;
+2. resolve the identity through the production authorization registry;
+3. prove an unauthorized engagement cannot be selected/read/written;
+4. inspect the real GCS security controls;
+5. ingest a synthetic source through the normal authenticated intake path;
+6. compute plaintext SHA-256;
+7. run required scan/classification and quarantine logic;
+8. derive the scoped `v1` source data key from the external root secret;
+9. AES-256-GCM encrypt the source with identity/hash-bound AAD;
+10. write ciphertext create-only to the authorized engagement namespace;
+11. read it back, authenticate/decrypt it and reproduce the exact SHA-256;
+12. register the source hash/context through private HTTPS ColettiOS;
+13. prove Core audit attribution and engagement identity;
+14. concurrently submit multiple same-engagement Core mutations through more than one deployed worker and prove no lost updates;
+15. concurrently operate a separate engagement and prove no cross-state/global lock;
+16. restart/redeploy commercial and Core services and verify persistence;
+17. create/review/approve/publish a synthetic report and prove unpublished/internal state is inaccessible to the client surface;
+18. exercise required retention/hold controls;
+19. restore both planes into an isolated recovery target;
+20. reconcile restored source digest with restored Core source identity;
+21. complete one unrelated synthetic engagement end to end without developer intervention;
+22. retain the signed acceptance evidence.
 
 ## Release decision
 
-Until this document records PASS for every REQUIRED control, `coletti2.streamlit.app` remains synthetic/demo only and must not receive real client, legal, medical, financial, or identifying records.
+Until all applicable REQUIRED controls are PASS, the application remains synthetic/demo only and must not receive real client, legal, medical, financial, employment, insurance, tax, identity or other confidential records.
