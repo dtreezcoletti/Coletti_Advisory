@@ -1,3 +1,5 @@
-from coletti_advisory.experience_shell import run
+from coletti_advisory import experience_shell
+from coletti_advisory.mobile_ui import patch_mobile_theme
 
-run()
+patch_mobile_theme(experience_shell)
+experience_shell.run()
