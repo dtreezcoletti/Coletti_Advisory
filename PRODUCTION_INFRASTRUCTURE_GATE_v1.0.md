@@ -57,7 +57,7 @@ The September 3 embedded-v4-vault deployment topology is superseded by Split-Pla
 | PI-024 | Report review / approval / publish separation | PASS / CODE; LIVE PROOF REQUIRED | Changed approved draft cannot publish; client sees only published snapshot |
 | PI-025 | Backup coverage for both planes | REQUIRED / NOT IMPLEMENTED | Encrypted GCS objects + Core PostgreSQL included in independent recoverable backup |
 | PI-026 | Isolated restore | REQUIRED / NOT RUN | Restore reconstructs exact source ciphertext/integrity bridge + Core manifest without overwriting production |
-| PI-027 | Key-version / rotation procedure | REQUIRED / NOT RUN | Controlled synthetic rotation/recovery demonstrates correct key-version selection |
+| PI-027 | Key-profile rotation procedure | REQUIRED / NOT RUN | Future profile migration is code+test controlled and synthetic rotation/recovery proves old/new ciphertext can be resolved safely |
 | PI-028 | Operational logging without secrets/client content | REQUIRED / NOT IMPLEMENTED | Controlled failure review verifies safe telemetry |
 | PI-029 | Deployment rollback | PASS / DESIGN | Last known-good commercial release pin can be restored |
 | PI-030 | Git/history exposure disposition | REQUIRED / OPEN-HIGH | LM-006 formally closed or accepted with documented remediation decision |
@@ -74,12 +74,13 @@ The commercial application expects these values outside source control:
 - `GCS_BUCKET`
 - `GCP_SERVICE_ACCOUNT_JSON`
 - `STORAGE_MASTER_KEY`
-- `STORAGE_KEY_VERSION` (initial release: `v1`)
 - `COLETTIOS_API_URL` using HTTPS
 - `COLETTIOS_API_TOKEN`
 - `AUTHZ_REGISTRY_JSON`
 - `SESSION_TTL_MINUTES`
 - Streamlit `[auth]` provider configuration and credentials
+
+Cryptographic profile/key version `v1` is hard-pinned in the initial release and is intentionally **not** an operator-configurable production setting. Moving to a future profile requires a code change, regression tests, migration procedure and recovery/rotation acceptance evidence.
 
 No real secret values belong in Git, documentation, screenshots, ordinary logs, Core manifests or client-visible metadata.
 
