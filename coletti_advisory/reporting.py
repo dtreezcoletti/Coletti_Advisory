@@ -10,11 +10,12 @@ from .analysis import (
     build_state_counts,
     build_summary,
 )
+from .commercial_config import DEFAULT_COMMERCIAL_CONFIG
 
 
-REPORT_RECORDS = "Records Reconstruction Report"
-REPORT_OPERATIONS = "Operations Reconstruction Report"
-REPORT_FINDINGS = "Findings Report"
+REPORT_RECORDS = DEFAULT_COMMERCIAL_CONFIG.report_labels["records"]
+REPORT_OPERATIONS = DEFAULT_COMMERCIAL_CONFIG.report_labels["operations"]
+REPORT_FINDINGS = DEFAULT_COMMERCIAL_CONFIG.report_labels["findings"]
 REPORT_VERSION = "1.0-client-ready"
 
 
@@ -112,13 +113,7 @@ def build_publication_gate(manifest: dict[str, Any]) -> dict[str, Any]:
 
 def build_records_report(manifest: dict[str, Any]) -> dict[str, Any]:
     issues = build_analytical_issues(manifest)
-    report = _report_header(
-        REPORT_RECORDS,
-        (
-            "Reconstruct the supplied record set, show what record-derived statements are supported by which "
-            "sources, identify coverage or evidentiary limitations, and preserve unresolved record questions."
-        ),
-    )
+    report = _report_header(REPORT_RECORDS, DEFAULT_COMMERCIAL_CONFIG.report_purposes["records"])
     report.update(
         {
             "engagement_record_summary": build_summary(manifest),
@@ -127,11 +122,7 @@ def build_records_report(manifest: dict[str, Any]) -> dict[str, Any]:
             "unresolved_record_issues": issues,
             "verification_referrals": _verification_rows(issues),
             "publication_gate": build_publication_gate(manifest),
-            "boundary": (
-                "This report describes the condition, content, linkage, and limitations of the supplied record set. "
-                "It does not infer intent or motive and does not make legal, accounting, investigative, regulatory, "
-                "or other licensed/professional determinations."
-            ),
+            "boundary": DEFAULT_COMMERCIAL_CONFIG.report_boundaries["records"],
         }
     )
     return report
@@ -139,13 +130,7 @@ def build_records_report(manifest: dict[str, Any]) -> dict[str, Any]:
 
 def build_operations_report(manifest: dict[str, Any]) -> dict[str, Any]:
     issues = build_analytical_issues(manifest)
-    report = _report_header(
-        REPORT_OPERATIONS,
-        (
-            "Reconstruct record-supported operational activity, identify process inconsistencies and unresolved "
-            "follow-up, and distinguish documented operational observations from reviewer or client explanations."
-        ),
-    )
+    report = _report_header(REPORT_OPERATIONS, DEFAULT_COMMERCIAL_CONFIG.report_purposes["operations"])
     report.update(
         {
             "operations_reconstruction": build_operations_reconstruction(manifest),
@@ -153,11 +138,7 @@ def build_operations_report(manifest: dict[str, Any]) -> dict[str, Any]:
             "operational_issues": issues,
             "verification_referrals": _verification_rows(issues),
             "publication_gate": build_publication_gate(manifest),
-            "boundary": (
-                "Operational observations remain tied to the supplied records. A client or reviewer explanation is "
-                "reported as an explanation unless independently supported. Questions requiring professional judgment "
-                "are routed for appropriate third-party or professional verification."
-            ),
+            "boundary": DEFAULT_COMMERCIAL_CONFIG.report_boundaries["operations"],
         }
     )
     return report
@@ -165,13 +146,7 @@ def build_operations_report(manifest: dict[str, Any]) -> dict[str, Any]:
 
 def build_findings_report(manifest: dict[str, Any]) -> dict[str, Any]:
     issues = build_analytical_issues(manifest)
-    report = _report_header(
-        REPORT_FINDINGS,
-        (
-            "Present the engagement-level record-supported observations, material inconsistencies, unresolved "
-            "questions, review status, and verification needs in one source-linked summary."
-        ),
-    )
+    report = _report_header(REPORT_FINDINGS, DEFAULT_COMMERCIAL_CONFIG.report_purposes["findings"])
     report.update(
         {
             "engagement_summary": build_summary(manifest),
@@ -180,11 +155,7 @@ def build_findings_report(manifest: dict[str, Any]) -> dict[str, Any]:
             "findings": issues,
             "verification_referrals": _verification_rows(issues),
             "publication_gate": build_publication_gate(manifest),
-            "boundary": (
-                "A finding in this draft describes what the supplied record set supports, conflicts on, or leaves "
-                "unresolved. It is not a finding of fraud, illegality, liability, professional negligence, regulatory "
-                "violation, or any other conclusion requiring licensed or professional judgment."
-            ),
+            "boundary": DEFAULT_COMMERCIAL_CONFIG.report_boundaries["findings"],
         }
     )
     return report
