@@ -61,6 +61,8 @@ def validate_production_configuration(*, app_mode: str, config: Mapping[str, str
         errors.append("STORAGE_KEY_VERSION is required")
     elif not re.fullmatch(r"[A-Za-z0-9._-]+", key_version):
         errors.append("STORAGE_KEY_VERSION contains unsupported characters")
+    elif key_version != "v1":
+        errors.append("STORAGE_KEY_VERSION must be v1 for this release")
 
     core_url = str(config.get("COLETTIOS_API_URL", "")).strip()
     if not core_url:
