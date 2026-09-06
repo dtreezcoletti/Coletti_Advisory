@@ -22,7 +22,9 @@ def validate_production_configuration(*, app_mode: str, config: Mapping[str, str
     """Validate production secrets/config before constructing external backends.
 
     This is intentionally fail-closed. It validates presence and safe structure,
-    but never logs or returns secret values.
+    but never logs or returns secret values. Split-plane cryptographic profile
+    `v1` is hard-pinned in the initial release; accepting a future profile is a
+    code+test migration, not a configuration-only change.
     """
     if app_mode != "production":
         return []
@@ -56,10 +58,8 @@ def validate_production_configuration(*, app_mode: str, config: Mapping[str, str
         except Exception:
             errors.append("STORAGE_MASTER_KEY is not valid URL-safe base64")
 
-    key_version = str(config.get("STORAGE_KEY_VERSION", "")).strip()
-    if not key_version:
-        errors.append("STORAGE_KEY_VERSION is required")
-    elif not re.fullmatch(r"[A-Za-z0-9._-]+", key_version):
+    key_version = str(config.get("STORAGE_KEY_VERSION", "v1")).strip() or "v1"
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", key_version):
         errors.append("STORAGE_KEY_VERSION contains unsupported characters")
     elif key_version != "v1":
         errors.append("STORAGE_KEY_VERSION must be v1 for this release")
@@ -132,7 +132,7 @@ SECURITY_CONTROLS = [
     ("Authenticated upload pipeline", True),
     ("AES-256-GCM encrypted storage implementation", True),
     ("HKDF-SHA256 scoped source-object data keys", True),
-    ("Versioned storage key derivation", True),
+    ("Cryptographic profile v1 hard-pinned for initial release", True),
     ("Verified SHA-256 plaintext source hashing", True),
     ("Authenticated audit actor propagation", True),
     ("Production configuration preflight", True),
