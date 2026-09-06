@@ -34,6 +34,7 @@ def valid_production_config() -> dict[str, str]:
             }
         ),
         "STORAGE_MASTER_KEY": base64.urlsafe_b64encode(b"x" * 32).decode(),
+        "STORAGE_KEY_VERSION": "v1",
         "COLETTIOS_API_URL": "https://core.example.invalid",
         "COLETTIOS_API_TOKEN": "synthetic-test-token",
         "AUTHZ_REGISTRY_JSON": json.dumps(
@@ -63,6 +64,7 @@ def test_production_configuration_preflight_rejects_missing_secrets():
     assert "GCS_BUCKET is required" in errors
     assert "GCP_SERVICE_ACCOUNT_JSON is required" in errors
     assert "STORAGE_MASTER_KEY is required" in errors
+    assert "STORAGE_KEY_VERSION is required" in errors
     assert "COLETTIOS_API_URL is required" in errors
     assert "COLETTIOS_API_TOKEN is required" in errors
     assert "AUTHZ_REGISTRY_JSON is required" in errors
@@ -73,6 +75,13 @@ def test_production_configuration_preflight_rejects_insecure_core_url():
     config["COLETTIOS_API_URL"] = "http://core.example.invalid"
     errors = validate_production_configuration(app_mode="production", config=config)
     assert "COLETTIOS_API_URL must use HTTPS" in errors
+
+
+def test_production_configuration_preflight_rejects_invalid_key_version():
+    config = valid_production_config()
+    config["STORAGE_KEY_VERSION"] = "v1 unsafe"
+    errors = validate_production_configuration(app_mode="production", config=config)
+    assert "STORAGE_KEY_VERSION contains unsupported characters" in errors
 
 
 def test_demo_mode_does_not_require_production_secrets():
