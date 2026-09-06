@@ -239,7 +239,7 @@ def _esc(value) -> str:
     return html.escape(str(value), quote=True)
 
 
-def _sidebar_identity(principal, engagement_id: str) -> None:
+def _sidebar_brand() -> None:
     st.sidebar.markdown(
         """
         <div class="cc-logo">
@@ -250,6 +250,8 @@ def _sidebar_identity(principal, engagement_id: str) -> None:
         unsafe_allow_html=True,
     )
 
+
+def _sidebar_identity(principal, engagement_id: str) -> None:
     if principal.authenticated:
         role_label = "Owner" if principal.role == Role.OWNER else principal.role.value.replace("_", " ").title()
         st.sidebar.markdown(
@@ -260,10 +262,6 @@ def _sidebar_identity(principal, engagement_id: str) -> None:
     else:
         st.sidebar.caption("Synthetic demo session · no client identity or client data")
 
-    environment = workspace_environment(engagement_id)
-    st.sidebar.caption(f"{environment} workspace")
-    st.sidebar.divider()
-
 
 def _select_engagement(principal) -> str:
     options = list(principal.engagement_ids)
@@ -271,6 +269,8 @@ def _select_engagement(principal) -> str:
     if not principal.can_access(selected):
         st.error("Workspace authorization failed.")
         st.stop()
+    st.sidebar.caption(f"{workspace_environment(selected)} workspace")
+    st.sidebar.divider()
     return selected
 
 
@@ -328,7 +328,7 @@ def _source_rows(manifest: dict, limit: int = 5) -> str:
             "<div class='cc-list-row'>"
             "<div class='cc-list-icon'>▤</div>"
             f"<div><div class='cc-list-title'>{_esc(filename)}</div><div class='cc-list-sub'>{_esc(classification)}</div></div>"
-            "<div class='cc-status'>Processed</div></div>"
+            "<div class='cc-status'>Received</div></div>"
         )
     return "".join(rows)
 
@@ -553,8 +553,9 @@ def run() -> None:
     _apply_brand_theme()
 
     app_mode, storage_backend, core_backend, principal, core, storage, publication_store = app._runtime()
+    _sidebar_brand()
+    _sidebar_identity(principal, principal.engagement_ids[0])
     engagement_id = _select_engagement(principal)
-    _sidebar_identity(principal, engagement_id)
 
     gate_errors = live_workspace_gate_errors(
         engagement_id,
