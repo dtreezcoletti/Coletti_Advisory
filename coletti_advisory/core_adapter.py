@@ -30,6 +30,14 @@ class SyntheticCoreAdapter(CoreAdapter):
     """Synthetic-only adapter. It is not a substitute for the private ColettiOS core."""
 
     def __init__(self) -> None:
+        self.reset_demo_data()
+
+    def reset_demo_data(self) -> None:
+        """Restore the canonical synthetic manifest for a clean demonstration.
+
+        This method exists only on the synthetic adapter. Production/HTTP Core
+        adapters intentionally expose no equivalent reset operation.
+        """
         self._manifest = copy.deepcopy(SYNTHETIC_MANIFEST)
         self._manifest.setdefault("reconciliations", {})
         self._manifest.setdefault("reviewer_conclusions", {})

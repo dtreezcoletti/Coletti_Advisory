@@ -1,4 +1,5 @@
 from coletti_advisory.core_adapter import SyntheticCoreAdapter
+from coletti_advisory.synthetic import SYNTHETIC_MANIFEST
 
 
 AUTH = {
@@ -65,3 +66,19 @@ def test_proposition_contradiction_and_reconciliation_are_explicit_and_audited()
         "CONTRADICTION_RECORDED",
         "RECONCILIATION_RECORDED",
     ]
+
+
+def test_reset_demo_data_restores_canonical_synthetic_manifest():
+    adapter = SyntheticCoreAdapter()
+    adapter.register_source(
+        {"source_id": "SRC-TEMP", "content_hash": "temporary", "metadata": {}}, AUTH
+    )
+    assert "SRC-TEMP" in adapter.manifest("eng-synthetic-demo")["sources"]
+
+    adapter.reset_demo_data()
+    manifest = adapter.manifest("eng-synthetic-demo")
+
+    assert "SRC-TEMP" not in manifest["sources"]
+    assert manifest["sources"] == SYNTHETIC_MANIFEST["sources"]
+    assert manifest["propositions"] == SYNTHETIC_MANIFEST["propositions"]
+    assert manifest["contradictions"] == SYNTHETIC_MANIFEST["contradictions"]
