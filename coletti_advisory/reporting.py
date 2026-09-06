@@ -10,11 +10,12 @@ from .analysis import (
     build_state_counts,
     build_summary,
 )
+from .commercial_config import DEFAULT_COMMERCIAL_CONFIG, CommercialDomainConfig
 
 
-REPORT_RECORDS = "Records Reconstruction Report"
-REPORT_OPERATIONS = "Operations Reconstruction Report"
-REPORT_FINDINGS = "Findings Report"
+REPORT_RECORDS = DEFAULT_COMMERCIAL_CONFIG.report_labels["records"]
+REPORT_OPERATIONS = DEFAULT_COMMERCIAL_CONFIG.report_labels["operations"]
+REPORT_FINDINGS = DEFAULT_COMMERCIAL_CONFIG.report_labels["findings"]
 REPORT_VERSION = "1.0-client-ready"
 
 
@@ -39,7 +40,10 @@ def _verification_rows(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
-def _corroboration_blockers(manifest: dict[str, Any]) -> list[str]:
+def _corroboration_blockers(
+    manifest: dict[str, Any],
+    config: CommercialDomainConfig,
+) -> list[str]:
     sources = manifest.get("sources") or {}
     if isinstance(sources, list):
         sources = {
@@ -50,7 +54,7 @@ def _corroboration_blockers(manifest: dict[str, Any]) -> list[str]:
     states = manifest.get("source_states") or {}
     blockers: list[str] = []
     for source_id, state in states.items():
-        if str(state).upper() != "CORROBORATED":
+        if str(state).upper() != config.corroborated_state:
             continue
         source = sources.get(str(source_id), {}) if isinstance(sources, dict) else {}
         metadata = source.get("metadata") or {}
@@ -60,7 +64,9 @@ def _corroboration_blockers(manifest: dict[str, Any]) -> list[str]:
             continue
         basis = metadata.get("corroborating_source_ids") or metadata.get("corroboration_basis")
         if not basis:
-            blockers.append(f"{source_id}: CORROBORATED state has no recorded corroboration basis")
+            blockers.append(
+                f"{source_id}: {config.corroborated_state} state has no recorded corroboration basis"
+            )
     return blockers
 
 
@@ -78,17 +84,21 @@ def _report_header(report_type: str, purpose: str) -> dict[str, Any]:
     }
 
 
-def build_publication_gate(manifest: dict[str, Any]) -> dict[str, Any]:
+def build_publication_gate(
+    manifest: dict[str, Any],
+    *,
+    config: CommercialDomainConfig = DEFAULT_COMMERCIAL_CONFIG,
+) -> dict[str, Any]:
     """Return a non-destructive client-publication readiness assessment."""
 
-    issues = build_analytical_issues(manifest)
+    issues = build_analytical_issues(manifest, config=config)
     unresolved = [
         item
         for item in issues
         if str(item.get("Resolution state") or "OPEN").upper()
-        not in {"CORROBORATED_RESOLUTION"}
+        not in config.publication_ready_resolution_states
     ]
-    corroboration_blockers = _corroboration_blockers(manifest)
+    corroboration_blockers = _corroboration_blockers(manifest, config)
     blockers = [
         f"{item.get('Issue', 'Issue')}: {item.get('Classification', 'Unclassified')} — "
         f"{item.get('Resolution state', 'OPEN')}"
@@ -110,89 +120,78 @@ def build_publication_gate(manifest: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_records_report(manifest: dict[str, Any]) -> dict[str, Any]:
-    issues = build_analytical_issues(manifest)
-    report = _report_header(
-        REPORT_RECORDS,
-        (
-            "Reconstruct the supplied record set, show what record-derived statements are supported by which "
-            "sources, identify coverage or evidentiary limitations, and preserve unresolved record questions."
-        ),
-    )
+def build_records_report(
+    manifest: dict[str, Any],
+    *,
+    config: CommercialDomainConfig = DEFAULT_COMMERCIAL_CONFIG,
+) -> dict[str, Any]:
+    issues = build_analytical_issues(manifest, config=config)
+    report_type = config.report_labels["records"]
+    report = _report_header(report_type, config.report_purposes["records"])
     report.update(
         {
             "engagement_record_summary": build_summary(manifest),
             "evidence_state_summary": build_state_counts(manifest),
-            "records_reconstruction": build_records_reconstruction(manifest),
+            "records_reconstruction": build_records_reconstruction(manifest, config=config),
             "unresolved_record_issues": issues,
             "verification_referrals": _verification_rows(issues),
-            "publication_gate": build_publication_gate(manifest),
-            "boundary": (
-                "This report describes the condition, content, linkage, and limitations of the supplied record set. "
-                "It does not infer intent or motive and does not make legal, accounting, investigative, regulatory, "
-                "or other licensed/professional determinations."
-            ),
+            "publication_gate": build_publication_gate(manifest, config=config),
+            "boundary": config.report_boundaries["records"],
         }
     )
     return report
 
 
-def build_operations_report(manifest: dict[str, Any]) -> dict[str, Any]:
-    issues = build_analytical_issues(manifest)
-    report = _report_header(
-        REPORT_OPERATIONS,
-        (
-            "Reconstruct record-supported operational activity, identify process inconsistencies and unresolved "
-            "follow-up, and distinguish documented operational observations from reviewer or client explanations."
-        ),
-    )
+def build_operations_report(
+    manifest: dict[str, Any],
+    *,
+    config: CommercialDomainConfig = DEFAULT_COMMERCIAL_CONFIG,
+) -> dict[str, Any]:
+    issues = build_analytical_issues(manifest, config=config)
+    report_type = config.report_labels["operations"]
+    report = _report_header(report_type, config.report_purposes["operations"])
     report.update(
         {
-            "operations_reconstruction": build_operations_reconstruction(manifest),
-            "cross_record_comparison": build_cross_record_comparison(manifest),
+            "operations_reconstruction": build_operations_reconstruction(manifest, config=config),
+            "cross_record_comparison": build_cross_record_comparison(manifest, config=config),
             "operational_issues": issues,
             "verification_referrals": _verification_rows(issues),
-            "publication_gate": build_publication_gate(manifest),
-            "boundary": (
-                "Operational observations remain tied to the supplied records. A client or reviewer explanation is "
-                "reported as an explanation unless independently supported. Questions requiring professional judgment "
-                "are routed for appropriate third-party or professional verification."
-            ),
+            "publication_gate": build_publication_gate(manifest, config=config),
+            "boundary": config.report_boundaries["operations"],
         }
     )
     return report
 
 
-def build_findings_report(manifest: dict[str, Any]) -> dict[str, Any]:
-    issues = build_analytical_issues(manifest)
-    report = _report_header(
-        REPORT_FINDINGS,
-        (
-            "Present the engagement-level record-supported observations, material inconsistencies, unresolved "
-            "questions, review status, and verification needs in one source-linked summary."
-        ),
-    )
+def build_findings_report(
+    manifest: dict[str, Any],
+    *,
+    config: CommercialDomainConfig = DEFAULT_COMMERCIAL_CONFIG,
+) -> dict[str, Any]:
+    issues = build_analytical_issues(manifest, config=config)
+    report_type = config.report_labels["findings"]
+    report = _report_header(report_type, config.report_purposes["findings"])
     report.update(
         {
             "engagement_summary": build_summary(manifest),
-            "record_supported_observations": build_records_reconstruction(manifest),
-            "record_comparisons": build_cross_record_comparison(manifest),
+            "record_supported_observations": build_records_reconstruction(manifest, config=config),
+            "record_comparisons": build_cross_record_comparison(manifest, config=config),
             "findings": issues,
             "verification_referrals": _verification_rows(issues),
-            "publication_gate": build_publication_gate(manifest),
-            "boundary": (
-                "A finding in this draft describes what the supplied record set supports, conflicts on, or leaves "
-                "unresolved. It is not a finding of fraud, illegality, liability, professional negligence, regulatory "
-                "violation, or any other conclusion requiring licensed or professional judgment."
-            ),
+            "publication_gate": build_publication_gate(manifest, config=config),
+            "boundary": config.report_boundaries["findings"],
         }
     )
     return report
 
 
-def build_report_bundle(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def build_report_bundle(
+    manifest: dict[str, Any],
+    *,
+    config: CommercialDomainConfig = DEFAULT_COMMERCIAL_CONFIG,
+) -> dict[str, dict[str, Any]]:
     return {
-        REPORT_RECORDS: build_records_report(manifest),
-        REPORT_OPERATIONS: build_operations_report(manifest),
-        REPORT_FINDINGS: build_findings_report(manifest),
+        config.report_labels["records"]: build_records_report(manifest, config=config),
+        config.report_labels["operations"]: build_operations_report(manifest, config=config),
+        config.report_labels["findings"]: build_findings_report(manifest, config=config),
     }
