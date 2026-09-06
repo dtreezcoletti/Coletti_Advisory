@@ -7,8 +7,8 @@ from .workspaces import workspace_environment
 def demo_data_available(*, app_mode: str, engagement_id: str, core) -> bool:
     """Return True only for the synthetic/demo execution path."""
     return (
-        app_mode == "demo"
-        and workspace_environment(engagement_id) == "demo"
+        app_mode.lower() == "demo"
+        and workspace_environment(engagement_id).lower() == "demo"
         and isinstance(core, SyntheticCoreAdapter)
     )
 
