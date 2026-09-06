@@ -15,6 +15,7 @@ from .analysis import (
     build_summary,
 )
 from .auth import demo_principal, require_authenticated_principal
+from .commercial_config import DEFAULT_COMMERCIAL_CONFIG
 from .core_adapter import HttpColettiOSAdapter, SyntheticCoreAdapter
 from .intake import ingest_file
 from .models import Permission
@@ -500,7 +501,10 @@ def run() -> None:
         st.title("Secure Intake")
         if app_mode == "demo":
             st.info("Demo uploads are AES-256-GCM encrypted on ephemeral local storage and may disappear on restart. Use synthetic files only.")
-        classification = st.selectbox("Document classification", ["Operational Audit", "Business Record", "Financial Record", "Correspondence", "Other"])
+        classification = st.selectbox(
+            "Source classification",
+            list(DEFAULT_COMMERCIAL_CONFIG.source_classifications),
+        )
         uploaded = st.file_uploader("Upload a source record")
         if st.button("Register source", type="primary", disabled=uploaded is None):
             result = ingest_file(

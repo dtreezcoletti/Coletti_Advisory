@@ -3,8 +3,14 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any, Iterable
 
+from .commercial_config import (
+    DEFAULT_COMMERCIAL_CONFIG,
+    CommercialDomainConfig,
+    resolution_state_for,
+    verification_target_for,
+)
 
-REVIEW_STATES = {"DISPUTED", "CONTRADICTED", "QUARANTINED"}
+
 CONTROL_ROLES = {"CONTROL_RECORD", "SYSTEM_METADATA", "MANIFEST", "AUDIT_CONTROL"}
 CONTROL_CLASSES = {"SYSTEM METADATA", "CONTROL RECORD", "MANIFEST"}
 
@@ -139,12 +145,17 @@ def _corroboration_basis(source_id: str, source: dict[str, Any]) -> str:
     return ""
 
 
-def _review_status(source_ids: Iterable[str], states: dict[str, Any], sources: dict[str, dict[str, Any]]) -> str:
+def _review_status(
+    source_ids: Iterable[str],
+    states: dict[str, Any],
+    sources: dict[str, dict[str, Any]],
+    config: CommercialDomainConfig,
+) -> str:
     ids = [str(value) for value in source_ids]
     normalized = [str(states.get(source_id, "UNCLASSIFIED")).upper() for source_id in ids]
-    if any(state in REVIEW_STATES for state in normalized):
+    if any(state in config.review_trigger_states for state in normalized):
         return "Requires review"
-    if normalized and all(state == "CORROBORATED" for state in normalized):
+    if normalized and all(state == config.corroborated_state for state in normalized):
         if all(_corroboration_basis(source_id, sources.get(source_id, {})) for source_id in ids):
             return "Corroborated — basis recorded"
         return "Corroboration basis not recorded"
@@ -162,37 +173,19 @@ def _record_classes(source_ids: Iterable[str], sources: dict[str, dict[str, Any]
     return classes
 
 
-def _verification_target(source_ids: Iterable[str], sources: dict[str, dict[str, Any]]) -> str:
-    classes = _record_classes(source_ids, sources)
-    targets: list[str] = []
-    if "Financial Record" in classes:
-        targets.append("independent record custodian or qualified financial/accounting professional")
-    if "Operational Audit" in classes or "Business Record" in classes:
-        targets.append("independent record custodian, process owner, or relevant subject-matter professional")
-    if "Correspondence" in classes:
-        targets.append("originating third party or records custodian")
-    if not targets:
-        targets.append("independent source/custodian or appropriate qualified professional")
-    return "; ".join(dict.fromkeys(targets))
-
-
-def _resolution_state(reconciliation: dict[str, Any] | None) -> str:
+def _resolution_state(
+    reconciliation: dict[str, Any] | None,
+    config: CommercialDomainConfig,
+) -> str:
     if not reconciliation:
         return "OPEN"
-    outcome = str(reconciliation.get("outcome") or "").lower()
-    rationale = str(reconciliation.get("rationale") or "").lower()
-    combined = f"{outcome} {rationale}"
-    if any(token in combined for token in ("unresolved", "remains open", "pending confirmation")):
-        return "OPEN_AFTER_REVIEW"
-    if any(token in combined for token in ("independent", "custodian confirmed", "verified", "corroborat")):
-        return "CORROBORATED_RESOLUTION"
-    if any(token in combined for token in ("client", "clarif", "provided context", "missing context")):
-        return "EXPLAINED"
-    return "REVIEWER_RESOLVED"
+    outcome = str(reconciliation.get("outcome") or "")
+    rationale = str(reconciliation.get("rationale") or "")
+    return resolution_state_for(f"{outcome} {rationale}", config)
 
 
-def _verification_state(resolution_state: str) -> str:
-    if resolution_state == "CORROBORATED_RESOLUTION":
+def _verification_state(resolution_state: str, config: CommercialDomainConfig) -> str:
+    if resolution_state in config.publication_ready_resolution_states:
         return "COMPLETE"
     return "RECOMMENDED"
 
@@ -202,26 +195,16 @@ def _verification_guidance(
     issue_type: str,
     source_ids: Iterable[str],
     sources: dict[str, dict[str, Any]],
+    config: CommercialDomainConfig,
     resolution_state: str = "OPEN",
 ) -> tuple[str, str]:
-    if resolution_state == "CORROBORATED_RESOLUTION":
+    if resolution_state in config.publication_ready_resolution_states:
         return "No additional verification generated from the current resolution state.", "—"
-    target = _verification_target(source_ids, sources)
-    if issue_type == "Inconsistency":
-        recommendation = (
-            "Independent third-party verification recommended where available. "
-            "If resolving the issue requires licensed or professional judgment, refer the question and supporting records to the appropriate professional."
-        )
-    elif issue_type == "Unresolved Question":
-        recommendation = (
-            "Seek independent source or custodian confirmation when available. "
-            "Escalate to an appropriate qualified professional when the unresolved question requires professional determination."
-        )
-    else:
-        recommendation = (
-            "External verification may be appropriate if the current record set cannot resolve the issue; "
-            "professional review is reserved for questions requiring professional judgment."
-        )
+    target = verification_target_for(_record_classes(source_ids, sources), config)
+    recommendation = config.verification_recommendations_by_issue_type.get(
+        issue_type,
+        config.default_verification_recommendation,
+    )
     return recommendation, target
 
 
@@ -250,7 +233,11 @@ def build_state_counts(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     return [{"Evidence state": state, "Sources": count} for state, count in sorted(counts.items())]
 
 
-def build_records_reconstruction(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+def build_records_reconstruction(
+    manifest: dict[str, Any],
+    *,
+    config: CommercialDomainConfig = DEFAULT_COMMERCIAL_CONFIG,
+) -> list[dict[str, Any]]:
     sources = _source_index(manifest, substantive_only=True)
     states = manifest.get("source_states") or {}
     rows: list[dict[str, Any]] = []
@@ -262,18 +249,22 @@ def build_records_reconstruction(manifest: dict[str, Any]) -> list[dict[str, Any
                 "Record-derived statement": proposition.get("text", ""),
                 "Supporting sources": _source_display(source_ids, sources),
                 "Source states": _join(_states_for(source_ids, states)),
-                "Review status": _review_status(source_ids, states, sources),
+                "Review status": _review_status(source_ids, states, sources, config),
                 "Corroboration basis": _join(
                     _corroboration_basis(source_id, sources[source_id])
                     for source_id in source_ids
-                    if str(states.get(source_id, "")).upper() == "CORROBORATED"
+                    if str(states.get(source_id, "")).upper() == config.corroborated_state
                 ) or "—",
             }
         )
     return rows
 
 
-def build_operations_reconstruction(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+def build_operations_reconstruction(
+    manifest: dict[str, Any],
+    *,
+    config: CommercialDomainConfig = DEFAULT_COMMERCIAL_CONFIG,
+) -> list[dict[str, Any]]:
     sources = _source_index(manifest, substantive_only=True)
     states = manifest.get("source_states") or {}
     open_sources: dict[str, list[str]] = {}
@@ -304,6 +295,7 @@ def build_operations_reconstruction(manifest: dict[str, Any]) -> list[dict[str, 
                 issue_type="Unresolved Question",
                 source_ids=[source_id],
                 sources=sources,
+                config=config,
             )
             row["Verification recommendation"] = recommendation
             row["Potential verifier"] = target
@@ -314,13 +306,17 @@ def build_operations_reconstruction(manifest: dict[str, Any]) -> list[dict[str, 
     return rows
 
 
-def build_cross_record_comparison(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+def build_cross_record_comparison(
+    manifest: dict[str, Any],
+    *,
+    config: CommercialDomainConfig = DEFAULT_COMMERCIAL_CONFIG,
+) -> list[dict[str, Any]]:
     propositions = _proposition_index(manifest, substantive_only=True)
     sources = _source_index(manifest, substantive_only=True)
     rows: list[dict[str, Any]] = []
     for group in _canonical_contradiction_groups(manifest):
         reconciliation = _reconciliation_for_any(manifest, group["contradiction_ids"])
-        resolution_state = _resolution_state(reconciliation)
+        resolution_state = _resolution_state(reconciliation, config)
         left = propositions[group["proposition_a"]]
         right = propositions[group["proposition_b"]]
         left_sources = [str(value) for value in left.get("source_ids", []) if str(value) in sources]
@@ -330,6 +326,7 @@ def build_cross_record_comparison(manifest: dict[str, Any]) -> list[dict[str, An
             issue_type="Inconsistency",
             source_ids=combined_sources,
             sources=sources,
+            config=config,
             resolution_state=resolution_state,
         )
         rows.append(
@@ -347,7 +344,7 @@ def build_cross_record_comparison(manifest: dict[str, Any]) -> list[dict[str, An
                 "Reconciliation outcome": (reconciliation or {}).get("outcome", "—"),
                 "Reviewer rationale": (reconciliation or {}).get("rationale", "—"),
                 "Reviewed by": (reconciliation or {}).get("actor", "—"),
-                "Verification state": _verification_state(resolution_state),
+                "Verification state": _verification_state(resolution_state, config),
                 "Verification recommendation": recommendation,
                 "Potential verifier": target,
             }
@@ -355,14 +352,18 @@ def build_cross_record_comparison(manifest: dict[str, Any]) -> list[dict[str, An
     return rows
 
 
-def build_analytical_issues(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+def build_analytical_issues(
+    manifest: dict[str, Any],
+    *,
+    config: CommercialDomainConfig = DEFAULT_COMMERCIAL_CONFIG,
+) -> list[dict[str, Any]]:
     sources = _source_index(manifest, substantive_only=True)
     propositions = _proposition_index(manifest, substantive_only=True)
     rows: list[dict[str, Any]] = []
 
     for group in _canonical_contradiction_groups(manifest):
         reconciliation = _reconciliation_for_any(manifest, group["contradiction_ids"])
-        resolution_state = _resolution_state(reconciliation)
+        resolution_state = _resolution_state(reconciliation, config)
         source_ids: list[str] = []
         for prop_id in (group["proposition_a"], group["proposition_b"]):
             proposition = propositions[prop_id]
@@ -374,6 +375,7 @@ def build_analytical_issues(manifest: dict[str, Any]) -> list[dict[str, Any]]:
             issue_type="Inconsistency",
             source_ids=unique_ids,
             sources=sources,
+            config=config,
             resolution_state=resolution_state,
         )
         rows.append(
@@ -388,7 +390,7 @@ def build_analytical_issues(manifest: dict[str, Any]) -> list[dict[str, Any]]:
                 "Reconciliation outcome": (reconciliation or {}).get("outcome", "—"),
                 "Reviewer rationale": (reconciliation or {}).get("rationale", "—"),
                 "Reviewed by": (reconciliation or {}).get("actor", "—"),
-                "Verification state": _verification_state(resolution_state),
+                "Verification state": _verification_state(resolution_state, config),
                 "Verification recommendation": recommendation,
                 "Potential verifier": target,
             }
@@ -408,6 +410,7 @@ def build_analytical_issues(manifest: dict[str, Any]) -> list[dict[str, Any]]:
             issue_type="Unresolved Question",
             source_ids=source_ids,
             sources=sources,
+            config=config,
         )
         rows.append(
             {
