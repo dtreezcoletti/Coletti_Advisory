@@ -59,12 +59,17 @@ def test_production_configuration_preflight_accepts_complete_configuration():
     ) == []
 
 
+def test_production_configuration_preflight_defaults_to_initial_v1_profile():
+    config = valid_production_config()
+    config.pop("STORAGE_KEY_VERSION")
+    assert validate_production_configuration(app_mode="production", config=config) == []
+
+
 def test_production_configuration_preflight_rejects_missing_secrets():
     errors = validate_production_configuration(app_mode="production", config={})
     assert "GCS_BUCKET is required" in errors
     assert "GCP_SERVICE_ACCOUNT_JSON is required" in errors
     assert "STORAGE_MASTER_KEY is required" in errors
-    assert "STORAGE_KEY_VERSION is required" in errors
     assert "COLETTIOS_API_URL is required" in errors
     assert "COLETTIOS_API_TOKEN is required" in errors
     assert "AUTHZ_REGISTRY_JSON is required" in errors
