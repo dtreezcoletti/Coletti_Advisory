@@ -1,3 +1,3 @@
-from coletti_advisory.app_shell import run
+from coletti_advisory.experience_shell import run
 
 run()
