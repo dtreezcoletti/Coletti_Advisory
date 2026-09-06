@@ -5,6 +5,7 @@ from uuid import uuid4
 import streamlit as st
 
 from . import main as app
+from .commercial_config import DEFAULT_COMMERCIAL_CONFIG
 from .document_processing import extract_candidate_statements
 from .models import Permission
 from .system_lab import render_system_lab
@@ -88,8 +89,8 @@ def _render_secure_intake(*, app_mode, principal, engagement_id, storage, core) 
             st.warning(warning)
 
     classification = st.selectbox(
-        "Document classification",
-        ["Operational Audit", "Business Record", "Financial Record", "Correspondence", "Other"],
+        "Source classification",
+        list(DEFAULT_COMMERCIAL_CONFIG.source_classifications),
     )
 
     generation = int(st.session_state.get("_intake_upload_generation", 0))
