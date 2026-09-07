@@ -13,7 +13,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - run: python -m pip install --upgrade pip
       - run: pip install -e .[dev]
       - run: python -m compileall -q coletti_advisory streamlit_app.py
       - run: pytest -q
+      - name: Check operational web JavaScript syntax
+        run: node --check web/assets/app.js && node --check web/assets/config.js
+      - name: Prevent privileged Supabase keys in browser source
+        run: |
+          if grep -R -E "sb_secret_[A-Za-z0-9_-]{10,}|SUPABASE_SERVICE_ROLE_KEY[[:space:]]*=" web/ --include='*.js' --include='*.html'; then
+            echo "Privileged Supabase credential pattern found in browser source"
+            exit 1
+          fi
