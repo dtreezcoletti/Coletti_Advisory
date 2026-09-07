@@ -69,7 +69,7 @@ Applied migrations:
 - `20260907024453 operational_frontend_v1`
 - `20260907024722 operational_frontend_hardening_v1`
 - `20260907024940 operational_frontend_admin_role_rpc_v1`
-- `role_rpc_security_invoker_v1` (applied immediately after the RPC migration; run `Supabase.list_migrations` for its generated version)
+- `20260907025545 role_rpc_security_invoker_v1`
 
 The operational website does **not** replace the authoritative ColettiOS institutional registry. The existing registry remains the source of truth for CLIENT → CASE → SOURCE → PROPOSITION → REVIEW → FINDING → REPORT. The website adds workflow and delivery state around that ladder.
 
