@@ -20,6 +20,19 @@ Demo mode uses client-side AES-256-GCM encryption on ephemeral local storage. Pr
 
 The commercial repository does not duplicate private ColettiOS engine logic. `HttpColettiOSAdapter` defines the released service contract. Production mode requires an HTTPS ColettiOS service URL and server-side service token.
 
+## Institutional control plane
+
+This repository is authoritative for the **Coletti & Co. commercial application/data plane only**. It is not the complete source of truth for the Coletti institution.
+
+The complete Coletti system state is centralized through the private Colettico Supabase institutional registry and its release-manifest control plane. A unified release manifest pins four separately owned components:
+
+1. ColettiOS Core/IP — `dtreezcoletti/ColettiOS`.
+2. Coletti & Co. commercial application — this repository (`dtreezcoletti/Coletti_Advisory`, controlled `main`).
+3. Institutional database/state — Colettico Supabase registry.
+4. Dispatcher — Supabase Dispatcher State and reconciliation/enforcement controls.
+
+A Git commit, database migration, chat decision, or application change by itself does not represent the complete Coletti system release. Cross-component drift is resolved through the institutional release manifest and Dispatcher reconciliation. Production authorization remains a separate controlled gate.
+
 ## Run
 
 ```bash
