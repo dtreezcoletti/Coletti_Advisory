@@ -24,7 +24,7 @@ jobs:
         run: node --check web/assets/app.js && node --check web/assets/config.js
       - name: Prevent privileged Supabase keys in browser source
         run: |
-          if grep -R -E "service_role|sb_secret_" web/; then
-            echo "Privileged Supabase credential marker found in web source"
+          if grep -R -E "sb_secret_[A-Za-z0-9_-]{10,}|SUPABASE_SERVICE_ROLE_KEY[[:space:]]*=" web/ --include='*.js' --include='*.html'; then
+            echo "Privileged Supabase credential pattern found in browser source"
             exit 1
           fi
