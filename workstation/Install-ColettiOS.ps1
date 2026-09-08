@@ -41,8 +41,9 @@ $CorePath = Join-Path $InstallRoot "ColettiOS"
 $AppPath = Join-Path $InstallRoot "Coletti_Advisory"
 $ConfigPath = Join-Path $InstallRoot "config"
 $DataPath = Join-Path $InstallRoot "data"
+$LauncherPath = Join-Path $InstallRoot "launcher"
 
-New-Item -ItemType Directory -Force -Path $InstallRoot, $ConfigPath, $DataPath | Out-Null
+New-Item -ItemType Directory -Force -Path $InstallRoot, $ConfigPath, $DataPath, $LauncherPath | Out-Null
 
 if (-not (Test-Path (Join-Path $CorePath ".git"))) {
     Write-Host "Cloning private ColettiOS Core..."
@@ -113,6 +114,57 @@ COLETTIOS_API_URL = "http://127.0.0.1:8765"
 COLETTIOS_API_TOKEN = "$LocalToken"
 "@ | Set-Content -Encoding UTF8 $SecretsFile
 
+$RunCore = @'
+param([string]$InstallRoot)
+$ErrorActionPreference = "Stop"
+$Config = Get-Content (Join-Path $InstallRoot "config\workstation.json") -Raw | ConvertFrom-Json
+$CorePath = Join-Path $InstallRoot "ColettiOS"
+$CorePython = Join-Path $CorePath ".venv\Scripts\python.exe"
+$env:COLETTIOS_SERVICE_TOKEN = [string]$Config.core_token
+$env:COLETTIOS_DB_PATH = [string]$Config.core_database
+Set-Location $CorePath
+$Host.UI.RawUI.WindowTitle = "ColettiOS Core"
+& $CorePython -m uvicorn colettios_core.service:app --host 127.0.0.1 --port ([int]$Config.core_port)
+'@
+$RunCore | Set-Content -Encoding UTF8 (Join-Path $LauncherPath "Run-Core.ps1")
+
+$RunAdmin = @'
+param([string]$InstallRoot)
+$ErrorActionPreference = "Stop"
+$Config = Get-Content (Join-Path $InstallRoot "config\workstation.json") -Raw | ConvertFrom-Json
+$AppPath = Join-Path $InstallRoot "Coletti_Advisory"
+$AppPython = Join-Path $AppPath ".venv\Scripts\python.exe"
+Set-Location $AppPath
+$Host.UI.RawUI.WindowTitle = "ColettiOS Admin Portal"
+& $AppPython -m streamlit run streamlit_app.py --server.address 127.0.0.1 --server.port ([int]$Config.app_port) --server.headless true
+'@
+$RunAdmin | Set-Content -Encoding UTF8 (Join-Path $LauncherPath "Run-Admin.ps1")
+
+$StartColettiOS = @'
+param([string]$InstallRoot)
+$ErrorActionPreference = "Stop"
+$Config = Get-Content (Join-Path $InstallRoot "config\workstation.json") -Raw | ConvertFrom-Json
+$LauncherPath = Join-Path $InstallRoot "launcher"
+$CoreRunner = Join-Path $LauncherPath "Run-Core.ps1"
+$AdminRunner = Join-Path $LauncherPath "Run-Admin.ps1"
+Start-Process powershell.exe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$CoreRunner`"", "-InstallRoot", "`"$InstallRoot`"")
+$HealthUrl = "http://127.0.0.1:$([int]$Config.core_port)/health"
+$Ready = $false
+for ($i = 0; $i -lt 30; $i++) {
+    try {
+        $Response = Invoke-RestMethod -Uri $HealthUrl -Method Get -TimeoutSec 2
+        if ($Response.status -eq "ok") { $Ready = $true; break }
+    } catch {}
+    Start-Sleep -Milliseconds 500
+}
+if (-not $Ready) { throw "ColettiOS Core did not become healthy. Check the ColettiOS Core window." }
+Start-Process powershell.exe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$AdminRunner`"", "-InstallRoot", "`"$InstallRoot`"")
+Start-Sleep -Seconds 2
+Start-Process "http://127.0.0.1:$([int]$Config.app_port)"
+'@
+$StartScript = Join-Path $LauncherPath "Start-ColettiOS.ps1"
+$StartColettiOS | Set-Content -Encoding UTF8 $StartScript
+
 Write-Host "Running Core tests..."
 Push-Location $CorePath
 try {
@@ -127,21 +179,19 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Coletti & Co. tests failed. The workstation was installed but should not be treated as verified." }
 } finally { Pop-Location }
 
-$StartScript = Join-Path $AppPath "workstation\Start-ColettiOS.ps1"
-if (Test-Path $StartScript) {
-    $Desktop = [Environment]::GetFolderPath("Desktop")
-    $ShortcutPath = Join-Path $Desktop "ColettiOS.lnk"
-    $Shell = New-Object -ComObject WScript.Shell
-    $Shortcut = $Shell.CreateShortcut($ShortcutPath)
-    $Shortcut.TargetPath = "powershell.exe"
-    $Shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$StartScript`" -InstallRoot `"$InstallRoot`""
-    $Shortcut.WorkingDirectory = $AppPath
-    $Shortcut.Description = "Launch ColettiOS local workstation"
-    $Shortcut.Save()
-}
+$Desktop = [Environment]::GetFolderPath("Desktop")
+$ShortcutPath = Join-Path $Desktop "ColettiOS.lnk"
+$Shell = New-Object -ComObject WScript.Shell
+$Shortcut = $Shell.CreateShortcut($ShortcutPath)
+$Shortcut.TargetPath = "powershell.exe"
+$Shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$StartScript`" -InstallRoot `"$InstallRoot`""
+$Shortcut.WorkingDirectory = $InstallRoot
+$Shortcut.Description = "Launch ColettiOS local workstation"
+$Shortcut.Save()
 
 Write-Host ""
 Write-Host "ColettiOS workstation installed and tests passed."
 Write-Host "Install root: $InstallRoot"
 Write-Host "Desktop shortcut: ColettiOS"
-Write-Host "This workstation is configured for controlled local/demo use only; it does not authorize production or real-client data."
+Write-Host "Mode: controlled local/demo with the real private ColettiOS Core service running locally."
+Write-Host "Real-client production authorization remains closed until the production security and infrastructure gates pass."
