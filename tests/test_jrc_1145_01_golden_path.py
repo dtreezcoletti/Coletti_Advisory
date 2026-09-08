@@ -1,4 +1,4 @@
-from colettios_advisory.golden_path import JRC_CASE_ID, run_jrc_1145_01_delivery
+from coletti_advisory.golden_path import JRC_CASE_ID, run_jrc_1145_01_delivery
 
 
 def test_jrc_1145_01_builds_all_reports_and_never_auto_publishes():
