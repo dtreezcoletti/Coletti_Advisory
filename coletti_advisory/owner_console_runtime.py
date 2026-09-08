@@ -2,10 +2,19 @@ from __future__ import annotations
 
 import streamlit as st
 
+from . import owner_console_ui as owner_ui
 from .models import Permission, Role
-from .workspaces import live_workspace_gate_errors
+from .owner_console_dari import render_owner_dari
 from .owner_console_style import OWNER_REFERENCE_CSS
-from .owner_console_ui import _owner_sidebar, _owner_topbar, _render_owner_page
+from .workspaces import live_workspace_gate_errors
+
+# Use the production-safe DARI renderer while retaining the owner-console module's
+# existing dashboard/page functions. Function globals resolve this replacement at
+# render time, so no authorization or business workflow is duplicated here.
+owner_ui._render_dari = render_owner_dari
+_owner_sidebar = owner_ui._owner_sidebar
+_owner_topbar = owner_ui._owner_topbar
+_render_owner_page = owner_ui._render_owner_page
 
 
 def run_reference_workspace(shell) -> None:
