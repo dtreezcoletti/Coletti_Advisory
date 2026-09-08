@@ -28,8 +28,12 @@ function shell(inner = '') {
   root.innerHTML = inner;
 }
 
-function hide() {
+function invalidateRequests() {
   requestGeneration += 1;
+}
+
+function hide() {
+  invalidateRequests();
   shell('');
 }
 
@@ -38,6 +42,7 @@ function renderBase(message = 'Search the authoritative registry by client name,
     hide();
     return;
   }
+  invalidateRequests();
   shell(`
     <aside aria-label="ColettiOS registry command port" style="position:fixed;right:18px;bottom:18px;z-index:80;width:min(430px,calc(100vw - 36px));background:#fff;border:1px solid rgba(13,36,56,.18);box-shadow:0 18px 42px rgba(13,36,56,.18);border-radius:14px;padding:14px">
       <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:8px">
@@ -61,6 +66,7 @@ function renderLauncher() {
     hide();
     return;
   }
+  invalidateRequests();
   shell(`<button id="registry-launch" type="button" class="btn btn-primary" style="position:fixed;right:18px;bottom:18px;z-index:80;box-shadow:0 12px 28px rgba(13,36,56,.2)">Registry lookup</button>`);
   document.getElementById('registry-launch')?.addEventListener('click', () => renderBase());
 }
@@ -102,6 +108,7 @@ async function handleLookup(event) {
     return;
   }
 
+  lastClient = null;
   const generation = ++requestGeneration;
   result.innerHTML = '<div class="small muted">Searching authoritative registry…</div>';
   const { data, error } = await supabase.rpc('staff_registry_lookup', { p_query: query, p_limit: 10 });
@@ -112,7 +119,6 @@ async function handleLookup(event) {
   }
   const rows = data || [];
   if (!rows.length) {
-    lastClient = null;
     result.innerHTML = '<div class="small muted">No matching clients were found.</div>';
     return;
   }
@@ -130,7 +136,7 @@ async function handleLookup(event) {
 }
 
 async function refresh() {
-  requestGeneration += 1;
+  invalidateRequests();
   const { data: sessionData } = await supabase.auth.getSession();
   const user = sessionData.session?.user;
   profile = null;
