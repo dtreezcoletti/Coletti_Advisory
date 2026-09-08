@@ -236,8 +236,11 @@ def summarize_manifest(manifest: Mapping[str, Any]) -> dict[str, int]:
     }
 
 
-def _queue() -> list[dict[str, Any]]:
-    return st.session_state.setdefault("_mobile_dari_command_queue", [])
+def _queue(principal: Principal, engagement_id: str) -> list[dict[str, Any]]:
+    """Session-local command staging, isolated by actor and engagement."""
+    queues = st.session_state.setdefault("_mobile_dari_command_queues", {})
+    key = f"{principal.user_id}:{engagement_id}"
+    return queues.setdefault(key, [])
 
 
 def render_mobile_companion(
@@ -287,6 +290,7 @@ def render_mobile_companion(
         st.subheader("DARI")
         command = st.text_area("Ask or command DARI", placeholder="What needs my attention on this case?")
         protected = st.checkbox("This request may involve a protected action", value=False)
+        queue = _queue(principal, engagement_id)
         if st.button("Stage DARI command", type="primary", disabled=not command.strip()):
             envelope = prepare_dari_command(
                 principal,
@@ -295,13 +299,13 @@ def render_mobile_companion(
                 case_id=engagement_id,
                 protected_action=protected,
             )
-            _queue().append(asdict(envelope))
+            queue.append(asdict(envelope))
             if envelope.human_gate_required:
                 st.warning("Command staged. The protected action still requires the applicable human decision gate.")
             else:
                 st.success("DARI command staged for the authorized backend.")
-        if _queue():
-            st.caption(f"Staged in this session: {len(_queue())}")
+        if queue:
+            st.caption(f"Staged for this authorized workspace: {len(queue)}")
 
     elif section in {"Reviews", "Needs Me"}:
         st.subheader(section)
