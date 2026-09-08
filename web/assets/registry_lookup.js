@@ -8,6 +8,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
 const STAFF_ROLES = new Set(['owner', 'admin', 'analyst', 'reviewer']);
 let lastClient = null;
 let profile = null;
+let requestGeneration = 0;
 
 const esc = (value = '') => String(value ?? '').replace(/[&<>'"]/g, c => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
@@ -28,6 +29,7 @@ function shell(inner = '') {
 }
 
 function hide() {
+  requestGeneration += 1;
   shell('');
 }
 
@@ -64,11 +66,13 @@ function renderLauncher() {
 }
 
 async function loadCases(client) {
+  const generation = ++requestGeneration;
   lastClient = client;
   const result = document.getElementById('registry-results');
   if (!result) return;
   result.innerHTML = '<div class="small muted">Loading cases…</div>';
   const { data, error } = await supabase.rpc('staff_registry_client_cases', { p_client_id: client.client_id });
+  if (generation !== requestGeneration || !document.getElementById('registry-results')) return;
   if (error) {
     result.innerHTML = `<div class="notice notice-danger">${esc(error.message)}</div>`;
     return;
@@ -98,14 +102,17 @@ async function handleLookup(event) {
     return;
   }
 
+  const generation = ++requestGeneration;
   result.innerHTML = '<div class="small muted">Searching authoritative registry…</div>';
   const { data, error } = await supabase.rpc('staff_registry_lookup', { p_query: query, p_limit: 10 });
+  if (generation !== requestGeneration || !document.getElementById('registry-results')) return;
   if (error) {
     result.innerHTML = `<div class="notice notice-danger">${esc(error.message)}</div>`;
     return;
   }
   const rows = data || [];
   if (!rows.length) {
+    lastClient = null;
     result.innerHTML = '<div class="small muted">No matching clients were found.</div>';
     return;
   }
@@ -123,6 +130,7 @@ async function handleLookup(event) {
 }
 
 async function refresh() {
+  requestGeneration += 1;
   const { data: sessionData } = await supabase.auth.getSession();
   const user = sessionData.session?.user;
   profile = null;
