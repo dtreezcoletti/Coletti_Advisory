@@ -4,6 +4,7 @@ from coletti_advisory.luxury_mobile import apply_luxury_mobile_overrides
 from coletti_advisory.luxury_theme import apply_luxury_theme
 from coletti_advisory.mobile_ui import patch_mobile_theme
 from coletti_advisory.report_presentation import patch_report_presentation
+from coletti_advisory.workspace_v2 import patch_workspace_v2
 
 # Replace the legacy presentation layer without changing authorization, workflow,
 # evidence, review, or publication behavior.
@@ -33,4 +34,9 @@ def _final_theme() -> None:
 
 
 experience_shell._apply_brand_theme = _final_theme
+
+# Unified internal experience: employees and owner share the same DARI-first
+# workspace. Owner authority expands capabilities instead of replacing the base
+# employee experience. Start My Day is the authenticated internal entry gate.
+patch_workspace_v2(experience_shell)
 experience_shell.run()
