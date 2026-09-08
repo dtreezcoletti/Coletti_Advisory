@@ -3,6 +3,7 @@ from coletti_advisory.demo_controls import patch_demo_data_control
 from coletti_advisory.luxury_mobile import apply_luxury_mobile_overrides
 from coletti_advisory.luxury_theme import apply_luxury_theme
 from coletti_advisory.mobile_ui import patch_mobile_theme
+from coletti_advisory.owner_console_runtime import run_reference_workspace
 from coletti_advisory.report_presentation import patch_report_presentation
 
 # Replace the legacy presentation layer without changing authorization, workflow,
@@ -33,4 +34,4 @@ def _final_theme() -> None:
 
 
 experience_shell._apply_brand_theme = _final_theme
-experience_shell.run()
+run_reference_workspace(experience_shell)
