@@ -5,16 +5,32 @@ import streamlit as st
 from . import owner_console_ui as owner_ui
 from .models import Permission, Role
 from .owner_console_dari import render_owner_dari
+from .owner_console_live_ui import render_live_owner_dashboard, render_owner_page_live
 from .owner_console_style import OWNER_REFERENCE_CSS
 from .workspaces import live_workspace_gate_errors
 
-# Use the production-safe DARI renderer while retaining the owner-console module's
-# existing dashboard/page functions. Function globals resolve this replacement at
-# render time, so no authorization or business workflow is duplicated here.
+# Keep the reference owner presentation layer, but route the owner home,
+# approvals, and Dispatcher surfaces through the live control-plane adapter.
+# Non-owner experiences and existing evidence/review/publication workflows remain
+# untouched.
 owner_ui._render_dari = render_owner_dari
 _owner_sidebar = owner_ui._owner_sidebar
 _owner_topbar = owner_ui._owner_topbar
-_render_owner_page = owner_ui._render_owner_page
+_original_owner_page = owner_ui._render_owner_page
+
+
+def _render_owner_page(shell, page: str, **kwargs) -> None:
+    if page == "My Workspace":
+        return render_live_owner_dashboard(
+            shell,
+            kwargs["principal"],
+            kwargs["engagement_id"],
+            kwargs["manifest"],
+            kwargs["records"],
+            kwargs["reports"],
+            kwargs["core"],
+        )
+    return render_owner_page_live(_original_owner_page, shell, page, **kwargs)
 
 
 def run_reference_workspace(shell) -> None:
