@@ -6,16 +6,16 @@ from . import owner_console_ui as owner_ui
 from .models import Permission, Role
 from .owner_console_dari import render_owner_dari
 from .owner_console_live_ui import render_live_owner_dashboard, render_owner_page_live
+from .owner_console_notifications import render_live_owner_topbar
 from .owner_console_style import OWNER_REFERENCE_CSS
 from .workspaces import live_workspace_gate_errors
 
 # Keep the reference owner presentation layer, but route the owner home,
-# approvals, and Dispatcher surfaces through the live control-plane adapter.
-# Non-owner experiences and existing evidence/review/publication workflows remain
-# untouched.
+# approvals, Dispatcher, and notification surfaces through the live control-plane
+# adapter. Non-owner experiences and existing evidence/review/publication
+# workflows remain untouched.
 owner_ui._render_dari = render_owner_dari
 _owner_sidebar = owner_ui._owner_sidebar
-_owner_topbar = owner_ui._owner_topbar
 _original_owner_page = owner_ui._render_owner_page
 
 
@@ -76,7 +76,13 @@ def run_reference_workspace(shell) -> None:
             st.sidebar.divider()
             if st.sidebar.button("Log out", use_container_width=True, key="owner_logout"):
                 st.logout()
-        _owner_topbar(principal, manifest, tuple(principal.engagement_ids))
+        render_live_owner_topbar(
+            principal,
+            manifest,
+            tuple(principal.engagement_ids),
+            core=core,
+            engagement_id=engagement_id,
+        )
         _render_owner_page(
             shell,
             page,
