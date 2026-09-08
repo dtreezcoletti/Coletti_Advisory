@@ -1,6 +1,6 @@
 import pytest
 
-from colettios_advisory.mobile_mvp import (
+from coletti_advisory.mobile_mvp import (
     MobileCalendarItem,
     mobile_navigation,
     mobile_session,
@@ -12,7 +12,7 @@ from colettios_advisory.mobile_mvp import (
     sanitized_calendar_items,
     summarize_manifest,
 )
-from colettios_advisory.models import Principal, Role, utc_now_iso
+from coletti_advisory.models import Principal, Role, utc_now_iso
 
 
 def principal(role: Role, *, authenticated: bool = True, engagements=("eng-1",)) -> Principal:
