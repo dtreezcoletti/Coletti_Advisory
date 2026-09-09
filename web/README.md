@@ -61,6 +61,23 @@ This directory contains the browser-based operational front end for Coletti & Co
 - Backup/recovery status
 - Settings
 
+## Canonical routing contract
+
+The current production frontend is a single-host application. The canonical public host is `https://colettico.com` and the canonical secure sign-in route is `https://colettico.com/#/sign-in`.
+
+Convenience paths under the canonical host are supported:
+- `https://colettico.com/portal/` → secure sign-in
+- `https://colettico.com/owner/` → secure sign-in
+
+A separate `portal.colettico.com` hostname is **not** an application requirement. It must not be published or treated as operational unless DNS and the hosting provider are explicitly configured for that hostname. The application uses hash routes so authenticated users remain on the canonical host.
+
+After authentication, UI routing is role-aware:
+- `owner` / `admin` → `#/admin/home`
+- `analyst` / `reviewer` → `#/workspace/home`
+- `client` → client portal routes
+
+The routing layer does not grant access. Supabase Auth, authoritative roles, RLS, case membership, and staff assignment remain the authorization controls.
+
 ## Backend
 
 Supabase project: `Colettico` (`lepdppbygnevzcquvmtt`)
@@ -86,22 +103,25 @@ The operational website does **not** replace the authoritative ColettiOS institu
 - The mirrored `profiles.role` value is for UI display. Authorization truth remains in `private.user_roles`.
 - Admin role changes use the `admin_set_user_role` RPC as `SECURITY INVOKER`; admin-only RLS on the private role table remains the enforcement boundary and the last active owner cannot be demoted.
 
-## Important activation note
+## Current activation note
 
-At the time this frontend was created, the Supabase project contained zero Auth users. New Auth users default to the `client` role. The first real owner account must therefore be created and explicitly promoted to `owner` through an authorized administrative step before the owner/admin command center can be used. Do not implement a public “first user becomes owner” bootstrap flow.
+Supabase Auth users and owner-role records now exist, and a real owner account has completed a successful sign-in. An additional unconfirmed owner record remains present and must be reviewed through the human identity/security gate before any demotion or deletion. Do not implement a public “first user becomes owner” bootstrap flow and do not automatically remove owner identities.
+
+The internal `registry`, `dispatcher`, and `chapter2_private` schemas intentionally remain closed to the browser `anon` and `authenticated` roles. RLS-without-policy notices on those sealed schemas are not evidence of browser exposure by themselves; schema usage remains denied. Public browser-facing tables must continue to have explicit RLS policies.
 
 ## Sites/static deployment
 
 The site is intentionally build-free: serve `web/` as the static document root with `index.html` as the entry point. It uses hash-based routes so it does not require server-side route rewrites. If a site builder/importer expects a static source directory, use the contents of `web/`.
 
 Before external commercial launch, complete these gates:
-1. Create and promote the real owner Auth account.
+1. Resolve the unconfirmed/secondary owner identity through the human security gate.
 2. Verify Supabase Auth email/magic-link configuration and allowed redirect URLs for the production domain.
 3. Replace the engagement acknowledgment placeholder with the approved controlled engagement/e-sign workflow.
 4. Configure the actual payment provider URLs/webhooks.
 5. Connect Google Calendar/Gmail/Drive only after authorization and audit boundaries are approved.
 6. Finalize controlled privacy, retention, incident-response, terms, and jurisdiction-specific legal language.
 7. Perform browser/role acceptance tests with separate client, analyst, reviewer, and owner accounts.
+8. If `portal.colettico.com` is desired, configure DNS/hosting explicitly and test it before publishing the hostname.
 
 ## Service boundary
 
