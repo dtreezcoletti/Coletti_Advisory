@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import streamlit as st
 
+from .dari_client import DariBackendUnavailable, execute_mobile_dari
 from .models import Permission, Principal, Role
 
 
@@ -237,10 +238,16 @@ def summarize_manifest(manifest: Mapping[str, Any]) -> dict[str, int]:
 
 
 def _queue(principal: Principal, engagement_id: str) -> list[dict[str, Any]]:
-    """Session-local command staging, isolated by actor and engagement."""
+    """Session-local fallback queue, isolated by actor and engagement."""
     queues = st.session_state.setdefault("_mobile_dari_command_queues", {})
     key = f"{principal.user_id}:{engagement_id}"
     return queues.setdefault(key, [])
+
+
+def _history(principal: Principal, engagement_id: str) -> list[dict[str, Any]]:
+    histories = st.session_state.setdefault("_mobile_dari_history", {})
+    key = f"{principal.user_id}:{engagement_id}"
+    return histories.setdefault(key, [])
 
 
 def render_mobile_companion(
@@ -253,11 +260,13 @@ def render_mobile_companion(
     storage: Any,
     core: Any,
 ) -> None:
-    """Responsive pre-production owner/employee mobile companion.
+    """Responsive owner/employee mobile companion using the live DARI boundary.
 
-    DARI commands are staged as permission-scoped envelopes until the separately
-    governed DARI backend is integrated. Uploads use the existing authoritative
-    intake callback; this page does not create a second storage authority.
+    The mobile surface reuses the authenticated identity, engagement scope,
+    storage path, private Core service and DARI authorization model. Protected
+    requests remain staged for the applicable human decision boundary. When the
+    live DARI backend is unavailable, an ordinary command is preserved in the
+    session-local fallback queue instead of being silently reported as sent.
     """
     try:
         session = mobile_session(principal, engagement_id)
@@ -266,7 +275,7 @@ def render_mobile_companion(
         st.stop()
 
     st.title("Coletti Mobile")
-    st.caption("Owner / employee operational companion · pre-production")
+    st.caption("Owner / employee operational companion · connected beta")
     st.info("Uses the same authenticated identity, engagement permissions, storage and ColettiOS authority as the web workspace.")
 
     navigation = mobile_navigation(principal)
@@ -288,10 +297,20 @@ def render_mobile_companion(
 
     elif section == "DARI":
         st.subheader("DARI")
+        st.caption("Deterministic ColettiOS answers run first. Live model reasoning is used only when the request cannot be answered by the existing case tools.")
+
+        history = _history(principal, engagement_id)
+        for item in history[-8:]:
+            with st.chat_message(item["role"]):
+                st.write(item["content"])
+                if item.get("caption"):
+                    st.caption(item["caption"])
+
         command = st.text_area("Ask or command DARI", placeholder="What needs my attention on this case?")
         protected = st.checkbox("This request may involve a protected action", value=False)
         queue = _queue(principal, engagement_id)
-        if st.button("Stage DARI command", type="primary", disabled=not command.strip()):
+
+        if st.button("Send to DARI", type="primary", disabled=not command.strip()):
             envelope = prepare_dari_command(
                 principal,
                 engagement_id,
@@ -299,13 +318,37 @@ def render_mobile_companion(
                 case_id=engagement_id,
                 protected_action=protected,
             )
-            queue.append(asdict(envelope))
+            history.append({"role": "user", "content": command})
+
             if envelope.human_gate_required:
-                st.warning("Command staged. The protected action still requires the applicable human decision gate.")
+                queue.append(asdict(envelope))
+                message = "This request may affect a protected action, so I preserved it for the applicable decision gate instead of executing it."
+                history.append({"role": "assistant", "content": message, "caption": "PROTECTED · NOT EXECUTED"})
+                st.warning(message)
             else:
-                st.success("DARI command staged for the authorized backend.")
+                try:
+                    reply = execute_mobile_dari(
+                        core=core,
+                        principal=principal,
+                        engagement_id=engagement_id,
+                        command=command,
+                        manifest=manifest,
+                    )
+                    caption = f"{reply.mode} · {reply.status}"
+                    if reply.human_review_required:
+                        uncertainty = str(reply.payload.get("display_uncertainty") or "UNSPECIFIED")
+                        caption += f" · HUMAN REVIEW REQUIRED · uncertainty {uncertainty}"
+                    history.append({"role": "assistant", "content": reply.message, "caption": caption})
+                    st.success(reply.message) if reply.mode == "DETERMINISTIC" else st.info(reply.message)
+                    st.caption(caption)
+                except (DariBackendUnavailable, ValueError) as exc:
+                    queue.append(asdict(envelope))
+                    message = f"{exc}. I preserved this command locally; it has not been delivered to DARI."
+                    history.append({"role": "assistant", "content": message, "caption": "QUEUED LOCALLY · NOT DELIVERED"})
+                    st.warning(message)
+
         if queue:
-            st.caption(f"Staged for this authorized workspace: {len(queue)}")
+            st.caption(f"Fallback commands preserved in this authorized session: {len(queue)}")
 
     elif section in {"Reviews", "Needs Me"}:
         st.subheader(section)
