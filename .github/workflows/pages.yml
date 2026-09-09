@@ -1,0 +1,65 @@
+name: deploy-public-website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate public website files
+        run: |
+          test -f web/index.html
+          test -f web/assets/app.js
+          test -f web/assets/config.js
+          test -f web/assets/public_language_v1.js
+          node --check web/assets/app.js
+          node --check web/assets/config.js
+          node --check web/assets/public_language_v1.js
+          node --check web/assets/registry_lookup.js
+      - name: Prevent privileged Supabase keys in browser source
+        run: |
+          if grep -R -E "sb_secret_[A-Za-z0-9_-]{10,}|SUPABASE_SERVICE_ROLE_KEY[[:space:]]*=" web/ --include='*.js' --include='*.html'; then
+            echo "Privileged Supabase credential pattern found in browser source"
+            exit 1
+          fi
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload website artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: web
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
