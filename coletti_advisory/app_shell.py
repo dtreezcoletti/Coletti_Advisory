@@ -13,7 +13,9 @@ from .workspaces import live_workspace_gate_errors, workspace_environment, works
 
 
 def _workspace_pages(principal) -> list[str]:
-    pages = app._workspace_pages(principal)
+    # The commercial shell owns human-facing terminology. Main/Core may retain
+    # compatibility-sensitive legacy identifiers during IMP-070.
+    pages = ["Records" if page == "Evidence" else page for page in app._workspace_pages(principal)]
     if principal.can(Permission.MANAGE_USERS) and "System Lab" not in pages:
         try:
             admin_index = pages.index("Administration")
@@ -148,7 +150,7 @@ def _render_secure_intake(*, app_mode, principal, engagement_id, storage, core) 
 def _render_extraction_review(*, principal, engagement_id: str, core) -> None:
     st.subheader("Extracted Statement Review")
     st.caption(
-        "Extraction never becomes evidence automatically. An authorized analyst must explicitly promote a candidate "
+        "Extraction never becomes a documented fact automatically. An authorized analyst must explicitly promote a candidate "
         "before ColettiOS treats it as a source-linked proposition."
     )
     queue = _processing_queue()
@@ -279,7 +281,7 @@ def _render_contradiction_reconciliation(*, principal, engagement_id: str, core,
             placeholder="State what the record supports and what remains unresolved. Do not silently promote one source over another.",
         )
         acknowledged = st.checkbox(
-            "I understand this is a reviewer reconciliation record, separate from the underlying source evidence.",
+            "I understand this is a reviewer reconciliation record, separate from the underlying source records.",
             key="reconciliation-ack",
         )
         if st.button(
@@ -306,12 +308,12 @@ def _render_contradiction_reconciliation(*, principal, engagement_id: str, core,
         st.caption("No reviewer reconciliation has been recorded yet.")
 
 
-def _render_evidence_workspace(*, principal, engagement_id: str, core, manifest: dict) -> None:
+def _render_records_workspace(*, principal, engagement_id: str, core, manifest: dict) -> None:
     if not (principal.can(Permission.ANALYZE) or principal.can(Permission.REVIEW)):
-        st.error("Your role does not permit access to the internal evidence workspace.")
+        st.error("Your role does not permit access to the internal records workspace.")
         st.stop()
 
-    st.title("Evidence Workspace")
+    st.title("Records Workspace")
     st.subheader("Sources")
     st.dataframe(list(manifest.get("sources", {}).values()), use_container_width=True)
 
@@ -330,6 +332,10 @@ def _render_evidence_workspace(*, principal, engagement_id: str, core, manifest:
         core=core,
         manifest=manifest,
     )
+
+
+# Legacy internal callable retained for compatibility with older imports/tests.
+_render_evidence_workspace = _render_records_workspace
 
 
 def run() -> None:
@@ -395,8 +401,8 @@ def run() -> None:
             core=core,
         )
 
-    elif page == "Evidence":
-        _render_evidence_workspace(
+    elif page == "Records":
+        _render_records_workspace(
             principal=principal,
             engagement_id=engagement_id,
             core=core,
