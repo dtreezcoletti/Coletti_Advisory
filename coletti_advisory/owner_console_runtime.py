@@ -8,15 +8,54 @@ from .owner_console_dari import render_owner_dari
 from .owner_console_live_ui import render_live_owner_dashboard, render_owner_page_live
 from .owner_console_notifications import render_live_owner_topbar
 from .owner_console_style import OWNER_REFERENCE_CSS
+from .record_vocabulary import display_page_label
 from .workspaces import live_workspace_gate_errors
 
 # Keep the reference owner presentation layer, but route the owner home,
 # approvals, Dispatcher, and notification surfaces through the live control-plane
-# adapter. Non-owner experiences and existing evidence/review/publication
-# workflows remain untouched.
+# adapter. Legacy route identifiers are retained internally where needed while
+# user-facing terminology follows the records-first vocabulary rule.
 owner_ui._render_dari = render_owner_dari
-_owner_sidebar = owner_ui._owner_sidebar
 _original_owner_page = owner_ui._render_owner_page
+
+
+def _owner_sidebar(shell, principal, engagement_id: str) -> str:
+    """Render canonical labels while preserving legacy internal route values."""
+    page_key = f"_owner_reference_page:{principal.user_id}"
+    active = st.session_state.get(page_key, "My Workspace")
+
+    st.sidebar.caption("MY WORKSPACE")
+    for internal_label, icon in owner_ui.OWNER_MAIN_NAV:
+        visible_label = display_page_label(internal_label)
+        if st.sidebar.button(
+            f"{icon}   {visible_label}",
+            key=f"owner-nav-main:{internal_label}",
+            type="primary" if active == internal_label else "secondary",
+            use_container_width=True,
+        ):
+            st.session_state[page_key] = internal_label
+            st.rerun()
+
+    st.sidebar.divider()
+    st.sidebar.caption("OWNER CONTROLS")
+    for internal_label, icon in owner_ui.OWNER_CONTROL_NAV:
+        visible_label = display_page_label(internal_label)
+        if st.sidebar.button(
+            f"{icon}   {visible_label}",
+            key=f"owner-nav-control:{internal_label}",
+            type="primary" if active == internal_label else "secondary",
+            use_container_width=True,
+        ):
+            st.session_state[page_key] = internal_label
+            st.rerun()
+
+    st.sidebar.divider()
+    st.sidebar.markdown(
+        "<div style='font-family:var(--oc-serif);font-size:.8rem;line-height:1.35;color:#5f5c55;padding:.35rem .35rem .15rem'>"
+        "A higher standard for a more confident tomorrow.</div>",
+        unsafe_allow_html=True,
+    )
+    return active
 
 
 def _render_owner_page(shell, page: str, **kwargs) -> None:
@@ -104,7 +143,7 @@ def run_reference_workspace(shell) -> None:
     page = st.sidebar.radio(
         "Navigation",
         pages,
-        format_func=lambda value: f"{shell._PAGE_ICONS.get(value, '•')}   {value}",
+        format_func=lambda value: f"{shell._PAGE_ICONS.get(value, '•')}   {display_page_label(value)}",
         label_visibility="collapsed",
     )
     if principal.authenticated:
@@ -140,6 +179,7 @@ def run_reference_workspace(shell) -> None:
     elif page == "Secure Intake":
         shell.legacy._render_secure_intake(app_mode=app_mode, principal=principal, engagement_id=engagement_id, storage=storage, core=core)
     elif page == "Evidence":
+        # Legacy route key retained; the rendered page and navigation label are Records.
         shell.legacy._render_evidence_workspace(principal=principal, engagement_id=engagement_id, core=core, manifest=manifest)
     elif page == "Review Center":
         if not principal.can(Permission.REVIEW):
