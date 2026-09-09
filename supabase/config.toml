@@ -1,0 +1,4 @@
+# Supabase CLI / GitHub integration project configuration.
+# This file is intentionally minimal; production project linkage is managed
+# by the Supabase project integration and must not contain secrets.
+project_id = "colettico"
