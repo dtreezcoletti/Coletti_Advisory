@@ -38,12 +38,24 @@ def _context(experience_shell, principal, engagement_id: str | None = None):
     return engagement_id, manifest, records
 
 
+def _request_standard_page(principal, target: str) -> None:
+    st.session_state[f"_coletti_profile_requested_page:{principal.user_id}"] = target
+    st.rerun()
+
+
+def _request_owner_page(principal, target: str) -> None:
+    st.session_state[f"_owner_reference_page:{principal.user_id}"] = target
+    st.rerun()
+
+
 def patch_profile_menus(experience_shell, owner_ui, owner_notifications, owner_runtime) -> None:
     """Replace static identity pills with current-principal profile menus.
 
     The menu is personal to the principal whose interface is currently rendered.
     It does not provide cross-employee access to payroll/leave information and it
     does not invent HR/payroll records where no authoritative service exists.
+    Every actionable card routes through existing application pages rather than
+    introducing a parallel workflow.
     """
     if getattr(experience_shell, "_profile_menus_patched", False):
         return
@@ -69,6 +81,7 @@ def patch_profile_menus(experience_shell, owner_ui, owner_notifications, owner_r
                     manifest=manifest,
                     records=records,
                     key_prefix=f"profile:{principal.user_id}:{experience}",
+                    navigate=lambda target: _request_standard_page(principal, target),
                 )
             else:
                 st.caption(principal.display_name)
@@ -116,6 +129,7 @@ def patch_profile_menus(experience_shell, owner_ui, owner_notifications, owner_r
                     manifest=manifest,
                     records=records,
                     key_prefix=f"owner-profile:{principal.user_id}",
+                    navigate=lambda target: _request_owner_page(principal, target),
                 )
 
         query = query.strip().lower()
@@ -203,6 +217,7 @@ def patch_profile_menus(experience_shell, owner_ui, owner_notifications, owner_r
                 manifest=manifest,
                 records=records,
                 key_prefix=f"owner-live-profile:{principal.user_id}",
+                navigate=lambda target: _request_owner_page(principal, target),
             )
 
     experience_shell._topbar = standard_topbar
