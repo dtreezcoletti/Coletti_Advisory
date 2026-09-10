@@ -5,6 +5,7 @@ from typing import Any, Mapping
 import streamlit as st
 
 from .analysis import build_summary
+from .demo_controls import DEMO_EXPERIENCES, demo_experience_switching_available
 from .workspaces import workspace_environment, workspace_label
 
 
@@ -57,7 +58,13 @@ def _go(principal, page: str, *, engagement_id: str | None = None) -> None:
 
 
 def patch_shared_engagement_selector(experience_shell) -> None:
-    """Use one explicit selected-case state across sidebar, case queue, and owner pages."""
+    """Use one explicit selected-case state across sidebar, case queue, and owner pages.
+
+    In the anonymous synthetic tenant, the Authorized workspace control doubles as
+    the interface switcher so Client / Employee / Admin / Owner are always
+    reachable from the same visible place. Live/authenticated workspaces retain
+    the normal case-only selector.
+    """
     if getattr(experience_shell, "_shared_engagement_selector_patched", False):
         return
 
@@ -75,16 +82,51 @@ def patch_shared_engagement_selector(experience_shell) -> None:
         elif current not in options:
             st.session_state[key] = options[0]
 
-        selected = st.sidebar.selectbox(
-            "Authorized workspace",
-            options,
-            format_func=workspace_label,
-            key=key,
-        )
+        app_mode = experience_shell.app._secret("APP_MODE", "demo").lower()
+        core = st.session_state.get("_coletti_core")
+        if demo_experience_switching_available(
+            app_mode=app_mode,
+            principal=principal,
+            core=core,
+        ):
+            labels = [label for label, _role, _description in DEMO_EXPERIENCES]
+            current_interface = st.session_state.get("_coletti_demo_experience", labels[0])
+            if current_interface not in labels:
+                current_interface = labels[0]
+                st.session_state["_coletti_demo_experience"] = current_interface
+
+            selected = st.session_state[key]
+            selected_interface = st.sidebar.selectbox(
+                "Authorized workspace",
+                labels,
+                index=labels.index(current_interface),
+                key="_coletti_demo_experience",
+                format_func=lambda label: f"{label} · {workspace_label(selected)}",
+                help=(
+                    "Synthetic demo only. Switch between the Client, Employee, Admin, and Owner interfaces "
+                    "while keeping the same synthetic case and data."
+                ),
+            )
+            description = next(
+                description
+                for label, _role, description in DEMO_EXPERIENCES
+                if label == selected_interface
+            )
+            st.sidebar.caption(f"{description} · same synthetic case across views")
+        else:
+            selected = st.sidebar.selectbox(
+                "Authorized workspace",
+                options,
+                format_func=workspace_label,
+                key=key,
+            )
+            st.sidebar.caption(f"{workspace_environment(selected)} workspace")
+
         if not principal.can_access(selected):
             st.error("Workspace authorization failed.")
             st.stop()
 
+        st.sidebar.divider()
         # Preserve the demo-control/topbar compatibility contract while making
         # the selected engagement explicit and reusable by page integrations.
         st.session_state["_coletti_selected_engagement"] = selected
