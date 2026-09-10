@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import mimetypes
 from pathlib import Path
 from typing import Any, Mapping
@@ -83,13 +84,17 @@ def _selected_rows(event) -> list[int]:
 
 def _working_copy_header(*, engagement_id: str, source_id: str, filename: str, content_hash: str) -> None:
     fingerprint = f"{content_hash[:16]}…" if content_hash else "not recorded"
+    safe_case = html.escape(engagement_id, quote=True)
+    safe_source = html.escape(source_id, quote=True)
+    safe_filename = html.escape(filename, quote=True)
+    safe_fingerprint = html.escape(fingerprint, quote=True)
     st.markdown(
         f"""
         <div style="border:1px solid #d9d0c4;border-left:4px solid #b18138;background:#fffefa;padding:1rem 1.15rem;margin:.35rem 0 1rem;border-radius:5px">
           <div style="font-family:Georgia,serif;font-size:1.05rem;letter-spacing:.04em;color:#161817">COLETTIOS WORKING COPY</div>
           <div style="font-size:.73rem;color:#777168;margin-top:.25rem">Internal workspace derivative · Not the original source record</div>
-          <div style="font-size:.75rem;color:#313230;margin-top:.7rem"><strong>Case:</strong> {engagement_id} &nbsp;·&nbsp; <strong>Source:</strong> {source_id}</div>
-          <div style="font-size:.72rem;color:#777168;margin-top:.2rem"><strong>Original:</strong> {filename} &nbsp;·&nbsp; <strong>Source fingerprint:</strong> {fingerprint}</div>
+          <div style="font-size:.75rem;color:#313230;margin-top:.7rem"><strong>Case:</strong> {safe_case} &nbsp;·&nbsp; <strong>Source:</strong> {safe_source}</div>
+          <div style="font-size:.72rem;color:#777168;margin-top:.2rem"><strong>Original:</strong> {safe_filename} &nbsp;·&nbsp; <strong>Source fingerprint:</strong> {safe_fingerprint}</div>
         </div>
         """,
         unsafe_allow_html=True,
