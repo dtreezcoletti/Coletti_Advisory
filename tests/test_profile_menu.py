@@ -23,10 +23,23 @@ def principal(role: Role, engagements=("eng-1", "eng-2")) -> Principal:
 
 def manifest():
     return {
-        "sources": {"SRC-1": {"source_id": "SRC-1"}, "SRC-2": {"source_id": "SRC-2"}},
-        "propositions": {"PROP-1": {"proposition_id": "PROP-1"}},
-        "contradictions": {"CON-1": {"contradiction_id": "CON-1"}},
-        "escalations": {"TASK-1": {"status": "OPEN"}},
+        "sources": {
+            "SRC-1": {"source_id": "SRC-1", "metadata": {"filename": "record-a.pdf"}},
+            "SRC-2": {"source_id": "SRC-2", "metadata": {"filename": "record-b.pdf"}},
+        },
+        "propositions": {
+            "PROP-1": {"proposition_id": "PROP-1", "text": "Record A states one value.", "source_ids": ["SRC-1"]},
+            "PROP-2": {"proposition_id": "PROP-2", "text": "Record B states a different value.", "source_ids": ["SRC-2"]},
+        },
+        "contradictions": {
+            "CON-1": {
+                "contradiction_id": "CON-1",
+                "proposition_a": "PROP-1",
+                "proposition_b": "PROP-2",
+                "reason": "The two records state different values.",
+            }
+        },
+        "escalations": {"TASK-1": {"status": "OPEN", "source_ids": ["SRC-1"]}},
     }
 
 
@@ -34,9 +47,9 @@ def test_internal_profile_stats_are_personal_assignment_and_current_case_counts(
     stats = profile_work_stats(principal(Role.ANALYST), manifest())
     assert stats["Assigned cases"] == "2"
     assert stats["Current-case sources"] == "2"
-    assert stats["Current-case record statements"] == "1"
+    assert stats["Current-case record statements"] == "2"
     assert stats["Current-case inconsistencies"] == "1"
-    assert stats["Current-case open issues"] == "2"
+    assert stats["Current-case open issues"] == "1"
 
 
 def test_client_profile_stats_do_not_expose_internal_analysis_counts():
