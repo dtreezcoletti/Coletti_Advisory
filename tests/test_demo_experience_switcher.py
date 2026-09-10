@@ -1,4 +1,5 @@
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -7,6 +8,7 @@ from coletti_advisory.demo_controls import (
     DEMO_EXPERIENCES,
     demo_experience_switching_available,
     principal_for_demo_experience,
+    render_demo_experience_switcher,
 )
 from coletti_advisory.experience_shell import _experience, _visible_pages
 from coletti_advisory.models import Permission, Principal, Role
@@ -94,6 +96,33 @@ def test_each_demo_persona_uses_real_role_permissions_and_real_interface_routing
         assert simulated.organization_id == principal.organization_id
         assert simulated.engagement_ids == principal.engagement_ids
         assert simulated.session_id == principal.session_id
+
+
+def test_persona_resolver_reads_authorized_workspace_interface_state_without_rendering_second_switcher():
+    shell = SimpleNamespace(
+        st=SimpleNamespace(session_state={"_coletti_demo_experience": "Client Portal"})
+    )
+    resolved = render_demo_experience_switcher(
+        shell,
+        app_mode="demo",
+        principal=synthetic_principal(),
+        core=SyntheticCoreAdapter(),
+    )
+    assert resolved.role == Role.CLIENT
+    assert resolved.display_name == "Synthetic Client"
+
+
+def test_invalid_saved_interface_falls_back_to_owner_console():
+    state = {"_coletti_demo_experience": "Removed Interface"}
+    shell = SimpleNamespace(st=SimpleNamespace(session_state=state))
+    resolved = render_demo_experience_switcher(
+        shell,
+        app_mode="demo",
+        principal=synthetic_principal(),
+        core=SyntheticCoreAdapter(),
+    )
+    assert resolved.role == Role.OWNER
+    assert state["_coletti_demo_experience"] == "Owner Console"
 
 
 def test_authenticated_principal_cannot_be_recast_as_demo_persona():
