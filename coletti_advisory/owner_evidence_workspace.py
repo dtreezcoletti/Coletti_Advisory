@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import mimetypes
+from pathlib import Path
 from typing import Any, Mapping
 
 import streamlit as st
@@ -11,8 +13,14 @@ from .analysis import (
     build_records_reconstruction,
     build_summary,
 )
+from .document_processing import extract_candidate_statements
 from .models import Permission
+from .working_copy import WorkingCopyUnavailable, read_source_for_working_copy
 from .workspaces import workspace_label
+
+
+_TEXT_SUFFIXES = {".txt", ".md", ".log", ".tsv", ".xml", ".html", ".htm", ".csv", ".json"}
+_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 
 
 def _source_metadata(source: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -47,7 +55,6 @@ def _ingested_material_rows(manifest: dict, queue: dict[str, dict], engagement_i
             }
         )
 
-    # Defensive fallback: show queued material even if a backend manifest refresh is delayed.
     known_ids = set(sources)
     for source_id, pending in queue.items():
         if source_id in known_ids:
@@ -74,10 +81,94 @@ def _selected_rows(event) -> list[int]:
         return []
 
 
-def _render_material_viewer(*, manifest: dict, queue: dict[str, dict], rows: list[dict], event) -> None:
+def _working_copy_header(*, engagement_id: str, source_id: str, filename: str, content_hash: str) -> None:
+    fingerprint = f"{content_hash[:16]}…" if content_hash else "not recorded"
+    st.markdown(
+        f"""
+        <div style="border:1px solid #d9d0c4;border-left:4px solid #b18138;background:#fffefa;padding:1rem 1.15rem;margin:.35rem 0 1rem;border-radius:5px">
+          <div style="font-family:Georgia,serif;font-size:1.05rem;letter-spacing:.04em;color:#161817">COLETTIOS WORKING COPY</div>
+          <div style="font-size:.73rem;color:#777168;margin-top:.25rem">Internal workspace derivative · Not the original source record</div>
+          <div style="font-size:.75rem;color:#313230;margin-top:.7rem"><strong>Case:</strong> {engagement_id} &nbsp;·&nbsp; <strong>Source:</strong> {source_id}</div>
+          <div style="font-size:.72rem;color:#777168;margin-top:.2rem"><strong>Original:</strong> {filename} &nbsp;·&nbsp; <strong>Source fingerprint:</strong> {fingerprint}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_native_working_copy(filename: str, data: bytes) -> None:
+    suffix = Path(filename).suffix.lower()
+    if suffix in _IMAGE_SUFFIXES:
+        st.image(data, caption=f"Working view · {filename}", use_container_width=True)
+        return
+
+    if suffix in _TEXT_SUFFIXES:
+        text = data.decode("utf-8-sig", errors="replace")
+        st.text_area(
+            "Working material",
+            value=text,
+            height=460,
+            disabled=True,
+            key=f"working-copy-text:{hash((filename, len(data)))}",
+        )
+        return
+
+    if suffix == ".pdf":
+        extraction = extract_candidate_statements(filename, data, max_candidates=300)
+        if extraction.candidates:
+            rendered = "\n\n".join(
+                f"[{candidate.locator}]\n{candidate.text}"
+                for candidate in extraction.candidates
+            )
+            st.text_area(
+                "Working material · PDF text view",
+                value=rendered,
+                height=520,
+                disabled=True,
+                key=f"working-copy-pdf:{hash((filename, len(data)))}",
+            )
+        else:
+            st.info("This PDF has no extractable text for the inline working view. The immutable original remains preserved in encrypted storage.")
+        for warning in extraction.warnings:
+            st.caption(warning)
+        return
+
+    extraction = extract_candidate_statements(filename, data, max_candidates=300)
+    if extraction.candidates:
+        rendered = "\n\n".join(
+            f"[{candidate.locator}]\n{candidate.text}"
+            for candidate in extraction.candidates
+        )
+        st.text_area(
+            "Working material · extracted view",
+            value=rendered,
+            height=460,
+            disabled=True,
+            key=f"working-copy-generic:{hash((filename, len(data)))}",
+        )
+    else:
+        mime = mimetypes.guess_type(filename)[0] or "unknown format"
+        st.info(
+            f"The verified working copy was opened from encrypted storage, but {mime} does not have an inline renderer in this workspace yet. "
+            "ColettiOS will not silently convert or alter the source."
+        )
+        for warning in extraction.warnings:
+            st.caption(warning)
+
+
+def _render_material_viewer(
+    *,
+    principal,
+    engagement_id: str,
+    storage,
+    manifest: dict,
+    queue: dict[str, dict],
+    rows: list[dict],
+    event,
+) -> None:
     selected = _selected_rows(event)
     if not selected:
-        st.caption("Select a material row above to open its record details and extracted-material preview.")
+        st.caption("Select a material row above to open its ColettiOS Working Copy and source details.")
         return
 
     row_index = selected[0]
@@ -88,6 +179,8 @@ def _render_material_viewer(*, manifest: dict, queue: dict[str, dict], rows: lis
     source = (manifest.get("sources") or {}).get(source_id) or {}
     metadata = _source_metadata(source)
     pending = queue.get(source_id) or {}
+    filename = str(row["Material"])
+    content_hash = str(source.get("content_hash") or "")
 
     with st.container(border=True):
         st.subheader(str(row["Material"]))
@@ -100,24 +193,46 @@ def _render_material_viewer(*, manifest: dict, queue: dict[str, dict], rows: lis
             f"Encrypted storage: {'Yes' if metadata.get('encrypted') else 'Not recorded'}"
         )
 
+        if not source:
+            st.warning("This queued item is not yet present in the refreshed source manifest, so the authoritative source object cannot be opened yet.")
+        elif not principal.can_access(engagement_id):
+            st.error("Workspace authorization failed. Working copy was not opened.")
+        else:
+            try:
+                data = read_source_for_working_copy(
+                    storage,
+                    organization_id=principal.organization_id,
+                    engagement_id=engagement_id,
+                    source_id=source_id,
+                    filename=filename,
+                    content_hash=content_hash,
+                )
+            except WorkingCopyUnavailable as exc:
+                st.warning(str(exc))
+            else:
+                _working_copy_header(
+                    engagement_id=engagement_id,
+                    source_id=source_id,
+                    filename=filename,
+                    content_hash=content_hash,
+                )
+                _render_native_working_copy(filename, data)
+                st.caption(
+                    "Working-copy rule: decrypted bytes exist only for this authorized render. No edits are written back to the immutable source object, and no decrypted duplicate is persisted by this viewer."
+                )
+
         candidates = pending.get("candidates") or []
         if candidates:
-            st.markdown("**Extracted material preview**")
-            for candidate in candidates:
-                locator = candidate.get("locator") or candidate.get("candidate_id") or "Extracted text"
-                text = candidate.get("text") or ""
-                with st.expander(str(locator), expanded=False):
+            with st.expander("Extraction candidates linked to this material", expanded=False):
+                for candidate in candidates:
+                    locator = candidate.get("locator") or candidate.get("candidate_id") or "Extracted text"
+                    text = candidate.get("text") or ""
+                    st.markdown(f"**{locator}**")
                     st.write(text)
-        else:
-            st.info("No pending extracted-text preview is available for this source in the current session.")
 
         storage_uri = metadata.get("storage_uri")
         if storage_uri:
-            st.caption(f"Authoritative stored object: {storage_uri}")
-        st.warning(
-            "Opening the original encrypted file itself still requires a controlled read/decrypt endpoint in the storage layer. "
-            "The current storage contract is write-only, so ColettiOS will not fabricate a working original-file link."
-        )
+            st.caption(f"Authoritative encrypted object: {storage_uri}")
 
 
 def _results_rows(manifest: dict, queue: dict[str, dict]) -> tuple[list[dict], list[dict]]:
@@ -212,6 +327,7 @@ def render_owner_evidence_workspace(shell, **kwargs) -> None:
     principal = kwargs["principal"]
     engagement_id = kwargs["engagement_id"]
     core = kwargs["core"]
+    storage = kwargs["storage"]
     manifest = dict(kwargs["manifest"])
 
     if not (principal.can(Permission.ANALYZE) or principal.can(Permission.REVIEW)):
@@ -240,7 +356,15 @@ def render_owner_evidence_workspace(shell, **kwargs) -> None:
                 selection_mode="single-row",
                 key="owner-ingested-materials-table",
             )
-            _render_material_viewer(manifest=manifest, queue=queue, rows=rows, event=event)
+            _render_material_viewer(
+                principal=principal,
+                engagement_id=engagement_id,
+                storage=storage,
+                manifest=manifest,
+                queue=queue,
+                rows=rows,
+                event=event,
+            )
         else:
             st.info("No material has been ingested into this workspace yet. Use Record Ingestion in the sidebar to add a source.")
 
