@@ -82,3 +82,29 @@ def test_reset_demo_data_restores_canonical_synthetic_manifest():
     assert manifest["sources"] == SYNTHETIC_MANIFEST["sources"]
     assert manifest["propositions"] == SYNTHETIC_MANIFEST["propositions"]
     assert manifest["contradictions"] == SYNTHETIC_MANIFEST["contradictions"]
+
+
+def test_clear_demo_data_creates_empty_case_that_can_start_from_intake():
+    adapter = SyntheticCoreAdapter()
+
+    adapter.clear_demo_data()
+    manifest = adapter.manifest("eng-synthetic-demo")
+
+    assert manifest == {
+        "sources": {},
+        "source_states": {},
+        "propositions": {},
+        "contradictions": {},
+        "escalations": {},
+        "reconciliations": {},
+        "reviewer_conclusions": {},
+        "state_history": [],
+        "audit_log": [],
+    }
+
+    adapter.register_source(
+        {"source_id": "SRC-FIRST", "content_hash": "first", "metadata": {}}, AUTH
+    )
+    restarted = adapter.manifest("eng-synthetic-demo")
+    assert list(restarted["sources"]) == ["SRC-FIRST"]
+    assert restarted["source_states"]["SRC-FIRST"] == "INGESTED"
