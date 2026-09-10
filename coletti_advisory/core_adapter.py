@@ -33,7 +33,7 @@ class SyntheticCoreAdapter(CoreAdapter):
         self.reset_demo_data()
 
     def reset_demo_data(self) -> None:
-        """Restore the canonical synthetic manifest for a clean demonstration.
+        """Restore the canonical pre-populated synthetic demonstration.
 
         This method exists only on the synthetic adapter. Production/HTTP Core
         adapters intentionally expose no equivalent reset operation.
@@ -42,6 +42,25 @@ class SyntheticCoreAdapter(CoreAdapter):
         self._manifest.setdefault("reconciliations", {})
         self._manifest.setdefault("reviewer_conclusions", {})
         self._manifest.setdefault("state_history", [])
+
+    def clear_demo_data(self) -> None:
+        """Return the synthetic case to an empty, start-from-intake state.
+
+        The structural containers remain present so every downstream demo screen
+        can render an empty case safely. This operation is intentionally limited
+        to SyntheticCoreAdapter and has no production/HTTP equivalent.
+        """
+        self._manifest = {
+            "sources": {},
+            "source_states": {},
+            "propositions": {},
+            "contradictions": {},
+            "escalations": {},
+            "reconciliations": {},
+            "reviewer_conclusions": {},
+            "state_history": [],
+            "audit_log": [],
+        }
 
     def _audit(self, event_type: str, subject_id: str, detail: str, auth_context: dict[str, str]) -> None:
         self._manifest.setdefault("audit_log", []).append(
