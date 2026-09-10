@@ -23,18 +23,44 @@ def principal(role: Role, engagements=("eng-1", "eng-2")) -> Principal:
 
 def manifest():
     return {
-        "sources": {"SRC-1": {"source_id": "SRC-1"}, "SRC-2": {"source_id": "SRC-2"}},
-        "propositions": {"PROP-1": {"proposition_id": "PROP-1"}},
-        "contradictions": {"CON-1": {"contradiction_id": "CON-1"}},
-        "escalations": {"TASK-1": {"status": "OPEN"}},
+        "sources": {
+            "SRC-1": {"source_id": "SRC-1"},
+            "SRC-2": {"source_id": "SRC-2"},
+        },
+        "propositions": {
+            "PROP-1": {
+                "proposition_id": "PROP-1",
+                "text": "Synthetic record statement",
+                "source_ids": ["SRC-1", "SRC-2"],
+            }
+        },
+        # Keep one canonical inconsistency by giving both sides source-linked propositions.
+        "contradictions": {
+            "CON-1": {
+                "contradiction_id": "CON-1",
+                "proposition_a": "PROP-1",
+                "proposition_b": "PROP-2",
+                "reason": "Synthetic test inconsistency",
+            }
+        },
+        "escalations": {
+            "TASK-1": {"status": "OPEN", "source_ids": ["SRC-1"]},
+            "TASK-2": {"status": "OPEN", "source_ids": ["SRC-2"]},
+        },
     }
 
 
 def test_internal_profile_stats_are_personal_assignment_and_current_case_counts():
-    stats = profile_work_stats(principal(Role.ANALYST), manifest())
+    payload = manifest()
+    payload["propositions"]["PROP-2"] = {
+        "proposition_id": "PROP-2",
+        "text": "Synthetic conflicting record statement",
+        "source_ids": ["SRC-2"],
+    }
+    stats = profile_work_stats(principal(Role.ANALYST), payload)
     assert stats["Assigned cases"] == "2"
     assert stats["Current-case sources"] == "2"
-    assert stats["Current-case record statements"] == "1"
+    assert stats["Current-case record statements"] == "2"
     assert stats["Current-case inconsistencies"] == "1"
     assert stats["Current-case open issues"] == "2"
 
