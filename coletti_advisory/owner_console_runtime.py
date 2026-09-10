@@ -8,6 +8,7 @@ from urllib.request import Request, urlopen
 import streamlit as st
 
 from . import owner_console_ui as owner_ui
+from .demo_controls import render_demo_experience_switcher
 from .models import Permission, Role
 from .owner_console_dari import render_owner_dari
 from .owner_console_live_ui import render_live_owner_dashboard, render_owner_page_live
@@ -236,6 +237,12 @@ def run_reference_workspace(shell) -> None:
     app_mode, storage_backend, core_backend, principal, core, storage, publication_store = shell.app._runtime()
     shell._sidebar_brand()
     shell._sidebar_identity(principal, principal.engagement_ids[0])
+    principal = render_demo_experience_switcher(
+        shell,
+        app_mode=app_mode,
+        principal=principal,
+        core=core,
+    )
     engagement_id = shell._select_engagement(principal)
 
     gate_errors = live_workspace_gate_errors(
