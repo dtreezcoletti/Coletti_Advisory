@@ -298,11 +298,22 @@ def run_reference_workspace(shell) -> None:
         return
 
     pages = shell._visible_pages(principal)
+    nav_key = f"_coletti_navigation:{principal.user_id}:{experience}"
+    requested_page = st.session_state.pop(
+        f"_coletti_profile_requested_page:{principal.user_id}",
+        None,
+    )
+    if requested_page in pages:
+        st.session_state[nav_key] = requested_page
+    elif st.session_state.get(nav_key) not in pages:
+        st.session_state[nav_key] = pages[0]
+
     page = st.sidebar.radio(
         "Navigation",
         pages,
         format_func=lambda value: f"{shell._PAGE_ICONS.get(value, '•')}   {value}",
         label_visibility="collapsed",
+        key=nav_key,
     )
     if principal.authenticated:
         st.sidebar.divider()
