@@ -64,7 +64,7 @@ def profile_work_stats(
 
 
 def profile_stat_targets(principal) -> dict[str, str]:
-    """Map every visible profile statistic to a real application destination."""
+    """Map every visible profile statistic to a destination the role can open."""
     if principal.role in {Role.CLIENT, Role.READ_ONLY}:
         return {
             "Assigned cases": "My Case",
@@ -78,6 +78,14 @@ def profile_stat_targets(principal) -> dict[str, str]:
             "Current-case record statements": "Analysis",
             "Current-case inconsistencies": "Analysis",
             "Current-case open issues": "Human Review",
+        }
+    if principal.role == Role.REVIEWER:
+        return {
+            "Assigned cases": "Engagements",
+            "Current-case sources": "Evidence",
+            "Current-case record statements": "Review Center",
+            "Current-case inconsistencies": "Review Center",
+            "Current-case open issues": "Review Center",
         }
     return {
         "Assigned cases": "Engagements",
