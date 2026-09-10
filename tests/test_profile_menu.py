@@ -92,12 +92,13 @@ def test_every_profile_stat_has_a_connected_destination():
         assert all(targets[label] for label in stats)
 
 
-def test_owner_profile_routes_work_and_issues_into_owner_surfaces():
+def test_owner_profile_routes_work_and_issues_into_approved_owner_surfaces():
     targets = profile_stat_targets(principal(Role.OWNER))
-    assert targets["Assigned cases"] == "Case Queue"
-    assert targets["Current-case sources"] == "Evidence"
-    assert targets["Current-case record statements"] == "Analysis"
-    assert targets["Current-case open issues"] == "Human Review"
+    assert targets["Assigned cases"] == "Cases"
+    assert targets["Current-case sources"] == "Records"
+    assert targets["Current-case record statements"] == "Records"
+    assert targets["Current-case inconsistencies"] == "Records"
+    assert targets["Current-case open issues"] == "Decisions"
 
 
 def test_client_profile_destinations_remain_client_safe():
