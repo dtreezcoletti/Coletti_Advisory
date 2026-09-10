@@ -2,6 +2,7 @@ from coletti_advisory.models import Principal, Role
 from coletti_advisory.profile_menu import (
     profile_permissions,
     profile_role_label,
+    profile_stat_targets,
     profile_work_stats,
 )
 
@@ -67,3 +68,28 @@ def test_role_labels_distinguish_admin_employee_owner_and_client():
     assert profile_role_label(principal(Role.ANALYST)) == "Employee · Analyst"
     assert profile_role_label(principal(Role.REVIEWER)) == "Employee · Reviewer"
     assert profile_role_label(principal(Role.CLIENT)) == "Client"
+
+
+def test_every_profile_stat_has_a_connected_destination():
+    for role in (Role.OWNER, Role.ADMIN, Role.ANALYST, Role.REVIEWER, Role.CLIENT, Role.READ_ONLY):
+        p = principal(role)
+        stats = profile_work_stats(p, manifest(), {})
+        targets = profile_stat_targets(p)
+        assert set(stats) <= set(targets)
+        assert all(targets[label] for label in stats)
+
+
+def test_owner_profile_routes_work_and_issues_into_owner_surfaces():
+    targets = profile_stat_targets(principal(Role.OWNER))
+    assert targets["Assigned cases"] == "Case Queue"
+    assert targets["Current-case sources"] == "Evidence"
+    assert targets["Current-case record statements"] == "Analysis"
+    assert targets["Current-case open issues"] == "Human Review"
+
+
+def test_client_profile_destinations_remain_client_safe():
+    targets = profile_stat_targets(principal(Role.CLIENT))
+    assert set(targets.values()) <= {"My Case", "Reports"}
+    assert "Evidence" not in targets.values()
+    assert "Analysis" not in targets.values()
+    assert "Human Review" not in targets.values()
