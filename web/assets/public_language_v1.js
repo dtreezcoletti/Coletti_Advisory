@@ -1,4 +1,4 @@
-/* Public-facing vocabulary normalization.
+/* Public-facing vocabulary normalization and universal professional-boundary presentation.
    This intentionally changes only presentation text on public routes.
    Internal database/API identifiers and authenticated staff workflow vocabulary remain unchanged. */
 
@@ -25,10 +25,13 @@ const replacements = [
   [/\bevidentiary\b/gi, 'admissibility-related']
 ];
 
-function publicRouteActive() {
+function currentPublicRoute() {
   const raw = (location.hash || '#/home').replace(/^#\/?/, '');
-  const route = (raw.split('/')[0] || 'home').toLowerCase();
-  return PUBLIC_ROUTES.has(route);
+  return (raw.split('/')[0] || 'home').toLowerCase();
+}
+
+function publicRouteActive() {
+  return PUBLIC_ROUTES.has(currentPublicRoute());
 }
 
 function normalizeText(value) {
@@ -59,10 +62,57 @@ function normalizeNode(root) {
   }
 }
 
+function splitServicesScopeNotice() {
+  if (currentPublicRoute() !== 'services') return;
+  const notices = [...document.querySelectorAll('#main .notice.notice-info')];
+  const combined = 'Engagement scope is confirmed before substantive work begins. A reconstruction engagement does not authorize Coletti & Co. to act as your attorney, accountant, auditor, investigator, fiduciary, or other licensed professional.';
+  for (const notice of notices) {
+    const text = (notice.textContent || '').trim().replace(/\s+/g, ' ');
+    if (text === combined || text.includes('Engagement scope is confirmed before substantive work begins. A reconstruction engagement does not authorize Coletti & Co.')) {
+      notice.textContent = 'Engagement scope is confirmed before substantive work begins.';
+      notice.setAttribute('data-page-scope-notice', 'true');
+    }
+  }
+}
+
+function ensureProfessionalBoundary() {
+  const footer = document.getElementById('site-footer');
+  if (!footer) return;
+
+  let boundary = document.getElementById('professional-boundary-band');
+  if (!publicRouteActive()) {
+    boundary?.remove();
+    return;
+  }
+
+  if (!boundary) {
+    boundary = document.createElement('section');
+    boundary.id = 'professional-boundary-band';
+    boundary.className = 'professional-boundary-band';
+    boundary.setAttribute('aria-label', 'Professional services boundary');
+    boundary.innerHTML = `
+      <div class="professional-boundary-inner">
+        <div class="professional-boundary-kicker">Professional Boundary</div>
+        <div class="professional-boundary-copy">
+          <h2>Records reconstruction is not substituted professional judgment.</h2>
+          <p>A reconstruction engagement does not authorize Coletti &amp; Co. to act as your attorney, accountant, auditor, investigator, fiduciary, or other licensed professional. Where licensed or regulated professional judgment is required, Coletti &amp; Co. preserves the record and prepares the work for handoff to the appropriate qualified professional.</p>
+        </div>
+        <a class="professional-boundary-link" href="#/disclaimer">Read the full boundary →</a>
+      </div>`;
+    footer.parentNode.insertBefore(boundary, footer);
+  }
+}
+
 function applyPublicVocabulary() {
-  if (!publicRouteActive()) return;
+  if (!publicRouteActive()) {
+    ensureProfessionalBoundary();
+    return;
+  }
+  splitServicesScopeNotice();
+  ensureProfessionalBoundary();
   normalizeNode(document.getElementById('site-header'));
   normalizeNode(document.getElementById('main'));
+  normalizeNode(document.getElementById('professional-boundary-band'));
   normalizeNode(document.getElementById('site-footer'));
   const description = document.querySelector('meta[name="description"]');
   if (description) description.setAttribute('content', normalizeText(description.getAttribute('content')));
