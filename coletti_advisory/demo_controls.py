@@ -1,7 +1,18 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from .core_adapter import SyntheticCoreAdapter
+from .models import Principal, Role
 from .workspaces import workspace_environment
+
+
+DEMO_EXPERIENCES: tuple[tuple[str, Role, str], ...] = (
+    ("Owner Console", Role.OWNER, "Your full owner experience"),
+    ("Admin Workspace", Role.ADMIN, "Team workspace plus administration permissions"),
+    ("Employee Workspace", Role.ANALYST, "Standard internal analyst/reviewer workflow"),
+    ("Client Portal", Role.CLIENT, "Client-safe portal with internal analysis hidden"),
+)
 
 
 def demo_data_available(*, app_mode: str, engagement_id: str, core) -> bool:
@@ -11,6 +22,78 @@ def demo_data_available(*, app_mode: str, engagement_id: str, core) -> bool:
         and workspace_environment(engagement_id).lower() == "demo"
         and isinstance(core, SyntheticCoreAdapter)
     )
+
+
+def demo_experience_switching_available(*, app_mode: str, principal: Principal, core) -> bool:
+    """Fail closed unless this is the anonymous synthetic demo identity and dataset."""
+    if principal.authenticated or principal.organization_id != "org-synthetic":
+        return False
+    if not principal.engagement_ids:
+        return False
+    return all(
+        demo_data_available(app_mode=app_mode, engagement_id=engagement_id, core=core)
+        for engagement_id in principal.engagement_ids
+    )
+
+
+def principal_for_demo_experience(principal: Principal, selection: str) -> Principal:
+    """Return a synthetic persona with real role permissions but no live identity."""
+    if principal.authenticated or principal.organization_id != "org-synthetic":
+        raise PermissionError("Demo experience switching is restricted to the anonymous synthetic tenant")
+
+    match = next((item for item in DEMO_EXPERIENCES if item[0] == selection), None)
+    if match is None:
+        raise ValueError("Unknown demo experience")
+
+    _label, role, _description = match
+    persona_name = {
+        Role.OWNER: "Synthetic Owner",
+        Role.ADMIN: "Synthetic Administrator",
+        Role.ANALYST: "Synthetic Employee",
+        Role.CLIENT: "Synthetic Client",
+    }[role]
+    return replace(
+        principal,
+        email=f"demo+{role.value}@synthetic.invalid",
+        display_name=persona_name,
+        role=role,
+        authenticated=False,
+    )
+
+
+def render_demo_experience_switcher(experience_shell, *, app_mode: str, principal: Principal, core) -> Principal:
+    """Render the persona switcher and return the selected synthetic principal.
+
+    Every persona uses the same synthetic organization/workspace so an action can
+    be tested from one interface and inspected from another. Only the role and
+    presentation identity change. This function is intentionally unavailable for
+    authenticated identities or non-synthetic workspaces.
+    """
+    if not demo_experience_switching_available(app_mode=app_mode, principal=principal, core=core):
+        return principal
+
+    labels = [label for label, _role, _description in DEMO_EXPERIENCES]
+    current = experience_shell.st.session_state.get("_coletti_demo_experience", labels[0])
+    if current not in labels:
+        current = labels[0]
+        experience_shell.st.session_state["_coletti_demo_experience"] = current
+
+    experience_shell.st.sidebar.divider()
+    experience_shell.st.sidebar.caption("DEMO EXPERIENCE SWITCHER")
+    selected = experience_shell.st.sidebar.selectbox(
+        "View ColettiOS as",
+        labels,
+        index=labels.index(current),
+        key="_coletti_demo_experience",
+        help="Synthetic demo only. This changes the simulated role/interface, never a live user's authorization.",
+    )
+    simulated = principal_for_demo_experience(principal, selected)
+    description = next(description for label, _role, description in DEMO_EXPERIENCES if label == selected)
+    experience_shell.st.sidebar.caption(description)
+    experience_shell.st.sidebar.caption(
+        "Same synthetic case across views · actions remain inside the demo tenant"
+    )
+    return simulated
 
 
 def _reset_demo_data(experience_shell, *, principal, engagement_id: str, core) -> None:
