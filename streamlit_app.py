@@ -1,9 +1,10 @@
-from coletti_advisory import experience_shell
+from coletti_advisory import experience_shell, owner_console_runtime
 from coletti_advisory.demo_controls import patch_demo_data_control
 from coletti_advisory.luxury_mobile import apply_luxury_mobile_overrides
 from coletti_advisory.luxury_theme import apply_luxury_theme
 from coletti_advisory.mobile_ui import patch_mobile_theme
 from coletti_advisory.owner_console_runtime import run_reference_workspace
+from coletti_advisory.owner_evidence_workspace import patch_owner_evidence_workspace
 from coletti_advisory.report_presentation import patch_report_presentation
 
 # Replace the legacy presentation layer without changing authorization, workflow,
@@ -21,6 +22,9 @@ if not getattr(experience_shell, "_demo_data_control_patched", False):
 if not getattr(experience_shell, "_report_presentation_patched", False):
     patch_report_presentation(experience_shell.app)
     experience_shell._report_presentation_patched = True
+
+if not getattr(owner_console_runtime, "_ingested_materials_workspace_patched", False):
+    patch_owner_evidence_workspace(owner_console_runtime)
 
 # The responsive layer intentionally adjusts layout/touch density. Apply a final
 # visual-only pass afterward so mobile keeps the same quiet-luxury geometry and
