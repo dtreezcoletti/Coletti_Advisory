@@ -9,11 +9,21 @@ from .owner_console_live import OwnerControlPlaneClient, OwnerControlPlaneUnavai
 from .workspaces import workspace_label
 
 
+OWNER_NAV_TARGETS = {
+    "Approvals": "Decisions",
+    "Case Queue": "Cases",
+    "Evidence": "Records",
+    "Financials": "Finance",
+    "Knowledge Base": "Knowledge",
+    "Settings": "Access",
+}
+
+
 def build_owner_notifications(snapshot: Mapping[str, Any]) -> list[dict[str, str]]:
     """Build current-state notifications without inventing a second durable queue.
 
     The authoritative records remain Dispatcher/Registry objects. This function
-    only projects them into the owner UI so the bell, DARI rail, approvals, and
+    only projects them into the owner UI so the bell, DARI rail, decisions, and
     Dispatcher all reflect the same source state.
     """
     items: list[dict[str, str]] = []
@@ -24,7 +34,7 @@ def build_owner_notifications(snapshot: Mapping[str, Any]) -> list[dict[str, str
                 "kind": "Decision",
                 "title": str(approval.get("title") or approval.get("approval_key") or "Owner decision required"),
                 "detail": "Protected human gate" if approval.get("protected_gate") else "Human decision required",
-                "target": "Approvals",
+                "target": "Decisions",
             }
         )
 
@@ -70,8 +80,6 @@ def build_owner_notifications(snapshot: Mapping[str, Any]) -> list[dict[str, str
                 }
             )
 
-    # Keep the bell useful, not noisy. All full detail remains available in the
-    # authoritative destination pages.
     return items[:20]
 
 
@@ -86,7 +94,7 @@ def _snapshot(core, principal, engagement_id: str) -> dict[str, Any]:
 
 
 def _route(principal, page: str) -> None:
-    st.session_state[f"_owner_reference_page:{principal.user_id}"] = page
+    st.session_state[f"_owner_reference_page:{principal.user_id}"] = OWNER_NAV_TARGETS.get(page, page)
     st.rerun()
 
 
@@ -104,14 +112,14 @@ def _render_search(principal, manifest: Mapping[str, Any], engagement_ids, snaps
     for eid in engagement_ids:
         label = workspace_label(eid)
         if query in str(eid).lower() or query in label.lower():
-            matches.append((f"Case · {label} · {eid}", "Case Queue"))
+            matches.append((f"Case · {label} · {eid}", "Cases"))
 
     for source in (manifest.get("sources") or {}).values():
         meta = source.get("metadata") or {}
         filename = str(meta.get("filename") or source.get("source_id") or "")
         classification = str(meta.get("classification") or "")
         if query in filename.lower() or query in classification.lower():
-            matches.append((f"Document · {filename}", "Evidence"))
+            matches.append((f"Document · {filename}", "Records"))
         if len(matches) >= 8:
             break
 
@@ -126,7 +134,7 @@ def _render_search(principal, manifest: Mapping[str, Any], engagement_ids, snaps
     for approval in snapshot.get("approvals") or []:
         title = str(approval.get("title") or approval.get("approval_key") or "")
         if query in title.lower():
-            matches.append((f"Decision · {title}", "Approvals"))
+            matches.append((f"Decision · {title}", "Decisions"))
         if len(matches) >= 15:
             break
 
