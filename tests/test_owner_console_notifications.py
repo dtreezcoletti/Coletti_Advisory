@@ -32,8 +32,8 @@ def test_notifications_project_authoritative_owner_signals_without_new_state():
         "Reconciliation",
         "Calendar",
     ]
-    assert notifications[0]["target"] == "Approvals"
-    assert all(item["target"] in {"Approvals", "Dispatcher"} for item in notifications)
+    assert notifications[0]["target"] == "Decisions"
+    assert all(item["target"] in {"Decisions", "Dispatcher"} for item in notifications)
 
 
 def test_notification_center_is_quiet_when_authoritative_state_is_clear():
