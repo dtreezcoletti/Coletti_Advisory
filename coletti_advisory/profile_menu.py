@@ -72,12 +72,15 @@ def profile_stat_targets(principal) -> dict[str, str]:
             "Reports available": "Reports",
         }
     if principal.role == Role.OWNER:
+        # Owner targets intentionally use the approved 2026-09-10 sidebar names.
+        # Analysis/review details remain accessible inside Records and Decisions,
+        # rather than reopening retired owner navigation labels.
         return {
-            "Assigned cases": "Case Queue",
-            "Current-case sources": "Evidence",
-            "Current-case record statements": "Analysis",
-            "Current-case inconsistencies": "Analysis",
-            "Current-case open issues": "Human Review",
+            "Assigned cases": "Cases",
+            "Current-case sources": "Records",
+            "Current-case record statements": "Records",
+            "Current-case inconsistencies": "Records",
+            "Current-case open issues": "Decisions",
         }
     if principal.role == Role.REVIEWER:
         return {
@@ -162,13 +165,13 @@ def _owner_control_buttons(
 ) -> None:
     destinations = (
         ("My Workspace", "My Workspace"),
-        ("Cases", "Case Queue"),
-        ("Approvals", "Approvals"),
+        ("Cases", "Cases"),
+        ("Decisions", "Decisions"),
         ("Dispatcher", "Dispatcher"),
         ("Team", "Team"),
-        ("Financials", "Financials"),
-        ("Firm Overview", "Firm Overview"),
-        ("Settings & System", "Settings"),
+        ("Finance", "Finance"),
+        ("System Health", "System Health"),
+        ("Access", "Access"),
     )
     for start in range(0, len(destinations), 2):
         cols = st.columns(2)
@@ -256,7 +259,7 @@ def render_profile_menu(
         with rendered_tabs[1]:
             st.markdown("**My time off**")
             st.info("Authoritative time-off requests are not connected to an HR/leave service yet.")
-            target = "Settings" if principal.role == Role.OWNER else "Administration" if principal.role == Role.ADMIN else None
+            target = "Access" if principal.role == Role.OWNER else "Administration" if principal.role == Role.ADMIN else None
             label = "Configure time-off integration" if target else "Check time-off connection"
             _render_connection_action(
                 label=label,
@@ -271,7 +274,7 @@ def render_profile_menu(
         with rendered_tabs[2]:
             st.markdown("**My payroll**")
             st.info("Authoritative payroll data is not connected yet.")
-            target = "Financials" if principal.role == Role.OWNER else "Administration" if principal.role == Role.ADMIN else None
+            target = "Finance" if principal.role == Role.OWNER else "Administration" if principal.role == Role.ADMIN else None
             label = "Open payroll integration controls" if target else "Check payroll connection"
             _render_connection_action(
                 label=label,
@@ -292,11 +295,11 @@ def render_profile_menu(
                 st.write(f"✓ {permission}")
             if principal.role == Role.OWNER:
                 _render_connection_action(
-                    label="Open Settings & Security",
-                    target="Settings",
+                    label="Open Access & Security",
+                    target="Access",
                     navigate=navigate,
                     key=f"{key_prefix}:owner-settings",
-                    unavailable_message="Owner settings are available from the owner navigation.",
+                    unavailable_message="Owner access/security controls are available from the People section.",
                 )
                 st.caption(
                     "Owner profile reflects full application permissions. Protected actions still remain subject to their required human/security gates."
