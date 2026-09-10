@@ -6,6 +6,7 @@ from coletti_advisory.luxury_theme import apply_luxury_theme
 from coletti_advisory.mobile_ui import patch_mobile_theme
 from coletti_advisory.owner_console_runtime import run_reference_workspace
 from coletti_advisory.owner_evidence_workspace import patch_owner_evidence_workspace
+from coletti_advisory.owner_operating_center import install_owner_operating_center
 from coletti_advisory.owner_page_integration import (
     patch_owner_page_integration,
     patch_shared_engagement_selector,
@@ -14,7 +15,7 @@ from coletti_advisory.profile_menu_patch import patch_profile_menus
 from coletti_advisory.report_presentation import patch_report_presentation
 
 # Replace the legacy presentation layer without changing authorization, workflow,
-# evidence, review, or publication behavior.
+# record review, or publication behavior.
 experience_shell._apply_brand_theme = apply_luxury_theme
 
 if not getattr(experience_shell, "_mobile_ui_patched", False):
@@ -50,6 +51,10 @@ if not getattr(experience_shell, "_profile_menus_patched", False):
         owner_console_notifications,
         owner_console_runtime,
     )
+
+# Install the owner business operating center after the existing owner/runtime
+# patches so grouped navigation and page routing become the final owner surface.
+install_owner_operating_center(owner_console_ui, owner_console_runtime, experience_shell)
 
 # The responsive layer intentionally adjusts layout/touch density. Apply a final
 # visual-only pass afterward so mobile keeps the same quiet-luxury geometry and
