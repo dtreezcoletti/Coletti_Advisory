@@ -96,15 +96,7 @@ def render_demo_experience_switcher(experience_shell, *, app_mode: str, principa
     return simulated
 
 
-def _reset_demo_data(experience_shell, *, principal, engagement_id: str, core) -> None:
-    """Restore the canonical synthetic dataset and clear demo publication state.
-
-    This function intentionally does not call st.rerun(). Streamlit button callbacks
-    execute before the framework's normal full-script rerun, which prevents the
-    partial-render/blank-workspace behavior caused by forcing a rerun from inside
-    the sidebar render path.
-    """
-    core.reset_demo_data()
+def _save_empty_publication_state(experience_shell, *, principal, engagement_id: str) -> None:
     publication_store = experience_shell.st.session_state.get("_coletti_publication_store")
     if publication_store is not None:
         publication_store.save(
@@ -112,7 +104,48 @@ def _reset_demo_data(experience_shell, *, principal, engagement_id: str, core) -
             engagement_id=engagement_id,
             records={},
         )
+
+
+def _reset_demo_data(experience_shell, *, principal, engagement_id: str, core) -> None:
+    """Restore the canonical pre-populated synthetic demonstration.
+
+    This function intentionally does not call st.rerun(). Streamlit button callbacks
+    execute before the framework's normal full-script rerun, which prevents the
+    partial-render/blank-workspace behavior caused by forcing a rerun from inside
+    the sidebar render path.
+    """
+    if not isinstance(core, SyntheticCoreAdapter):
+        raise PermissionError("Demo reset is restricted to the synthetic Core adapter")
+    core.reset_demo_data()
+    _save_empty_publication_state(
+        experience_shell,
+        principal=principal,
+        engagement_id=engagement_id,
+    )
+    experience_shell.st.session_state.pop("_last_intake_result", None)
+    experience_shell.st.session_state["_document_processing_queue"] = {}
+    experience_shell.st.session_state.pop("_demo_data_cleared_notice", None)
     experience_shell.st.session_state["_demo_data_loaded_notice"] = True
+
+
+def _clear_demo_data(experience_shell, *, principal, engagement_id: str, core) -> None:
+    """Clear the synthetic case so the operator can test the workflow from intake.
+
+    Only synthetic Core state, demo publication state, and session-only extraction
+    staging are cleared. There is deliberately no production/HTTP equivalent.
+    """
+    if not isinstance(core, SyntheticCoreAdapter):
+        raise PermissionError("Demo clear is restricted to the synthetic Core adapter")
+    core.clear_demo_data()
+    _save_empty_publication_state(
+        experience_shell,
+        principal=principal,
+        engagement_id=engagement_id,
+    )
+    experience_shell.st.session_state.pop("_last_intake_result", None)
+    experience_shell.st.session_state["_document_processing_queue"] = {}
+    experience_shell.st.session_state.pop("_demo_data_loaded_notice", None)
+    experience_shell.st.session_state["_demo_data_cleared_notice"] = True
 
 
 def patch_demo_data_control(experience_shell) -> None:
@@ -147,6 +180,14 @@ def patch_demo_data_control(experience_shell) -> None:
                 core=core,
             )
 
+        def clear_sidebar_demo() -> None:
+            _clear_demo_data(
+                experience_shell,
+                principal=principal,
+                engagement_id=engagement_id,
+                core=core,
+            )
+
         experience_shell.st.sidebar.divider()
         experience_shell.st.sidebar.caption("DEMONSTRATION")
         experience_shell.st.sidebar.button(
@@ -154,12 +195,21 @@ def patch_demo_data_control(experience_shell) -> None:
             key="load_demo_data_sidebar",
             type="primary",
             use_container_width=True,
-            help="Restore the canonical synthetic Coletti & Co. demonstration. This control is unavailable for live client workspaces.",
+            help="Restore the prepared Coletti & Co. synthetic demonstration with sample sources, findings, and an open contradiction.",
             on_click=reset_sidebar_demo,
+        )
+        experience_shell.st.sidebar.button(
+            "Clear Demo Data",
+            key="clear_demo_data_sidebar",
+            use_container_width=True,
+            help="Erase the synthetic case state and extraction queue so you can begin at intake and work the case all the way through yourself.",
+            on_click=clear_sidebar_demo,
         )
 
         if experience_shell.st.session_state.get("_demo_data_loaded_notice", False):
-            experience_shell.st.sidebar.success("Demo data restored")
+            experience_shell.st.sidebar.success("Prepared demo data restored")
+        if experience_shell.st.session_state.get("_demo_data_cleared_notice", False):
+            experience_shell.st.sidebar.success("Demo case cleared · start at intake")
         experience_shell.st.sidebar.caption("Synthetic records only · never connected to a live client case")
 
     def topbar_with_demo_control(principal, experience: str) -> None:
@@ -189,12 +239,14 @@ def patch_demo_data_control(experience_shell) -> None:
             key="load_demo_data_main",
             type="primary",
             use_container_width=True,
-            help="Restore the canonical synthetic demonstration to a clean starting state.",
+            help="Restore the prepared synthetic demonstration.",
             on_click=reset_main_demo,
         )
 
         if experience_shell.st.session_state.pop("_demo_data_loaded_notice", False):
-            experience_shell.st.success("Demo data restored")
+            experience_shell.st.success("Prepared demo data restored")
+        if experience_shell.st.session_state.pop("_demo_data_cleared_notice", False):
+            experience_shell.st.success("Demo case cleared. Start at intake and work the synthetic case from the beginning.")
 
     experience_shell._select_engagement = select_engagement_with_demo_tracking
     experience_shell._sidebar_identity = sidebar_identity_with_demo_control
