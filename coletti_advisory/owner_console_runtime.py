@@ -15,11 +15,33 @@ from .workspaces import live_workspace_gate_errors
 # adapter. Non-owner experiences and existing evidence/review/publication
 # workflows remain untouched.
 owner_ui._render_dari = render_owner_dari
+
+# The owner reference console previously exposed the evidence workspace but not the
+# secure source-registration surface. Add a dedicated owner navigation entry that
+# reuses the existing permission-gated intake pipeline rather than creating a
+# separate upload/storage path.
+if not any(label == "Record Ingestion" for label, _icon in owner_ui.OWNER_MAIN_NAV):
+    _owner_main_nav = list(owner_ui.OWNER_MAIN_NAV)
+    _evidence_index = next(
+        (index for index, (label, _icon) in enumerate(_owner_main_nav) if label == "Evidence"),
+        len(_owner_main_nav),
+    )
+    _owner_main_nav.insert(_evidence_index, ("Record Ingestion", "⇧"))
+    owner_ui.OWNER_MAIN_NAV = tuple(_owner_main_nav)
+
 _owner_sidebar = owner_ui._owner_sidebar
 _original_owner_page = owner_ui._render_owner_page
 
 
 def _render_owner_page(shell, page: str, **kwargs) -> None:
+    if page == "Record Ingestion":
+        return shell.legacy._render_secure_intake(
+            app_mode=kwargs["app_mode"],
+            principal=kwargs["principal"],
+            engagement_id=kwargs["engagement_id"],
+            storage=kwargs["storage"],
+            core=kwargs["core"],
+        )
     if page == "My Workspace":
         return render_live_owner_dashboard(
             shell,
