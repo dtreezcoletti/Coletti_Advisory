@@ -91,6 +91,7 @@ OWNER_PAGE_ALIASES: Mapping[str, str] = {
     "Cases": "Case Queue",
     "Records": "Evidence",
     "Finance": "Financials",
+    "Access": "Settings",
     "Knowledge": "Knowledge Base",
 }
 
