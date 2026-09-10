@@ -3,12 +3,14 @@ from coletti_advisory import (
     owner_console_live_ui,
     owner_console_notifications,
     owner_console_runtime,
+    owner_console_structure_patch,
     owner_console_ui,
     owner_page_integration,
     profile_menu_patch,
 )
 from coletti_advisory.demo_controls import patch_demo_data_control
 from coletti_advisory.demo_selector_fix import patch_demo_selector_resolution
+from coletti_advisory.interface_connection_patch import patch_interface_connections
 from coletti_advisory.luxury_mobile import apply_luxury_mobile_overrides
 from coletti_advisory.luxury_theme import apply_luxury_theme
 from coletti_advisory.mobile_ui import patch_mobile_theme
@@ -23,7 +25,7 @@ from coletti_advisory.profile_menu_patch import patch_profile_menus
 from coletti_advisory.report_presentation import patch_report_presentation
 
 # Replace the legacy presentation layer without changing authorization, workflow,
-# evidence, review, or publication behavior.
+# record review, or publication behavior.
 experience_shell._apply_brand_theme = apply_luxury_theme
 
 if not getattr(experience_shell, "_mobile_ui_patched", False):
@@ -64,8 +66,7 @@ if not getattr(experience_shell, "_profile_menus_patched", False):
         owner_console_runtime,
     )
 
-# Install the approved 2026-09-10 Owner Console information architecture after
-# the integration/profile layers so it is the final owner presentation contract.
+# Install the approved 2026-09-10 Owner Console information architecture.
 patch_owner_console_structure(
     owner_console_ui,
     owner_console_live_ui,
@@ -73,6 +74,17 @@ patch_owner_console_structure(
     owner_console_notifications,
     owner_page_integration,
     profile_menu_patch,
+)
+
+# Final behavioral connection layer: universal ingestion and drill-through are
+# shared capabilities rather than per-screen copies. This runs after presentation
+# patches so it owns the canonical interaction contract.
+patch_interface_connections(
+    experience_shell,
+    owner_console_runtime,
+    owner_console_structure_patch,
+    owner_console_live_ui,
+    owner_console_ui,
 )
 
 # The responsive layer intentionally adjusts layout/touch density. Apply a final
