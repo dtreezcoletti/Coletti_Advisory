@@ -5,6 +5,10 @@ from coletti_advisory.luxury_theme import apply_luxury_theme
 from coletti_advisory.mobile_ui import patch_mobile_theme
 from coletti_advisory.owner_console_runtime import run_reference_workspace
 from coletti_advisory.owner_evidence_workspace import patch_owner_evidence_workspace
+from coletti_advisory.owner_page_integration import (
+    patch_owner_page_integration,
+    patch_shared_engagement_selector,
+)
 from coletti_advisory.report_presentation import patch_report_presentation
 
 # Replace the legacy presentation layer without changing authorization, workflow,
@@ -25,6 +29,15 @@ if not getattr(experience_shell, "_report_presentation_patched", False):
 
 if not getattr(owner_console_runtime, "_ingested_materials_workspace_patched", False):
     patch_owner_evidence_workspace(owner_console_runtime)
+
+# One explicit selected-case state now drives the sidebar, Case Queue, Clients,
+# and each owner case-production stage. Install after the demo wrapper so its
+# compatibility state remains available to the existing demo controls.
+if not getattr(experience_shell, "_shared_engagement_selector_patched", False):
+    patch_shared_engagement_selector(experience_shell)
+
+if not getattr(owner_console_runtime, "_owner_page_integration_patched", False):
+    patch_owner_page_integration(owner_console_runtime)
 
 # The responsive layer intentionally adjusts layout/touch density. Apply a final
 # visual-only pass afterward so mobile keeps the same quiet-luxury geometry and
