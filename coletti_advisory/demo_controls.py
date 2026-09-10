@@ -4,7 +4,7 @@ from dataclasses import replace
 
 from .core_adapter import SyntheticCoreAdapter
 from .models import Principal, Role
-from .workspaces import workspace_environment
+from .workspaces import workspace_environment, workspace_label
 
 
 DEMO_EXPERIENCES: tuple[tuple[str, Role, str], ...] = (
@@ -13,6 +13,10 @@ DEMO_EXPERIENCES: tuple[tuple[str, Role, str], ...] = (
     ("Employee Workspace", Role.ANALYST, "Standard internal analyst/reviewer workflow"),
     ("Client Portal", Role.CLIENT, "Client-safe portal with internal analysis hidden"),
 )
+
+
+def _demo_labels() -> list[str]:
+    return [label for label, _role, _description in DEMO_EXPERIENCES]
 
 
 def demo_data_available(*, app_mode: str, engagement_id: str, core) -> bool:
@@ -62,38 +66,54 @@ def principal_for_demo_experience(principal: Principal, selection: str) -> Princ
 
 
 def render_demo_experience_switcher(experience_shell, *, app_mode: str, principal: Principal, core) -> Principal:
-    """Render the persona switcher and return the selected synthetic principal.
+    """Resolve the persona selected by the Authorized workspace control.
 
-    Every persona uses the same synthetic organization/workspace so an action can
-    be tested from one interface and inspected from another. Only the role and
-    presentation identity change. This function is intentionally unavailable for
-    authenticated identities or non-synthetic workspaces.
+    The selector itself now lives in the Authorized workspace slot so it cannot
+    drift into a second sidebar control or disappear behind later navigation
+    patches. This resolver only turns the selected synthetic interface label into
+    the corresponding permission-bearing synthetic principal.
     """
     if not demo_experience_switching_available(app_mode=app_mode, principal=principal, core=core):
         return principal
 
-    labels = [label for label, _role, _description in DEMO_EXPERIENCES]
+    labels = _demo_labels()
+    current = experience_shell.st.session_state.get("_coletti_demo_experience", labels[0])
+    if current not in labels:
+        current = labels[0]
+        experience_shell.st.session_state["_coletti_demo_experience"] = current
+    return principal_for_demo_experience(principal, current)
+
+
+def _select_demo_workspace_interface(experience_shell, principal, *, app_mode: str, core) -> str | None:
+    """Render the synthetic interface choices inside the Authorized workspace slot."""
+    if not demo_experience_switching_available(app_mode=app_mode, principal=principal, core=core):
+        return None
+
+    labels = _demo_labels()
     current = experience_shell.st.session_state.get("_coletti_demo_experience", labels[0])
     if current not in labels:
         current = labels[0]
         experience_shell.st.session_state["_coletti_demo_experience"] = current
 
-    experience_shell.st.sidebar.divider()
-    experience_shell.st.sidebar.caption("DEMO EXPERIENCE SWITCHER")
-    selected = experience_shell.st.sidebar.selectbox(
-        "View ColettiOS as",
+    engagement_id = principal.engagement_ids[0]
+    selected_interface = experience_shell.st.sidebar.selectbox(
+        "Authorized workspace",
         labels,
         index=labels.index(current),
         key="_coletti_demo_experience",
-        help="Synthetic demo only. This changes the simulated role/interface, never a live user's authorization.",
+        format_func=lambda label: f"{label} · {workspace_label(engagement_id)}",
+        help=(
+            "Synthetic demo only. Switch between Client, Employee, Admin, and Owner interfaces "
+            "while keeping the same synthetic case/data."
+        ),
     )
-    simulated = principal_for_demo_experience(principal, selected)
-    description = next(description for label, _role, description in DEMO_EXPERIENCES if label == selected)
-    experience_shell.st.sidebar.caption(description)
-    experience_shell.st.sidebar.caption(
-        "Same synthetic case across views · actions remain inside the demo tenant"
+    description = next(
+        description for label, _role, description in DEMO_EXPERIENCES if label == selected_interface
     )
-    return simulated
+    experience_shell.st.sidebar.caption(f"{description} · same synthetic case across views")
+    experience_shell.st.sidebar.divider()
+    experience_shell.st.session_state["_coletti_selected_engagement"] = engagement_id
+    return engagement_id
 
 
 def _save_empty_publication_state(experience_shell, *, principal, engagement_id: str) -> None:
@@ -156,8 +176,17 @@ def patch_demo_data_control(experience_shell) -> None:
     original_topbar = experience_shell._topbar
 
     def select_engagement_with_demo_tracking(principal) -> str:
-        selected = original_select_engagement(principal)
-        experience_shell.st.session_state["_coletti_selected_engagement"] = selected
+        app_mode = experience_shell.app._secret("APP_MODE", "demo").lower()
+        core = experience_shell.st.session_state.get("_coletti_core")
+        selected = _select_demo_workspace_interface(
+            experience_shell,
+            principal,
+            app_mode=app_mode,
+            core=core,
+        )
+        if selected is None:
+            selected = original_select_engagement(principal)
+            experience_shell.st.session_state["_coletti_selected_engagement"] = selected
         return selected
 
     def sidebar_identity_with_demo_control(principal, engagement_id: str) -> None:
