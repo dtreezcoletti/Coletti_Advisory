@@ -76,6 +76,9 @@ def test_upload_permission_and_case_isolation_fail_closed(tmp_path):
     storage = EncryptedLocalDemoStorage(tmp_path, os.urandom(32))
     read_only = _principal(Role.READ_ONLY, "read-only")
     client = _principal(Role.CLIENT, "client-one", engagements=("eng-client",))
+    baseline_other_case = core.manifest("eng-other-client")
+    baseline_source_ids = set(baseline_other_case["sources"])
+    baseline_audit_count = len(baseline_other_case["audit_log"])
 
     with pytest.raises(PermissionError, match="not permitted"):
         ingest_file(
@@ -99,7 +102,9 @@ def test_upload_permission_and_case_isolation_fail_closed(tmp_path):
             core=core,
         )
 
-    assert core.manifest("eng-other-client")["sources"] == {}
+    after_other_case = core.manifest("eng-other-client")
+    assert set(after_other_case["sources"]) == baseline_source_ids
+    assert len(after_other_case["audit_log"]) == baseline_audit_count
 
 
 def test_zip_package_preserves_parent_and_child_source_lineage(tmp_path):
