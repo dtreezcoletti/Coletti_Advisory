@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from typing import Any, Mapping
 from uuid import uuid4
 
 from .core_adapter import CoreAdapter
@@ -17,6 +18,7 @@ def ingest_file(
     classification: str,
     storage: SecureStorage,
     core: CoreAdapter,
+    metadata: Mapping[str, Any] | None = None,
 ) -> dict:
     if not principal.can(Permission.UPLOAD):
         raise PermissionError("Role is not permitted to upload sources")
@@ -33,16 +35,25 @@ def ingest_file(
         filename=filename,
         data=data,
     )
+    source_metadata = {
+        "filename": filename,
+        "classification": classification,
+        "storage_uri": stored.storage_uri,
+        "encrypted": stored.encrypted,
+    }
+    if metadata:
+        # Caller-supplied provenance may enrich a source but cannot overwrite the
+        # storage/security fields established by the intake path.
+        for key, value in dict(metadata).items():
+            if key in {"filename", "classification", "storage_uri", "encrypted"}:
+                continue
+            source_metadata[key] = value
+
     source = core.register_source(
         {
             "source_id": source_id,
             "content_hash": stored.content_hash,
-            "metadata": {
-                "filename": filename,
-                "classification": classification,
-                "storage_uri": stored.storage_uri,
-                "encrypted": stored.encrypted,
-            },
+            "metadata": source_metadata,
         },
         principal.auth_context(engagement_id),
     )
