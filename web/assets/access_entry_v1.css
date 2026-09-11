@@ -1,0 +1,86 @@
+/* Coletti & Co. secure access presentation layer. */
+
+.header-actions .access-client,
+.header-actions .access-staff {
+  white-space: nowrap;
+}
+
+.access-entry-section {
+  background: #f7f3e9;
+  border-top: 1px solid #ded6c7;
+}
+
+.access-entry-heading {
+  max-width: 780px;
+  margin-bottom: 34px;
+}
+
+.access-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.access-entry-card {
+  background: #fffdf8;
+  border: 1px solid #ded6c7;
+  border-radius: 6px;
+  padding: 32px;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.access-entry-card h3 {
+  margin: 12px 0 10px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 28px;
+  font-weight: 500;
+}
+
+.access-entry-card p {
+  color: #5f696d;
+  line-height: 1.7;
+  flex: 1;
+}
+
+.access-entry-number {
+  color: #a7864e;
+  border-bottom: 1px solid #d9c7a1;
+  padding-bottom: 6px;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.access-entry-card-dark {
+  background: #22343b;
+  border-color: #22343b;
+}
+
+.access-entry-card-dark h3,
+.access-entry-card-dark p {
+  color: #f7f3e9;
+}
+
+.access-entry-card-dark p {
+  color: #d6dddf;
+}
+
+.access-entry-note {
+  margin: 22px 0 0;
+  color: #6b716f;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+@media (max-width: 1100px) {
+  .header-actions .access-client { display: none; }
+}
+
+@media (max-width: 760px) {
+  .header-actions .desktop-only { display: none !important; }
+  .header-actions .access-staff { padding: 10px 12px; font-size: 12px; }
+  .access-entry-grid { grid-template-columns: 1fr; }
+  .access-entry-card { min-height: 250px; padding: 24px; }
+}
