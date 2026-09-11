@@ -3,13 +3,25 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="robots" content="noindex" />
-  <title>Coletti & Co. Secure Sign In</title>
-  <link rel="canonical" href="https://colettico.com/#/sign-in" />
-  <meta http-equiv="refresh" content="0;url=/#/sign-in" />
+  <meta name="robots" content="noindex,nofollow" />
+  <meta name="theme-color" content="#f4efe7" />
+  <title>Coletti & Co. Client Portal</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+  <link rel="stylesheet" href="/assets/portal_integration_v2.css" />
+  <script>
+    window.COLETTI_ENTRY_SURFACE = 'client';
+    if (!location.hash) location.hash = '#/sign-in';
+  </script>
 </head>
-<body>
-  <p>Redirecting to the Coletti &amp; Co. secure sign-in…</p>
-  <script>location.replace('/#/sign-in');</script>
+<body class="operational-portal" data-portal="client">
+  <a class="skip-link" href="#main">Skip to workspace</a>
+  <header id="site-header"></header>
+  <div id="app-banner"></div>
+  <main id="main" tabindex="-1"><div class="loading">Loading secure client workspace…</div></main>
+  <footer id="site-footer"></footer>
+  <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+  <script type="module" src="/assets/portal_routing_v1.js"></script>
+  <script type="module" src="/assets/app.js"></script>
+  <script type="module" src="/assets/portal_integration_v2.js"></script>
 </body>
 </html>
