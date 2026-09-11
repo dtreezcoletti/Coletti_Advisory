@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import streamlit as st
 
+from . import supabase_auth
 from .models import Principal, Role, normalize_engagements, utc_now_iso
 
 
@@ -116,17 +117,15 @@ def _user_value(name: str, default: str = "") -> str:
 
 
 def require_authenticated_principal(*, app_mode: str, session_ttl_minutes: int) -> Principal | None:
-    """Use Streamlit OIDC for identity; authorization remains application-owned.
+    """Resolve the current principal using Supabase Auth first.
 
-    Password verification, cryptographic identity-token validation, nonce/state
-    handling, and provider-session behavior are delegated to the configured OIDC
-    provider and Streamlit. Coletti & Co. separately enforces token expiration,
-    verified email identity, application-session lifetime, account authorization,
-    roles, and engagement access.
-
-    In demo mode, missing OIDC configuration returns None so the synthetic demo
-    can remain public. Production mode fails closed.
+    Streamlit OIDC remains a non-destructive compatibility fallback until the live
+    runtime has the Supabase URL and anon key configured. Production still fails
+    closed when neither canonical nor compatibility authentication is configured.
     """
+    if supabase_auth.configured():
+        return supabase_auth.require_principal(app_mode=app_mode)
+
     if not _auth_is_configured():
         if app_mode == "demo":
             return None
