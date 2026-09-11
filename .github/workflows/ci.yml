@@ -29,6 +29,7 @@ jobs:
           node --check web/assets/public_language_v1.js
           node --check web/assets/record_state_runtime_v1.js
           node --check web/assets/access_entry_v1.js
+          node --check web/assets/owner_governance_v1.js
       - name: Prevent privileged Supabase keys in browser source
         run: |
           if grep -R -E "sb_secret_[A-Za-z0-9_-]{10,}|SUPABASE_SERVICE_ROLE_KEY[[:space:]]*=" web/ --include='*.js' --include='*.html'; then
