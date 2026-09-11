@@ -6,6 +6,7 @@ from typing import Any, Mapping
 import requests
 
 from .models import Principal
+from .record_governance import PROTECTED_PROFESSION_RULE, DariTier, route_dari_command
 
 
 class DariBackendUnavailable(RuntimeError):
@@ -25,7 +26,7 @@ class HttpDariClient:
     """Thin commercial-app client for the private ColettiOS DARI boundary.
 
     It reuses the already-authenticated Core adapter transport and never owns
-    identity, permissions, record state, or reasoning authority itself.
+    identity, permissions, Record State, or reasoning authority itself.
     """
 
     def __init__(self, base_url: str, headers: Mapping[str, str], timeout: float = 20.0) -> None:
@@ -152,7 +153,7 @@ def _deterministic_message(tool_name: str, result: Any) -> str:
         return (
             "Current authorized case state: "
             f"{len(result.get('sources') or {})} sources, "
-            f"{len(result.get('propositions') or {})} propositions, "
+            f"{len(result.get('propositions') or {})} record statements, "
             f"{len(result.get('contradictions') or {})} conflicts, and "
             f"{len(result.get('reconciliations') or {})} reconciliations."
         )
@@ -175,14 +176,16 @@ def execute_mobile_dari(
     client = HttpDariClient.from_core(core)
     tool_name = _deterministic_tool(text)
     if tool_name:
+        routing = route_dari_command(text, deterministic=True)
         response = client.tool(
             principal=principal,
             engagement_id=engagement_id,
             tool_name=tool_name,
         )
+        response = {**response, "dari_routing": {"tier": routing.tier.value, "operation_class": routing.operation_class}}
         if not response.get("allowed"):
             return MobileDariReply(
-                mode="DETERMINISTIC",
+                mode="NO_AI",
                 status="DENIED",
                 message=str(response.get("reason") or "DARI denied the request."),
                 payload=response,
@@ -190,23 +193,42 @@ def execute_mobile_dari(
             )
         result = response.get("result")
         return MobileDariReply(
-            mode="DETERMINISTIC",
+            mode="NO_AI",
             status="COMPLETE",
             message=_deterministic_message(tool_name, result),
             payload=response,
             human_review_required=False,
         )
 
+    routing = route_dari_command(text)
+    if routing.blocked:
+        return MobileDariReply(
+            mode="PROFESSIONAL_HANDOFF",
+            status="REFERRAL_REQUIRED",
+            message=PROTECTED_PROFESSION_RULE,
+            payload={
+                "dari_routing": {
+                    "tier": DariTier.NO_AI.value,
+                    "operation_class": routing.operation_class,
+                    "blocked": True,
+                    "referral_required": True,
+                },
+                "record_state": "Referral Required",
+                "professional_boundary": PROTECTED_PROFESSION_RULE,
+            },
+            human_review_required=True,
+        )
+
     provider_status = client.status()
     if provider_status.get("reasoning_provider") != "openai" or provider_status.get("status") != "ready":
         raise DariBackendUnavailable(
-            "DARI's deterministic tools are available, but live AI reasoning is not configured yet"
+            "DARI's NO_AI tools are available, but live AI reasoning is not configured or available yet"
         )
 
     source_ids = list((manifest.get("sources") or {}).keys())
     if not source_ids:
         raise DariBackendUnavailable(
-            "DARI needs at least one authorized source before it can perform case reasoning"
+            "DARI needs at least one authorized source before it can perform record reasoning"
         )
     if len(source_ids) > max_reasoning_sources:
         raise DariBackendUnavailable(
@@ -218,16 +240,31 @@ def execute_mobile_dari(
         engagement_id=engagement_id,
         operation_type="analysis",
         source_ids=source_ids,
-        payload={"user_query": text, "surface": "coletti_mobile"},
+        payload={
+            "user_query": text,
+            "surface": "coletti_mobile",
+            "dari_routing_tier": routing.tier.value,
+            "dari_operation_class": routing.operation_class,
+            "human_review_required": True,
+            "protected_profession_rule": PROTECTED_PROFESSION_RULE,
+        },
     )
     structured = response.get("structured_output") or {}
     narrative = str(structured.get("narrative_draft") or "").strip()
     uncertainty = str(response.get("uncertainty") or structured.get("uncertainty") or "UNSPECIFIED")
     message = narrative or "DARI completed the reasoning request and queued it for human review."
     return MobileDariReply(
-        mode="AI_REASONING",
+        mode=routing.tier.value,
         status=str(response.get("disposition") or "PENDING_HUMAN_REVIEW"),
         message=message,
-        payload={**response, "display_uncertainty": uncertainty},
+        payload={
+            **response,
+            "display_uncertainty": uncertainty,
+            "dari_routing": {
+                "tier": routing.tier.value,
+                "operation_class": routing.operation_class,
+                "human_review_required": True,
+            },
+        },
         human_review_required=True,
     )
