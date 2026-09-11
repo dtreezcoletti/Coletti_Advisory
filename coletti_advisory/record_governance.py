@@ -65,7 +65,8 @@ def valid_case_id(value: str) -> bool:
 
 
 def valid_source_code(value: str) -> bool:
-    return bool(SOURCE_CODE_RE.fullmatch(str(value or "").strip()))
+    candidate = str(value or "").strip()
+    return bool(SOURCE_CODE_RE.fullmatch(candidate)) and not candidate.startswith("SRC-")
 
 
 def canonical_path(client_id: str, case_id: str, source_code: str) -> str:
@@ -74,7 +75,7 @@ def canonical_path(client_id: str, case_id: str, source_code: str) -> str:
     if not valid_case_id(case_id):
         raise ValueError("case_id must match {PREFIX}-YYMMDD-NN")
     if not valid_source_code(source_code):
-        raise ValueError("source_code must match SR{TYPE}-NNN")
+        raise ValueError("source_code must match SR{TYPE}-NNN and may not use the legacy SRC- prefix")
     return f"{client_id} / {case_id} / {source_code}"
 
 
