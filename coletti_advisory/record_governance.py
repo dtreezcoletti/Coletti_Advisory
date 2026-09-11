@@ -13,6 +13,31 @@ PROTECTED_PROFESSION_RULE = (
     "determine the protected professional effect of that condition."
 )
 
+IDENTIFIED_PATTERN_DEFINITION = (
+    "A recurring, clustered, repeated, correlated, sequential, or otherwise materially "
+    "consistent relationship observed across two or more records or events. It describes "
+    "the relationship shown by the records and does not by itself establish motive, intent, "
+    "illegality, liability, causation, or protected professional effect."
+)
+
+FIRST_TRUTH_NOTICE = """Coletti & Co. provides records reconstruction and records-intelligence services.
+
+Our work may include records organization, source indexing, chronology building, record reconciliation, identification of inconsistencies and missing documentation, record-state labeling, process reconstruction, and preparation of records for professional review.
+
+We report what the available records support, what conflicts, what is missing, and what remains unresolved.
+
+A Coletti & Co. finding does not automatically constitute a legal, accounting, tax, appraisal, medical, investigative, or other regulated professional opinion. We do not convert incomplete or conflicting records into certainty and do not substitute our work for professional judgment that requires a license or other statutory authority.
+
+Coletti & Co. does not determine whether client materials are admissible evidence, their evidentiary weight, legal sufficiency, or legal effect. Client statements, third-party conclusions, unresolved questions, and missing documentation are identified according to their actual record status under the Coletti & Co. methodology rather than presented as independently established facts.
+
+When an issue requires regulated professional judgment, Coletti & Co. may organize and reconstruct the relevant record for referral to an appropriately qualified professional.
+
+First truth means the record comes first.
+
+ColettiOS can determine the condition of the records; it cannot independently determine the protected professional effect of that condition.
+
+An Identified Pattern describes a materially consistent relationship shown across two or more records or events; it does not by itself establish motive, intent, illegality, liability, causation, or another protected professional effect."""
+
 RECORD_STATES: tuple[str, ...] = (
     "Documented Fact",
     "Reconciliation Result",
@@ -24,13 +49,6 @@ RECORD_STATES: tuple[str, ...] = (
     "Third-Party Conclusion",
     "Referral Required",
     "Identified Pattern",
-)
-
-IDENTIFIED_PATTERN_DEFINITION = (
-    "A recurring, clustered, repeated, correlated, sequential, or otherwise materially "
-    "consistent relationship observed across two or more records or events. It describes "
-    "the relationship shown by the records and does not by itself establish motive, intent, "
-    "illegality, liability, causation, or protected professional effect."
 )
 
 CLIENT_ID_RE = re.compile(r"^C\d{2}-\d{2}$")
