@@ -44,7 +44,7 @@ async function context() {
   const caseIds = [...new Set(rows.map(row => row.case_id).filter(Boolean))];
   let activeCase = localStorage.getItem('coletti.activeCase');
   if (!activeCase || !caseIds.includes(activeCase)) activeCase = caseIds[0] || null;
-  if (activeCase) localStorage.setItem('coletti.activeCase',activeCase);
+  if (activeCase) localStorage.setItem('coletti.activeCase',activeCase); else localStorage.removeItem('coletti.activeCase');
   return { user, profile: profile || {}, role, caseIds, activeCase };
 }
 
@@ -103,10 +103,12 @@ function addEyebrow(ctx) {
   topbar.prepend(eyebrow);
 }
 
-async function renderLifecycle() {
+async function renderLifecycle(force=false) {
   if (rendering) return;
   const r = route();
   if (!r.startsWith('/portal/') && !r.startsWith('/workspace/') && !r.startsWith('/admin/')) return;
+  const existing = document.querySelector('[data-lifecycle-wrapper="true"]');
+  if (existing && !force) return;
   rendering = true;
   try {
     const ctx = await context();
@@ -114,11 +116,11 @@ async function renderLifecycle() {
     addEyebrow(ctx);
     const main = document.querySelector('.workspace-main');
     if (!main) return;
-    main.querySelectorAll('[data-lifecycle-v1]').forEach(node => node.remove());
+    main.querySelectorAll('[data-lifecycle-wrapper="true"]').forEach(node => node.remove());
     if (!ctx.activeCase) return;
     const data = await snapshot(ctx.activeCase);
     const wrapper = document.createElement('div');
-    wrapper.dataset.lifecycleV1 = 'true';
+    wrapper.dataset.lifecycleWrapper = 'true';
     const full = r === '/portal/timeline';
     wrapper.innerHTML = lifecyclePanel(ctx,data,full);
     const topbar = main.querySelector('.workspace-topbar');
@@ -126,7 +128,7 @@ async function renderLifecycle() {
 
     wrapper.querySelector('#lifecycle-case-selector')?.addEventListener('change',event => {
       localStorage.setItem('coletti.activeCase',event.target.value);
-      queueMicrotask(() => renderLifecycle());
+      queueMicrotask(() => renderLifecycle(true));
     });
     wrapper.querySelector('#lifecycle-transition-form')?.addEventListener('submit', async event => {
       event.preventDefault();
@@ -145,7 +147,7 @@ async function renderLifecycle() {
           : error.message);
         return;
       }
-      await renderLifecycle();
+      await renderLifecycle(true);
     });
   } catch (error) {
     console.error('Portal lifecycle integration failed',error);
@@ -155,12 +157,14 @@ async function renderLifecycle() {
 }
 
 let timer = null;
-function schedule() {
+function schedule(force=false) {
   clearTimeout(timer);
-  timer = setTimeout(() => void renderLifecycle(),80);
+  timer = setTimeout(() => void renderLifecycle(force),80);
 }
-window.addEventListener('hashchange',schedule);
-window.addEventListener('DOMContentLoaded',schedule);
-supabase.auth.onAuthStateChange(schedule);
-new MutationObserver(schedule).observe(document.documentElement,{subtree:true,childList:true});
-schedule();
+window.addEventListener('hashchange',() => schedule(true));
+window.addEventListener('DOMContentLoaded',() => schedule(true));
+supabase.auth.onAuthStateChange(() => schedule(true));
+new MutationObserver(() => {
+  if (!document.querySelector('[data-lifecycle-wrapper="true"]')) schedule(false);
+}).observe(document.documentElement,{subtree:true,childList:true});
+schedule(true);
