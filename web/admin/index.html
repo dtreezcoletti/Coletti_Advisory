@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow" />
+  <meta name="theme-color" content="#f4efe7" />
+  <title>Coletti & Co. Admin Portal</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+  <link rel="stylesheet" href="/assets/portal_integration_v2.css" />
+  <script>
+    window.COLETTI_ENTRY_SURFACE = 'admin';
+    if (!location.hash) location.hash = '#/sign-in';
+  </script>
+</head>
+<body class="operational-portal" data-portal="admin">
+  <a class="skip-link" href="#main">Skip to workspace</a>
+  <header id="site-header"></header>
+  <div id="app-banner"></div>
+  <main id="main" tabindex="-1"><div class="loading">Loading administrative workspace…</div></main>
+  <footer id="site-footer"></footer>
+  <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+  <script type="module" src="/assets/portal_routing_v1.js"></script>
+  <script type="module" src="/assets/app.js"></script>
+  <script type="module" src="/assets/portal_integration_v2.js"></script>
+</body>
+</html>
