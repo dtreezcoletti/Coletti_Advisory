@@ -4,6 +4,7 @@ from dataclasses import asdict
 from typing import Any, Mapping
 from uuid import uuid4
 
+from . import supabase_auth
 from .core_adapter import CoreAdapter
 from .models import Permission, Principal
 from .storage import SecureStorage
@@ -19,15 +20,24 @@ def ingest_file(
     storage: SecureStorage,
     core: CoreAdapter,
     metadata: Mapping[str, Any] | None = None,
+    source_type_code: str = "D",
+    source_id: str | None = None,
 ) -> dict:
     if not principal.can(Permission.UPLOAD):
-        raise PermissionError("Role is not permitted to upload sources")
+        raise PermissionError("Role is not permitted to upload records")
     if not principal.can_access(engagement_id):
-        raise PermissionError("Principal is not authorized for this engagement")
+        raise PermissionError("Principal is not authorized for this case")
     if not data:
         raise ValueError("Cannot ingest an empty file")
 
-    source_id = f"SRC-{uuid4().hex[:12].upper()}"
+    if source_id is not None:
+        source_id = str(source_id).strip().upper()
+    elif principal.authenticated and supabase_auth.configured():
+        source_id = supabase_auth.allocate_source_id(engagement_id, source_type_code)
+    else:
+        # Compatibility-only fallback for synthetic/demo or legacy OIDC runtime.
+        source_id = f"SRC-{uuid4().hex[:12].upper()}"
+
     stored = storage.put(
         organization_id=principal.organization_id,
         engagement_id=engagement_id,
@@ -40,10 +50,9 @@ def ingest_file(
         "classification": classification,
         "storage_uri": stored.storage_uri,
         "encrypted": stored.encrypted,
+        "source_type_code": str(source_type_code).strip().upper(),
     }
     if metadata:
-        # Caller-supplied provenance may enrich a source but cannot overwrite the
-        # storage/security fields established by the intake path.
         for key, value in dict(metadata).items():
             if key in {"filename", "classification", "storage_uri", "encrypted"}:
                 continue
