@@ -140,7 +140,10 @@ def _ingest_payload(
     data: bytes,
     classification: str,
     ingestion_method: str,
+    metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    provenance = {"ingestion_method": ingestion_method, **dict(metadata or {})}
+
     if filename.lower().endswith(".zip"):
         inspection = inspect_zip(data)
         parent_id, _ = _register_file(
@@ -153,7 +156,7 @@ def _ingest_payload(
             data=data,
             classification=classification,
             metadata={
-                "ingestion_method": ingestion_method,
+                **provenance,
                 "archive_container": True,
                 "archive_member_count": inspection.file_count,
                 "archive_uncompressed_bytes": inspection.total_uncompressed_bytes,
@@ -196,7 +199,7 @@ def _ingest_payload(
         filename=filename,
         data=data,
         classification=classification,
-        metadata={"ingestion_method": ingestion_method},
+        metadata=provenance,
         queue_extraction=True,
     )
     return extraction or {
@@ -207,13 +210,19 @@ def _ingest_payload(
     }
 
 
+def _email_filename(subject: str) -> str:
+    cleaned = "".join(character if character.isalnum() else "-" for character in subject.strip()).strip("-")
+    cleaned = "-".join(part for part in cleaned.split("-") if part)[:80]
+    return f"email-{cleaned or 'message'}.txt"
+
+
 def _render_universal_secure_intake(legacy, *, app_mode, principal, engagement_id, storage, core) -> None:
     if not principal.can(Permission.UPLOAD):
         st.error("Your role does not permit source uploads.")
         st.stop()
 
     st.title("Secure Intake")
-    st.caption("One controlled ingestion gateway for device uploads, ZIP packages, and Google Drive. Every accepted item enters the same case-scoped source and provenance pipeline.")
+    st.caption("One controlled ingestion gateway for device uploads, ZIP packages, Google Drive, and email records. Every accepted item enters the same case-scoped source and provenance pipeline.")
     if app_mode == "demo":
         st.warning("Synthetic demo only · upload/import non-sensitive test records.")
 
@@ -228,6 +237,8 @@ def _render_universal_secure_intake(legacy, *, app_mode, principal, engagement_i
             st.caption(
                 f"Extraction: {last_intake.get('candidate_count', 0)} candidate statement(s) queued for human review · method: {last_intake.get('extraction_method', 'unknown')}"
             )
+        if last_intake.get("email_attachment_source_ids"):
+            st.caption(f"Email attachments registered · {len(last_intake['email_attachment_source_ids'])} source(s) linked to the email record.")
         for warning in last_intake.get("warnings", []):
             st.warning(warning)
 
@@ -237,7 +248,7 @@ def _render_universal_secure_intake(legacy, *, app_mode, principal, engagement_i
         key=f"universal-intake-classification:{principal.user_id}:{engagement_id}",
     )
 
-    device_tab, drive_tab = st.tabs(("From this device / ZIP", "Google Drive"))
+    device_tab, drive_tab, email_tab = st.tabs(("From this device / ZIP", "Google Drive", "Email"))
     with device_tab:
         st.caption("Upload individual records or a ZIP package. ZIP contents are safely inspected, extracted, registered as child sources, and linked back to the original archive.")
         generation_key = f"_universal_intake_generation:{principal.user_id}:{engagement_id}"
@@ -272,22 +283,72 @@ def _render_universal_secure_intake(legacy, *, app_mode, principal, engagement_i
         if not role_has_capability(principal.role, "google_drive_import"):
             st.info("Google Drive import is not available to this role.")
         else:
-            st.caption("Google Drive is available in every upload-capable profile. This build supports controlled share-link import now; private OAuth browsing activates only after Google authorization is connected.")
+            st.caption(
+                "Choose a Drive file directly below, or paste an individual Google Drive/Docs share link. "
+                "On Android, the file picker can open Google Drive without requiring ColettiOS to browse your private Drive account."
+            )
+            drive_generation_key = f"_drive_upload_generation:{principal.user_id}:{engagement_id}"
+            drive_generation = int(st.session_state.get(drive_generation_key, 0))
+            drive_uploaded = st.file_uploader(
+                "Choose Google Drive file",
+                key=f"universal-drive-upload:{principal.user_id}:{engagement_id}:{drive_generation}",
+                max_upload_size=200,
+                help="Tap this and choose Google Drive in your device file picker. The selected file is imported through the controlled intake pipeline.",
+            )
+            drive_upload_ok = True
+            if app_mode == "demo":
+                drive_upload_ok = st.checkbox(
+                    "I confirm the selected Drive file is synthetic/non-sensitive test material.",
+                    key=f"universal-drive-upload-demo-ack:{principal.user_id}:{engagement_id}",
+                )
+            if st.button(
+                "Import selected Drive file",
+                type="primary",
+                disabled=drive_uploaded is None or not drive_upload_ok,
+                key=f"universal-drive-upload-register:{principal.user_id}:{engagement_id}:{drive_generation}",
+            ):
+                try:
+                    result = _ingest_payload(
+                        legacy,
+                        principal=principal,
+                        engagement_id=engagement_id,
+                        storage=storage,
+                        core=core,
+                        filename=drive_uploaded.name,
+                        data=drive_uploaded.getvalue(),
+                        classification=classification,
+                        ingestion_method="google_drive_device_picker",
+                    )
+                    st.session_state["_last_intake_result"] = result
+                    st.session_state[drive_generation_key] = drive_generation + 1
+                    st.rerun()
+                except IngestionSafetyError as exc:
+                    st.error(str(exc))
+                except Exception:
+                    st.error("The selected Drive file failed before registration. No silent success was recorded.")
+
+            st.divider()
+            st.caption("Or import an individual file by share link.")
             drive_url = st.text_input(
-                "Google Drive file link",
+                "Google Drive file share link",
                 placeholder="https://drive.google.com/file/d/... or https://docs.google.com/document/d/...",
                 key=f"universal-drive-url:{principal.user_id}:{engagement_id}",
             )
             synthetic_ok = True
             if app_mode == "demo":
                 synthetic_ok = st.checkbox(
-                    "I confirm this Drive file is synthetic/non-sensitive test material.",
+                    "I confirm this Drive share-link file is synthetic/non-sensitive test material.",
                     key=f"universal-drive-demo-ack:{principal.user_id}:{engagement_id}",
                 )
+            if drive_url.strip() and "/folders/" in drive_url:
+                st.info(
+                    "That is a Google Drive folder link. Use ‘Choose Google Drive file’ above to select a file from that folder, "
+                    "or download the folder as a ZIP and use the first tab. Direct private-folder browsing requires Google OAuth authorization."
+                )
             if st.button(
-                "Import from Google Drive",
+                "Import from Google Drive link",
                 type="primary",
-                disabled=not drive_url.strip() or not synthetic_ok,
+                disabled=not drive_url.strip() or not synthetic_ok or "/folders/" in drive_url,
                 key=f"universal-drive-import:{principal.user_id}:{engagement_id}",
             ):
                 try:
@@ -310,6 +371,122 @@ def _render_universal_secure_intake(legacy, *, app_mode, principal, engagement_i
                     st.error(str(exc))
                 except Exception:
                     st.error("Google Drive import failed before registration. No source was silently created as successful.")
+
+    with email_tab:
+        st.caption(
+            "Register an email as a source by pasting the message and optionally attaching files. "
+            "Attachments are registered as separate sources linked back to the email record."
+        )
+        email_from = st.text_input(
+            "From (optional)",
+            key=f"universal-email-from:{principal.user_id}:{engagement_id}",
+        )
+        email_to = st.text_input(
+            "To (optional)",
+            key=f"universal-email-to:{principal.user_id}:{engagement_id}",
+        )
+        email_subject = st.text_input(
+            "Subject (optional)",
+            key=f"universal-email-subject:{principal.user_id}:{engagement_id}",
+        )
+        email_date = st.text_input(
+            "Email date/time (optional)",
+            placeholder="Example: 2026-09-11 9:54 AM CDT",
+            key=f"universal-email-date:{principal.user_id}:{engagement_id}",
+        )
+        email_body = st.text_area(
+            "Email body",
+            height=220,
+            key=f"universal-email-body:{principal.user_id}:{engagement_id}",
+        )
+        email_attachments = st.file_uploader(
+            "Email attachment(s) (optional)",
+            accept_multiple_files=True,
+            max_upload_size=200,
+            key=f"universal-email-attachments:{principal.user_id}:{engagement_id}",
+        )
+        email_synthetic_ok = True
+        if app_mode == "demo":
+            email_synthetic_ok = st.checkbox(
+                "I confirm this email and its attachments are synthetic/non-sensitive test material.",
+                key=f"universal-email-demo-ack:{principal.user_id}:{engagement_id}",
+            )
+
+        email_has_content = bool(
+            email_from.strip()
+            or email_to.strip()
+            or email_subject.strip()
+            or email_date.strip()
+            or email_body.strip()
+            or email_attachments
+        )
+        if st.button(
+            "Register email",
+            type="primary",
+            disabled=not email_has_content or not email_synthetic_ok,
+            key=f"universal-email-register:{principal.user_id}:{engagement_id}",
+        ):
+            try:
+                message_lines = [
+                    "EMAIL RECORD",
+                    f"From: {email_from.strip() or '[not provided]'}",
+                    f"To: {email_to.strip() or '[not provided]'}",
+                    f"Date: {email_date.strip() or '[not provided]'}",
+                    f"Subject: {email_subject.strip() or '[not provided]'}",
+                    "",
+                    email_body.strip() or "[no email body provided]",
+                ]
+                result = _ingest_payload(
+                    legacy,
+                    principal=principal,
+                    engagement_id=engagement_id,
+                    storage=storage,
+                    core=core,
+                    filename=_email_filename(email_subject),
+                    data="\n".join(message_lines).encode("utf-8"),
+                    classification=classification,
+                    ingestion_method="email_paste",
+                    metadata={
+                        "email_from": email_from.strip(),
+                        "email_to": email_to.strip(),
+                        "email_subject": email_subject.strip(),
+                        "email_date": email_date.strip(),
+                    },
+                )
+                parent_source_id = result["source_id"]
+                attachment_ids: list[str] = []
+                attachment_warnings: list[str] = []
+                for attachment in email_attachments or []:
+                    try:
+                        attachment_result = _ingest_payload(
+                            legacy,
+                            principal=principal,
+                            engagement_id=engagement_id,
+                            storage=storage,
+                            core=core,
+                            filename=attachment.name,
+                            data=attachment.getvalue(),
+                            classification=classification,
+                            ingestion_method="email_attachment",
+                            metadata={
+                                "parent_source_id": parent_source_id,
+                                "email_attachment": True,
+                                "email_subject": email_subject.strip(),
+                            },
+                        )
+                        attachment_ids.append(attachment_result["source_id"])
+                    except Exception as exc:
+                        attachment_warnings.append(
+                            f"Attachment {attachment.name!r} was not registered ({exc.__class__.__name__}). The email source remains registered."
+                        )
+                result["email_attachment_source_ids"] = attachment_ids
+                result.setdefault("warnings", []).extend(attachment_warnings)
+                st.session_state["_last_intake_result"] = result
+                st.rerun()
+            except IngestionSafetyError as exc:
+                st.error(str(exc))
+            except Exception:
+                st.error("Email intake failed before the email source was registered. No silent success was recorded.")
 
 
 def _morning_target(title: str) -> tuple[str, str]:
