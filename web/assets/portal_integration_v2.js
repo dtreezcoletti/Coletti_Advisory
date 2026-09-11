@@ -62,6 +62,31 @@ function switcher(ctx) {
   return `<div class="portal-switcher">${items.map(([id,href,label])=>`<a href="${href}" ${ctx.surface===id?'aria-current="page"':''}>${label}</a>`).join('')}</div>`;
 }
 
+async function ensureAdminCaseSelector(ctx) {
+  if (!ADMIN_ROLES.has(ctx.role) || document.querySelector('#case-selector')) return;
+  const actions = document.querySelector('.workspace-actions');
+  if (!actions) return;
+  try {
+    const [{data:assignments,error:aError},{data:memberships,error:mError}] = await Promise.all([
+      supabase.from('case_assignments').select('case_id'),
+      supabase.from('case_memberships').select('case_id')
+    ]);
+    if (aError) throw aError;
+    if (mError) throw mError;
+    const ids=[...new Set([...(assignments||[]),...(memberships||[])].map(x=>x.case_id).filter(Boolean))].sort();
+    if (!ids.length) return;
+    let selected=localStorage.getItem('coletti.activeCase');
+    if (!selected || !ids.includes(selected)) {
+      selected=ids[0];
+      localStorage.setItem('coletti.activeCase',selected);
+    }
+    actions.insertAdjacentHTML('afterbegin',`<select id="case-selector" aria-label="Active case" style="width:auto;min-width:190px">${ids.map(id=>`<option value="${esc(id)}" ${id===selected?'selected':''}>${esc(id)}</option>`).join('')}</select>`);
+    ctx.caseId=selected;
+  } catch(error) {
+    console.warn('Admin case selector could not be loaded',error);
+  }
+}
+
 function decorateChrome(ctx) {
   const sidebar = document.querySelector('.workspace-sidebar');
   if (!sidebar) return;
@@ -164,6 +189,8 @@ async function enhance() {
     if (!document.querySelector('.workspace-shell')) return;
     const ctx = await context();
     if (!ctx.user) return;
+    await ensureAdminCaseSelector(ctx);
+    ctx.caseId=activeCaseId();
     decorateChrome(ctx);
     await decorateSop(ctx);
   } finally { rendering = false; }
