@@ -185,7 +185,7 @@ def execute_mobile_dari(
         response = {**response, "dari_routing": {"tier": routing.tier.value, "operation_class": routing.operation_class}}
         if not response.get("allowed"):
             return MobileDariReply(
-                mode="NO_AI",
+                mode="DETERMINISTIC",
                 status="DENIED",
                 message=str(response.get("reason") or "DARI denied the request."),
                 payload=response,
@@ -193,7 +193,7 @@ def execute_mobile_dari(
             )
         result = response.get("result")
         return MobileDariReply(
-            mode="NO_AI",
+            mode="DETERMINISTIC",
             status="COMPLETE",
             message=_deterministic_message(tool_name, result),
             payload=response,
@@ -220,7 +220,8 @@ def execute_mobile_dari(
         )
 
     provider_status = client.status()
-    if provider_status.get("reasoning_provider") != "openai" or provider_status.get("status") != "ready":
+    provider_name = str(provider_status.get("reasoning_provider") or "").strip().lower()
+    if provider_status.get("status") != "ready" or provider_name in {"", "none", "not_configured", "unavailable"}:
         raise DariBackendUnavailable(
             "DARI's NO_AI tools are available, but live AI reasoning is not configured or available yet"
         )
@@ -254,7 +255,7 @@ def execute_mobile_dari(
     uncertainty = str(response.get("uncertainty") or structured.get("uncertainty") or "UNSPECIFIED")
     message = narrative or "DARI completed the reasoning request and queued it for human review."
     return MobileDariReply(
-        mode=routing.tier.value,
+        mode="AI_REASONING",
         status=str(response.get("disposition") or "PENDING_HUMAN_REVIEW"),
         message=message,
         payload={
