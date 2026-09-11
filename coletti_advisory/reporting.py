@@ -11,12 +11,20 @@ from .analysis import (
     build_summary,
 )
 from .commercial_config import DEFAULT_COMMERCIAL_CONFIG, CommercialDomainConfig
+from .record_governance import (
+    FIRST_TRUTH_NOTICE,
+    FIRST_TRUTH_NOTICE_VERSION,
+    FIRST_TRUTH_POLICY_KEY,
+    FIRST_TRUTH_POLICY_VERSION,
+    PROTECTED_PROFESSION_RULE,
+    RECORD_STATES,
+)
 
 
 REPORT_RECORDS = DEFAULT_COMMERCIAL_CONFIG.report_labels["records"]
 REPORT_OPERATIONS = DEFAULT_COMMERCIAL_CONFIG.report_labels["operations"]
 REPORT_FINDINGS = DEFAULT_COMMERCIAL_CONFIG.report_labels["findings"]
-REPORT_VERSION = "1.0-client-ready"
+REPORT_VERSION = "1.1-record-governed"
 
 
 def _verification_rows(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -70,6 +78,19 @@ def _corroboration_blockers(
     return blockers
 
 
+def _first_truth_block() -> dict[str, Any]:
+    return {
+        "policy_key": FIRST_TRUTH_POLICY_KEY,
+        "policy_version": FIRST_TRUTH_POLICY_VERSION,
+        "notice_version": FIRST_TRUTH_NOTICE_VERSION,
+        "notice": FIRST_TRUTH_NOTICE,
+        "protected_profession_rule": PROTECTED_PROFESSION_RULE,
+        "record_states": list(RECORD_STATES),
+        "human_review_required": True,
+        "publication_gate_required": True,
+    }
+
+
 def _report_header(report_type: str, purpose: str) -> dict[str, Any]:
     return {
         "report_type": report_type,
@@ -77,10 +98,11 @@ def _report_header(report_type: str, purpose: str) -> dict[str, Any]:
         "document_status": "DRAFT — NOT PUBLISHED",
         "purpose": purpose,
         "methodology_note": (
-            "This draft is generated from source-linked engagement data. System/control metadata is excluded "
+            "This draft is generated from source-linked engagement records. System/control metadata is excluded "
             "from substantive analysis, duplicate comparison pairs are canonicalized, and reviewer explanations "
-            "remain distinct from independently verified record conclusions."
+            "remain distinct from independently supported record findings."
         ),
+        "first_truth": _first_truth_block(),
     }
 
 
@@ -89,7 +111,12 @@ def build_publication_gate(
     *,
     config: CommercialDomainConfig = DEFAULT_COMMERCIAL_CONFIG,
 ) -> dict[str, Any]:
-    """Return a non-destructive client-publication readiness assessment."""
+    """Return a non-destructive client-publication readiness assessment.
+
+    This local gate never publishes. The authoritative Supabase publication handoff
+    performs the fail-closed First Truth v2, professional-boundary, reviewer, and
+    approval checks before any report becomes client-visible.
+    """
 
     issues = build_analytical_issues(manifest, config=config)
     unresolved = [
@@ -113,9 +140,15 @@ def build_publication_gate(
         "corroboration_control_count": len(corroboration_blockers),
         "verification_recommendation_count": len(_verification_rows(issues)),
         "blockers": blockers,
+        "first_truth_policy_key": FIRST_TRUTH_POLICY_KEY,
+        "first_truth_policy_version": FIRST_TRUTH_POLICY_VERSION,
+        "first_truth_notice_version": FIRST_TRUTH_NOTICE_VERSION,
+        "first_truth_notice_present": True,
+        "professional_boundary_rule": PROTECTED_PROFESSION_RULE,
         "rule": (
-            "Draft generation never authorizes client delivery. Publication requires explicit final human approval "
-            "of the exact report version after all material blockers are reviewed."
+            "Draft generation never authorizes client delivery. Publication requires the authoritative First Truth "
+            "v2 preflight, professional-boundary pass, explicit human reviewer approval of the exact report version, "
+            "and auditable publication handoff."
         ),
     }
 
@@ -128,10 +161,13 @@ def build_records_report(
     issues = build_analytical_issues(manifest, config=config)
     report_type = config.report_labels["records"]
     report = _report_header(report_type, config.report_purposes["records"])
+    state_summary = build_state_counts(manifest)
     report.update(
         {
             "engagement_record_summary": build_summary(manifest),
-            "evidence_state_summary": build_state_counts(manifest),
+            "record_state_summary": state_summary,
+            # Legacy compatibility key retained during the non-breaking vocabulary migration.
+            "evidence_state_summary": state_summary,
             "records_reconstruction": build_records_reconstruction(manifest, config=config),
             "unresolved_record_issues": issues,
             "verification_referrals": _verification_rows(issues),
