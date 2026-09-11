@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .synthetic import SYNTHETIC_ENGAGEMENT
+from .synthetic_portfolio import is_portfolio_engagement, portfolio_label
 
 
 LIVE_WORKSPACE_ID = "eng-coletti-co-live"
@@ -8,6 +9,8 @@ LIVE_WORKSPACE_NAME = "Coletti & Co. Live"
 
 
 def workspace_label(engagement_id: str) -> str:
+    if is_portfolio_engagement(engagement_id):
+        return portfolio_label(engagement_id)
     if engagement_id == SYNTHETIC_ENGAGEMENT["engagement_id"]:
         return SYNTHETIC_ENGAGEMENT["name"]
     if engagement_id == LIVE_WORKSPACE_ID:
@@ -16,6 +19,8 @@ def workspace_label(engagement_id: str) -> str:
 
 
 def workspace_environment(engagement_id: str) -> str:
+    if is_portfolio_engagement(engagement_id):
+        return "DEMO"
     if engagement_id == SYNTHETIC_ENGAGEMENT["engagement_id"]:
         return "DEMO"
     if engagement_id == LIVE_WORKSPACE_ID:

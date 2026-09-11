@@ -1,4 +1,6 @@
 from coletti_advisory import (
+    demo_controls,
+    demo_selector_fix,
     experience_shell,
     owner_console_live_ui,
     owner_console_notifications,
@@ -15,6 +17,11 @@ from coletti_advisory.interface_connection_patch import patch_interface_connecti
 from coletti_advisory.luxury_mobile import apply_luxury_mobile_overrides
 from coletti_advisory.luxury_theme import apply_luxury_theme
 from coletti_advisory.mobile_ui import patch_mobile_theme
+from coletti_advisory.multicase_demo import (
+    install_multicase_demo,
+    patch_employee_portfolio_dashboard,
+    patch_multicase_case_selector,
+)
 from coletti_advisory.owner_console_runtime import run_reference_workspace
 from coletti_advisory.owner_console_structure_patch import patch_owner_console_structure
 from coletti_advisory.owner_evidence_workspace import patch_owner_evidence_workspace
@@ -28,6 +35,11 @@ from coletti_advisory.report_presentation import patch_report_presentation
 # Replace the legacy presentation layer without changing authorization, workflow,
 # record review, or publication behavior.
 experience_shell._apply_brand_theme = apply_luxury_theme
+
+# Demo-only portfolio support. This swaps only the anonymous synthetic runtime for
+# an isolated multi-case adapter and role-scoped synthetic principals. Production
+# authentication, live client records, and the private Core HTTP path are untouched.
+install_multicase_demo(experience_shell, demo_controls, demo_selector_fix)
 
 if not getattr(experience_shell, "_mobile_ui_patched", False):
     patch_mobile_theme(experience_shell)
@@ -49,6 +61,12 @@ if not getattr(owner_console_runtime, "_ingested_materials_workspace_patched", F
 # workspace selector also owns Client/Employee/Admin/Owner experience switching.
 if not getattr(experience_shell, "_shared_engagement_selector_patched", False):
     patch_shared_engagement_selector(experience_shell)
+
+# Synthetic Employee/Admin/Owner personas receive a second, explicit assigned-case
+# selector. Client demo access remains single-case. The selection becomes the same
+# active engagement context used by intake, records, analysis, review, and reports.
+patch_multicase_case_selector(experience_shell)
+patch_employee_portfolio_dashboard(experience_shell)
 
 # Resolve the selected synthetic persona without rendering the retired second
 # demo switcher. This leaves Authorized workspace as the single visible control.
