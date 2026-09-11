@@ -24,7 +24,9 @@ from .record_governance import (
 REPORT_RECORDS = DEFAULT_COMMERCIAL_CONFIG.report_labels["records"]
 REPORT_OPERATIONS = DEFAULT_COMMERCIAL_CONFIG.report_labels["operations"]
 REPORT_FINDINGS = DEFAULT_COMMERCIAL_CONFIG.report_labels["findings"]
-REPORT_VERSION = "1.1-record-governed"
+# Preserve the existing controlled deliverable contract identifier. The First Truth
+# policy/notice versions below govern the new record-state controls independently.
+REPORT_VERSION = "1.0-client-ready"
 
 
 def _verification_rows(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
