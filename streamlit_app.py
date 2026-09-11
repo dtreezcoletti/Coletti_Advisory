@@ -8,6 +8,7 @@ from coletti_advisory import (
     owner_page_integration,
     profile_menu_patch,
 )
+from coletti_advisory.client_operations import patch_clients_operating_surface
 from coletti_advisory.cross_interface_connections import patch_cross_interface_dashboards
 from coletti_advisory.demo_controls import patch_demo_data_control
 from coletti_advisory.demo_selector_fix import patch_demo_selector_resolution
@@ -88,6 +89,11 @@ patch_interface_connections(
     owner_console_ui,
 )
 patch_cross_interface_dashboards(experience_shell)
+
+# Clients v1 is deliberately installed after generic connection patches so the
+# Clients route is owned by the authoritative Client relationship workflow rather
+# than the earlier selected-case compatibility view.
+patch_clients_operating_surface(owner_console_runtime)
 
 # The responsive layer intentionally adjusts layout/touch density. Apply a final
 # visual-only pass afterward so mobile keeps the same quiet-luxury geometry and
