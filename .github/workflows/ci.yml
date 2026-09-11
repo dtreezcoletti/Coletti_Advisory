@@ -26,6 +26,7 @@ jobs:
           node --check web/assets/config.js
           node --check web/assets/registry_lookup.js
           node --check web/assets/portal_routing_v1.js
+          node --check web/assets/portal_lifecycle_v1.js
           node --check web/assets/public_language_v1.js
           node --check web/assets/record_state_runtime_v1.js
           node --check web/assets/access_entry_v1.js
