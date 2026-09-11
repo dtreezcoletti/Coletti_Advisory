@@ -96,6 +96,15 @@ def test_checkpoint_drillthrough_covers_full_case_sop():
     assert "#/admin/audit" in js
 
 
+def test_admin_and_owner_surfaces_have_shared_case_context_switching():
+    js = (WEB / "assets" / "portal_integration_v2.js").read_text(encoding="utf-8")
+    assert "ensureAdminCaseSelector" in js
+    assert "case_assignments" in js
+    assert "case_memberships" in js
+    assert 'id="case-selector"' in js
+    assert "coletti.activeCase" in js
+
+
 def test_operational_visual_system_supports_long_authoritative_lifecycle():
     css = (WEB / "assets" / "portal_integration_v2.css").read_text(encoding="utf-8")
     assert "--portal-paper" in css
