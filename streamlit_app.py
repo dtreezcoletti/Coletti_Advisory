@@ -8,6 +8,8 @@ from coletti_advisory import (
     owner_page_integration,
     profile_menu_patch,
 )
+from coletti_advisory import client_operations
+from coletti_advisory.client_dari_context import patch_clients_dari_context
 from coletti_advisory.client_operations import patch_clients_operating_surface
 from coletti_advisory.cross_interface_connections import patch_cross_interface_dashboards
 from coletti_advisory.demo_controls import patch_demo_data_control
@@ -94,6 +96,9 @@ patch_cross_interface_dashboards(experience_shell)
 # Clients route is owned by the authoritative Client relationship workflow rather
 # than the earlier selected-case compatibility view.
 patch_clients_operating_surface(owner_console_runtime)
+# DARI receives only scoped Client context and uses Clients RPCs for deterministic
+# lookups. It never enlarges the current principal's Client/Case permissions.
+patch_clients_dari_context(client_operations, owner_console_live_ui)
 
 # The responsive layer intentionally adjusts layout/touch density. Apply a final
 # visual-only pass afterward so mobile keeps the same quiet-luxury geometry and
