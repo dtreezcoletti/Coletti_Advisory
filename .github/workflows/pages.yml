@@ -35,11 +35,13 @@ jobs:
           test -f web/assets/public_language_v1.js
           test -f web/assets/record_state_runtime_v1.js
           test -f web/assets/access_entry_v1.js
+          test -f web/assets/owner_governance_v1.js
           node --check web/assets/app.js
           node --check web/assets/config.js
           node --check web/assets/public_language_v1.js
           node --check web/assets/record_state_runtime_v1.js
           node --check web/assets/access_entry_v1.js
+          node --check web/assets/owner_governance_v1.js
           node --check web/assets/portal_routing_v1.js
           node --check web/assets/registry_lookup.js
       - name: Prevent privileged Supabase keys in browser source
