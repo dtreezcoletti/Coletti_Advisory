@@ -98,6 +98,38 @@ def _rest_get(path: str, *, access_token: str, params: dict[str, str]) -> list[d
     return [dict(item) for item in payload]
 
 
+def _rpc(name: str, *, access_token: str, payload: dict[str, Any]) -> Any:
+    url = _secret("SUPABASE_URL").rstrip("/")
+    response = requests.post(
+        f"{url}/rest/v1/rpc/{name}",
+        headers=_headers(access_token=access_token),
+        json=payload,
+        timeout=20,
+    )
+    if response.status_code >= 400:
+        raise PermissionError(f"Supabase RPC failed: {name}")
+    return response.json()
+
+
+def current_access_token() -> str | None:
+    session = _load_session()
+    return session.access_token if session is not None else None
+
+
+def allocate_source_id(case_id: str, source_type: str) -> str:
+    access_token = current_access_token()
+    if not access_token:
+        raise PermissionError("A Supabase Auth session is required to allocate a canonical source ID")
+    value = _rpc(
+        "allocate_source_id",
+        access_token=access_token,
+        payload={"p_case_id": case_id, "p_source_type": source_type},
+    )
+    if not isinstance(value, str) or not value.strip():
+        raise PermissionError("Supabase did not return a canonical source ID")
+    return value.strip().upper()
+
+
 def _resolve_principal(session: SupabaseSession) -> Principal:
     user_id = str(session.user.get("id") or "").strip()
     email = str(session.user.get("email") or "").strip().lower()
