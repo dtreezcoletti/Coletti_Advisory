@@ -1,6 +1,5 @@
-/* Public-facing vocabulary normalization and universal professional-boundary presentation.
-   This intentionally changes only presentation text on public routes.
-   Internal database/API identifiers and authenticated staff workflow vocabulary remain unchanged. */
+/* Public-facing canonical Record vocabulary + First Truth / professional-boundary presentation.
+   Internal database/API compatibility identifiers are not destructively renamed here. */
 
 const PUBLIC_ROUTES = new Set([
   'home','services','how-it-works','about','referral-partners','pricing','security',
@@ -8,13 +7,15 @@ const PUBLIC_ROUTES = new Set([
 ]);
 
 const replacements = [
-  [/Evidence Intelligence & Reconstruction/g, 'Records Intelligence & Reconstruction'],
-  [/evidence-intelligence and reconstruction/gi, 'records intelligence and reconstruction'],
+  [/Evidence Intelligence & Reconstruction/g, 'Records Reconstruction & Operational Intelligence'],
+  [/Records Intelligence & Reconstruction/g, 'Records Reconstruction & Operational Intelligence'],
+  [/evidence-intelligence and reconstruction/gi, 'records reconstruction and operational intelligence'],
+  [/records intelligence and reconstruction/gi, 'records reconstruction and operational intelligence'],
   [/Independent Evidence Intelligence/g, 'Independent Records Intelligence'],
-  [/Evidence states/g, 'Record states'],
-  [/evidence states/g, 'record states'],
-  [/Evidence state/g, 'Record state'],
-  [/evidence state/g, 'record state'],
+  [/Evidence states/g, 'Record States'],
+  [/evidence states/g, 'Record States'],
+  [/Evidence state/g, 'Record State'],
+  [/evidence state/g, 'Record State'],
   [/money-flow evidence/gi, 'money-flow records'],
   [/contrary evidence/gi, 'contrary documentation'],
   [/evidentiary-admissibility/gi, 'admissibility'],
@@ -75,6 +76,47 @@ function splitServicesScopeNotice() {
   }
 }
 
+function ensureIdentifiedPattern() {
+  if (currentPublicRoute() !== 'home') return;
+  for (const list of document.querySelectorAll('.evidence-badges')) {
+    if ((list.textContent || '').includes('Identified Pattern')) continue;
+    const badge = document.createElement('span');
+    badge.className = 'badge badge-warning';
+    badge.textContent = 'Identified Pattern';
+    badge.title = 'A materially consistent relationship observed across two or more records or events; it does not by itself establish motive, intent, illegality, liability, causation, or protected professional effect.';
+    list.appendChild(badge);
+  }
+}
+
+function ensureFirstTruthNotice() {
+  const footer = document.getElementById('site-footer');
+  if (!footer) return;
+
+  let notice = document.getElementById('first-truth-notice-band');
+  if (!publicRouteActive()) {
+    notice?.remove();
+    return;
+  }
+
+  if (!notice) {
+    notice = document.createElement('section');
+    notice.id = 'first-truth-notice-band';
+    notice.className = 'professional-boundary-band';
+    notice.setAttribute('aria-label', 'First Truth Notice');
+    notice.innerHTML = `
+      <div class="professional-boundary-inner">
+        <div class="professional-boundary-kicker">First Truth Notice · v2</div>
+        <div class="professional-boundary-copy">
+          <h2>First truth means the record comes first.</h2>
+          <p>We report what the available records support, what conflicts, what is missing, and what remains unresolved. Record States preserve the difference between documented fact, reconciliation, inconsistency, missing documentation, process deviation, unresolved question, client assertion, third-party conclusion, referral required, and an identified pattern.</p>
+          <p><strong>ColettiOS can determine the condition of the records; it cannot independently determine the protected professional effect of that condition.</strong></p>
+        </div>
+        <a class="professional-boundary-link" href="#/disclaimer">Read the full First Truth boundary →</a>
+      </div>`;
+    footer.parentNode.insertBefore(notice, footer);
+  }
+}
+
 function ensureProfessionalBoundary() {
   const footer = document.getElementById('site-footer');
   if (!footer) return;
@@ -95,7 +137,7 @@ function ensureProfessionalBoundary() {
         <div class="professional-boundary-kicker">Professional Boundary</div>
         <div class="professional-boundary-copy">
           <h2>Records reconstruction is not substituted professional judgment.</h2>
-          <p>A reconstruction engagement does not authorize Coletti &amp; Co. to act as your attorney, accountant, auditor, investigator, fiduciary, or other licensed professional. Where licensed or regulated professional judgment is required, Coletti &amp; Co. preserves the record and prepares the work for handoff to the appropriate qualified professional.</p>
+          <p>A reconstruction engagement does not authorize Coletti &amp; Co. to act as your attorney, accountant, auditor, investigator, fiduciary, or other licensed professional. Where licensed or regulated professional judgment is required, Coletti &amp; Co. preserves the record, marks the issue <strong>Referral Required</strong>, and prepares the work for handoff to the appropriate qualified professional.</p>
         </div>
         <a class="professional-boundary-link" href="#/disclaimer">Read the full boundary →</a>
       </div>`;
@@ -105,13 +147,17 @@ function ensureProfessionalBoundary() {
 
 function applyPublicVocabulary() {
   if (!publicRouteActive()) {
+    ensureFirstTruthNotice();
     ensureProfessionalBoundary();
     return;
   }
   splitServicesScopeNotice();
+  ensureIdentifiedPattern();
+  ensureFirstTruthNotice();
   ensureProfessionalBoundary();
   normalizeNode(document.getElementById('site-header'));
   normalizeNode(document.getElementById('main'));
+  normalizeNode(document.getElementById('first-truth-notice-band'));
   normalizeNode(document.getElementById('professional-boundary-band'));
   normalizeNode(document.getElementById('site-footer'));
   const description = document.querySelector('meta[name="description"]');
