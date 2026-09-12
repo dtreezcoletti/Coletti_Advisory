@@ -60,6 +60,28 @@ def sign_in_password(email: str, password: str) -> SupabaseSession:
     )
 
 
+def request_password_reset(email: str) -> None:
+    """Request a Supabase recovery email without revealing account existence."""
+    normalized = email.strip().lower()
+    if not normalized:
+        raise ValueError("Email is required")
+
+    url = _secret("SUPABASE_URL").rstrip("/")
+    payload: dict[str, Any] = {"email": normalized}
+    redirect_to = _secret("PASSWORD_RESET_REDIRECT_URL")
+    if redirect_to:
+        payload["redirect_to"] = redirect_to
+
+    response = requests.post(
+        f"{url}/auth/v1/recover",
+        headers=_headers(),
+        json=payload,
+        timeout=20,
+    )
+    if response.status_code >= 400:
+        raise PermissionError("Password recovery request failed")
+
+
 def refresh_session(refresh_token: str) -> SupabaseSession:
     url = _secret("SUPABASE_URL").rstrip("/")
     response = requests.post(
@@ -233,7 +255,7 @@ def sign_out() -> None:
 
 
 def require_principal(*, app_mode: str) -> Principal | None:
-    """Use Supabase Auth as the primary production identity and RBAC path."""
+    """Use Supabase email/password Auth as the primary production identity and RBAC path."""
     if not configured():
         if app_mode == "demo":
             return None
@@ -242,10 +264,10 @@ def require_principal(*, app_mode: str) -> Principal | None:
     session = _load_session()
     if session is None:
         st.title("Coletti & Co.")
-        st.caption("Secure ColettiOS workspace")
+        st.caption("Secure Owner Portal · Email + password")
         with st.form("coletti_supabase_login", clear_on_submit=False):
-            email = st.text_input("Email")
-            password = st.text_input("Password", type="password")
+            email = st.text_input("Email", autocomplete="email")
+            password = st.text_input("Password", type="password", autocomplete="current-password")
             submitted = st.form_submit_button("Log in", type="primary")
         if submitted:
             try:
@@ -253,7 +275,24 @@ def require_principal(*, app_mode: str) -> Principal | None:
                 _save_session(session)
                 st.rerun()
             except (PermissionError, requests.RequestException):
-                st.error("Authentication failed.")
+                st.error("Email or password was not accepted.")
+
+        with st.expander("Forgot your password?"):
+            reset_email = st.text_input(
+                "Account email",
+                key="coletti_password_reset_email",
+                autocomplete="email",
+            )
+            if st.button("Send password reset email", key="coletti_password_reset_submit"):
+                try:
+                    request_password_reset(reset_email)
+                    st.success(
+                        "If that email belongs to an account, password-reset instructions have been requested."
+                    )
+                except ValueError:
+                    st.error("Enter your email address.")
+                except (PermissionError, requests.RequestException):
+                    st.error("Password reset could not be requested right now.")
         st.stop()
 
     try:
