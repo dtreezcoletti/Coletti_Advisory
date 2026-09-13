@@ -38,17 +38,7 @@ def _headers(*, access_token: str | None = None) -> dict[str, str]:
     return headers
 
 
-def sign_in_password(email: str, password: str) -> SupabaseSession:
-    url = _secret("SUPABASE_URL").rstrip("/")
-    response = requests.post(
-        f"{url}/auth/v1/token?grant_type=password",
-        headers=_headers(),
-        json={"email": email.strip().lower(), "password": password},
-        timeout=20,
-    )
-    if response.status_code >= 400:
-        raise PermissionError("Supabase authentication failed")
-    payload = response.json()
+def _session_from_payload(payload: dict[str, Any]) -> SupabaseSession:
     expires_at = int(payload.get("expires_at") or 0)
     if not expires_at:
         expires_at = int(datetime.now(timezone.utc).timestamp()) + int(payload.get("expires_in") or 3600)
@@ -60,8 +50,21 @@ def sign_in_password(email: str, password: str) -> SupabaseSession:
     )
 
 
+def sign_in_password(email: str, password: str) -> SupabaseSession:
+    url = _secret("SUPABASE_URL").rstrip("/")
+    response = requests.post(
+        f"{url}/auth/v1/token?grant_type=password",
+        headers=_headers(),
+        json={"email": email.strip().lower(), "password": password},
+        timeout=20,
+    )
+    if response.status_code >= 400:
+        raise PermissionError("Supabase authentication failed")
+    return _session_from_payload(dict(response.json()))
+
+
 def request_password_reset(email: str) -> None:
-    """Request a Supabase recovery email without revealing account existence."""
+    """Request a recovery email without revealing whether the account exists."""
     normalized = email.strip().lower()
     if not normalized:
         raise ValueError("Email is required")
@@ -82,6 +85,40 @@ def request_password_reset(email: str) -> None:
         raise PermissionError("Password recovery request failed")
 
 
+def verify_recovery_token(token_hash: str) -> SupabaseSession:
+    """Exchange a one-time recovery token hash for a short-lived Supabase session."""
+    token_hash = token_hash.strip()
+    if not token_hash:
+        raise ValueError("Recovery token is required")
+
+    url = _secret("SUPABASE_URL").rstrip("/")
+    response = requests.post(
+        f"{url}/auth/v1/verify",
+        headers=_headers(),
+        json={"token_hash": token_hash, "type": "recovery"},
+        timeout=20,
+    )
+    if response.status_code >= 400:
+        raise PermissionError("Password recovery link is invalid or expired")
+    return _session_from_payload(dict(response.json()))
+
+
+def update_password(access_token: str, new_password: str) -> None:
+    """Update the authenticated recovery user's password."""
+    if len(new_password) < 12:
+        raise ValueError("Password must be at least 12 characters")
+
+    url = _secret("SUPABASE_URL").rstrip("/")
+    response = requests.put(
+        f"{url}/auth/v1/user",
+        headers=_headers(access_token=access_token),
+        json={"password": new_password},
+        timeout=20,
+    )
+    if response.status_code >= 400:
+        raise PermissionError("Password update failed")
+
+
 def refresh_session(refresh_token: str) -> SupabaseSession:
     url = _secret("SUPABASE_URL").rstrip("/")
     response = requests.post(
@@ -92,16 +129,7 @@ def refresh_session(refresh_token: str) -> SupabaseSession:
     )
     if response.status_code >= 400:
         raise PermissionError("Supabase session refresh failed")
-    payload = response.json()
-    expires_at = int(payload.get("expires_at") or 0)
-    if not expires_at:
-        expires_at = int(datetime.now(timezone.utc).timestamp()) + int(payload.get("expires_in") or 3600)
-    return SupabaseSession(
-        access_token=str(payload["access_token"]),
-        refresh_token=str(payload["refresh_token"]),
-        expires_at=expires_at,
-        user=dict(payload["user"]),
-    )
+    return _session_from_payload(dict(response.json()))
 
 
 def _rest_get(path: str, *, access_token: str, params: dict[str, str]) -> list[dict[str, Any]]:
@@ -158,6 +186,89 @@ def _load_session() -> SupabaseSession | None:
         session = refresh_session(session.refresh_token)
         _save_session(session)
     return session
+
+
+def _save_recovery_session(session: SupabaseSession) -> None:
+    st.session_state["_coletti_recovery_access_token"] = session.access_token
+    st.session_state["_coletti_recovery_refresh_token"] = session.refresh_token
+    st.session_state["_coletti_recovery_expires_at"] = session.expires_at
+    st.session_state["_coletti_recovery_user"] = session.user
+
+
+def _load_recovery_session() -> SupabaseSession | None:
+    access = st.session_state.get("_coletti_recovery_access_token")
+    refresh = st.session_state.get("_coletti_recovery_refresh_token")
+    expires_at = st.session_state.get("_coletti_recovery_expires_at")
+    user = st.session_state.get("_coletti_recovery_user")
+    if not access or not refresh or not expires_at or not isinstance(user, dict):
+        return None
+    return SupabaseSession(
+        access_token=str(access),
+        refresh_token=str(refresh),
+        expires_at=int(expires_at),
+        user=dict(user),
+    )
+
+
+def _clear_recovery_session() -> None:
+    for key in list(st.session_state):
+        if str(key).startswith("_coletti_recovery_"):
+            del st.session_state[key]
+
+
+def _query_value(name: str) -> str:
+    try:
+        value = st.query_params.get(name, "")
+    except Exception:
+        return ""
+    if isinstance(value, list):
+        value = value[0] if value else ""
+    return str(value or "").strip()
+
+
+def _recovery_requested() -> bool:
+    return _query_value("type").lower() == "recovery" and bool(_query_value("token_hash"))
+
+
+def _render_password_recovery() -> None:
+    st.title("Reset owner password")
+    st.caption("Secure ColettiOS Owner Portal")
+
+    session = _load_recovery_session()
+    if session is None:
+        try:
+            session = verify_recovery_token(_query_value("token_hash"))
+            _save_recovery_session(session)
+        except (ValueError, PermissionError, requests.RequestException):
+            _clear_recovery_session()
+            st.error("This password-reset link is invalid or has expired. Request a new reset email.")
+            st.stop()
+
+    with st.form("coletti_password_recovery", clear_on_submit=False):
+        new_password = st.text_input("New password", type="password", autocomplete="new-password")
+        confirm_password = st.text_input("Confirm new password", type="password", autocomplete="new-password")
+        submitted = st.form_submit_button("Change password", type="primary")
+
+    if submitted:
+        if new_password != confirm_password:
+            st.error("The passwords do not match.")
+            st.stop()
+        try:
+            update_password(session.access_token, new_password)
+        except ValueError as exc:
+            st.error(str(exc))
+            st.stop()
+        except (PermissionError, requests.RequestException):
+            st.error("Your password could not be changed. Request a new reset email and try again.")
+            st.stop()
+
+        _clear_recovery_session()
+        try:
+            st.query_params.clear()
+        except Exception:
+            pass
+        st.success("Password changed. Return to the Owner Portal login and sign in with your new password.")
+    st.stop()
 
 
 def current_access_token() -> str | None:
@@ -260,6 +371,9 @@ def require_principal(*, app_mode: str) -> Principal | None:
         if app_mode == "demo":
             return None
         raise RuntimeError("Supabase Auth is not configured")
+
+    if _recovery_requested() or _load_recovery_session() is not None:
+        _render_password_recovery()
 
     session = _load_session()
     if session is None:
