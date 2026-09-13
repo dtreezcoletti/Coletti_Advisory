@@ -61,20 +61,29 @@ def render_owner_case_state(*, principal, engagement_id: str, core) -> None:
     track = str(catalog_row.get("track_type") or "UNCLASSIFIED")
     governance_writeback = bool(catalog_row.get("governance_writeback"))
     training_authority = bool(catalog_row.get("training_authority"))
+    reflection_minimum = (
+        f"{int(catalog_row.get('minimum_reflection_days') or 5)} days"
+        if track == "HISTORICAL_REFERENCE"
+        else "N/A"
+    )
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Validation Track", track.replace("_", " ").title())
     c2.metric("Governance Writeback", "ENABLED" if governance_writeback else "BLOCKED")
     c3.metric("Training Authority", "ENABLED" if training_authority else "BLOCKED")
-    c4.metric("Reflection Minimum", f"{int(catalog_row.get('minimum_reflection_days') or 5)} days")
+    c4.metric("Historical Reflection Min", reflection_minimum)
 
     if track == "HISTORICAL_REFERENCE":
         st.warning(
             "Historical Reference control is active. Case-specific facts are non-authoritative: "
-            "governance writeback and training authority must remain blocked."
+            "governance writeback and training authority must remain blocked, and any methodology promotion "
+            "must complete the governed simulation, validation, reflection, and fresh-approval sequence."
         )
     elif track == "SYNTHETIC_REGRESSION":
-        st.success("Synthetic Regression track: suitable for structural testing, subject to the governed promotion path.")
+        st.success(
+            "Synthetic Regression track: independent structural testing fixture. "
+            "A five-day reflection delay applies only when a methodology candidate retains protected historical-case provenance."
+        )
 
     try:
         snapshot = client.case_state(principal, engagement_id, selected_case)
