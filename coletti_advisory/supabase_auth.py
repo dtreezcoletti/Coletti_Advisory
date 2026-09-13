@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -20,10 +21,27 @@ class SupabaseSession:
 
 
 def _secret(name: str, default: str = "") -> str:
+    """Resolve deployment configuration without requiring a secrets.toml file.
+
+    Local Streamlit secrets remain supported, but hosted deployments such as Render
+    normally provide configuration as environment variables. The modern Supabase
+    publishable key is also accepted as the public client key.
+    """
     try:
-        return str(st.secrets.get(name, default) or default)
+        value = st.secrets.get(name, "")
     except Exception:
-        return default
+        value = ""
+    if value:
+        return str(value)
+
+    env_names = [name]
+    if name == "SUPABASE_ANON_KEY":
+        env_names.append("SUPABASE_PUBLISHABLE_KEY")
+    for env_name in env_names:
+        value = os.getenv(env_name, "")
+        if value:
+            return str(value)
+    return default
 
 
 def configured() -> bool:
