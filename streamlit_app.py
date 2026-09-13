@@ -8,6 +8,9 @@ from coletti_advisory import (
     owner_page_integration,
     profile_menu_patch,
 )
+from coletti_advisory import client_operations
+from coletti_advisory.client_dari_context import patch_clients_dari_context
+from coletti_advisory.client_operations import patch_clients_operating_surface
 from coletti_advisory.cross_interface_connections import patch_cross_interface_dashboards
 from coletti_advisory.demo_controls import patch_demo_data_control
 from coletti_advisory.demo_selector_fix import patch_demo_selector_resolution
@@ -15,13 +18,13 @@ from coletti_advisory.interface_connection_patch import patch_interface_connecti
 from coletti_advisory.luxury_mobile import apply_luxury_mobile_overrides
 from coletti_advisory.luxury_theme import apply_luxury_theme
 from coletti_advisory.mobile_ui import patch_mobile_theme
-from coletti_advisory.owner_console_runtime import run_reference_workspace
 from coletti_advisory.owner_console_structure_patch import patch_owner_console_structure
 from coletti_advisory.owner_evidence_workspace import patch_owner_evidence_workspace
 from coletti_advisory.owner_page_integration import (
     patch_owner_page_integration,
     patch_shared_engagement_selector,
 )
+from coletti_advisory.portal_runtime import run_integrated_portal_workspace
 from coletti_advisory.profile_menu_patch import patch_profile_menus
 from coletti_advisory.report_presentation import patch_report_presentation
 
@@ -89,6 +92,14 @@ patch_interface_connections(
 )
 patch_cross_interface_dashboards(experience_shell)
 
+# Clients v1 is deliberately installed after generic connection patches so the
+# Clients route is owned by the authoritative Client relationship workflow rather
+# than the earlier selected-case compatibility view.
+patch_clients_operating_surface(owner_console_runtime)
+# DARI receives only scoped Client context and uses Clients RPCs for deterministic
+# lookups. It never enlarges the current principal's Client/Case permissions.
+patch_clients_dari_context(client_operations, owner_console_live_ui)
+
 # The responsive layer intentionally adjusts layout/touch density. Apply a final
 # visual-only pass afterward so mobile keeps the same quiet-luxury geometry and
 # palette instead of drifting toward generic rounded consumer-app styling.
@@ -101,4 +112,6 @@ def _final_theme() -> None:
 
 
 experience_shell._apply_brand_theme = _final_theme
-run_reference_workspace(experience_shell)
+# Canonical role runtime: Client, Employee, Admin, and Owner all consume the same
+# Case lifecycle checkpoint authority while retaining distinct permissions/UI.
+run_integrated_portal_workspace(experience_shell)
