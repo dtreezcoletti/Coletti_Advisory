@@ -193,6 +193,8 @@ OPEN_ISSUE_MARKERS = (
     "not implemented",
     "needs migration",
     "needs review",
+    "remains false",
+    "blocked until",
 )
 
 
