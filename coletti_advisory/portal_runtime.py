@@ -5,6 +5,7 @@ import streamlit as st
 from . import client_operations
 from . import owner_console_runtime as owner_runtime
 from . import portal_case_lifecycle as lifecycle
+from . import supabase_auth
 from .demo_controls import render_demo_experience_switcher
 from .models import Permission, Role
 from .owner_console_notifications import render_live_owner_topbar
@@ -81,9 +82,13 @@ def _topbar(shell, principal, experience: str) -> None:
     st.markdown(
         f"<div class='cc-topline'><div><div class='cc-kicker'>{shell._esc(title)}</div>"
         f"<div class='cc-topline-title'>{shell._esc(title)}</div></div>"
-        f"<div class='cc-pill'>{shell._esc(principal.display_name)} &nbsp;·&nbsp; {shell._esc(role)}</div></div>",
+        f"<div class='cc-pill'>{shell._esc(principal.display_name)} &nbsp;·&nbsp; {_esc_role(role)}</div></div>",
         unsafe_allow_html=True,
     )
+
+
+def _esc_role(role: str) -> str:
+    return role.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _select_page(shell, principal, experience: str) -> str:
@@ -219,6 +224,13 @@ def _render_common_page(
     st.warning(f"The {page} surface is not yet connected in this runtime.")
 
 
+def _logout() -> None:
+    if supabase_auth.current_access_token():
+        supabase_auth.sign_out()
+        st.rerun()
+    st.logout()
+
+
 def run_integrated_portal_workspace(shell) -> None:
     st.set_page_config(
         page_title="Coletti & Co. | Controlled Workspace",
@@ -269,7 +281,7 @@ def run_integrated_portal_workspace(shell) -> None:
         if principal.authenticated:
             st.sidebar.divider()
             if st.sidebar.button("Log out", use_container_width=True, key="owner_logout_integrated"):
-                st.logout()
+                _logout()
         render_live_owner_topbar(principal, manifest, tuple(principal.engagement_ids), core=core, engagement_id=engagement_id)
         if page == "Cases":
             lifecycle.render_lifecycle(principal, engagement_id, controls=True, title="Owner Case Lifecycle")
@@ -294,7 +306,7 @@ def run_integrated_portal_workspace(shell) -> None:
     if principal.authenticated:
         st.sidebar.divider()
         if st.sidebar.button("Log out", use_container_width=True, key=f"{experience}_logout_integrated"):
-            st.logout()
+            _logout()
     _topbar(shell, principal, experience)
     return _render_common_page(
         shell,
