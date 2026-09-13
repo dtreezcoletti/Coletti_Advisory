@@ -265,6 +265,10 @@ def require_principal(*, app_mode: str) -> Principal | None:
             email = st.text_input("Email")
             password = st.text_input("Password", type="password")
             submitted = st.form_submit_button("Log in", type="primary")
+        st.markdown(
+            '<a href="/forgot-password" target="_self" style="display:inline-block;margin-top:0.75rem;font-size:0.95rem;">Forgot password?</a>',
+            unsafe_allow_html=True,
+        )
         if submitted:
             try:
                 session = sign_in_password(email, password)
