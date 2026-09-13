@@ -1,3 +1,5 @@
+import streamlit as st
+
 from coletti_advisory import (
     experience_shell,
     owner_console_live_ui,
@@ -7,6 +9,7 @@ from coletti_advisory import (
     owner_console_ui,
     owner_page_integration,
     profile_menu_patch,
+    supabase_auth,
 )
 from coletti_advisory.cross_interface_connections import patch_cross_interface_dashboards
 from coletti_advisory.demo_controls import patch_demo_data_control
@@ -93,4 +96,20 @@ def _final_theme() -> None:
 
 
 experience_shell._apply_brand_theme = _final_theme
+
+# Recovery stays outside the authenticated Streamlit surface. Show a clear
+# owner-safe link only when there is no active Supabase Auth session.
+if supabase_auth.current_access_token() is None:
+    st.markdown(
+        """
+        <div style="max-width: 665px; margin: 0 auto 10px auto; text-align: right;">
+          <a href="/forgot-password" target="_self"
+             style="font-family: Arial, sans-serif; font-size: 13px; color: #6c655c; text-decoration: underline;">
+             Forgot password?
+          </a>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 run_reference_workspace(experience_shell)
