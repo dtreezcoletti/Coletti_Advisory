@@ -98,3 +98,66 @@ def test_password_reset_uses_recovery_endpoint_without_account_disclosure(monkey
         "email": "owner@example.test",
         "redirect_to": "https://owner.example.test/reset-password",
     }
+
+
+def test_recovery_token_hash_is_verified_as_recovery(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_auth,
+        "_secret",
+        lambda name, default="": {
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_ANON_KEY": "anon-test",
+        }.get(name, default),
+    )
+    calls = []
+
+    def fake_post(url, *, headers, json, timeout):
+        calls.append((url, headers, json, timeout))
+        return SimpleNamespace(
+            status_code=200,
+            json=lambda: {
+                "access_token": "recovery-access",
+                "refresh_token": "recovery-refresh",
+                "expires_in": 3600,
+                "user": {"id": "user-1", "email": "owner@example.test"},
+            },
+        )
+
+    monkeypatch.setattr(supabase_auth.requests, "post", fake_post)
+    session = supabase_auth.verify_recovery_token(" token-hash ")
+
+    assert session.access_token == "recovery-access"
+    assert calls[0][0].endswith("/auth/v1/verify")
+    assert calls[0][2] == {"token_hash": "token-hash", "type": "recovery"}
+
+
+def test_password_update_uses_recovery_access_token(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_auth,
+        "_secret",
+        lambda name, default="": {
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_ANON_KEY": "anon-test",
+        }.get(name, default),
+    )
+    calls = []
+
+    def fake_put(url, *, headers, json, timeout):
+        calls.append((url, headers, json, timeout))
+        return SimpleNamespace(status_code=200)
+
+    monkeypatch.setattr(supabase_auth.requests, "put", fake_put)
+    supabase_auth.update_password("recovery-access", "CorrectHorseBatteryStaple")
+
+    assert calls[0][0].endswith("/auth/v1/user")
+    assert calls[0][1]["Authorization"] == "Bearer recovery-access"
+    assert calls[0][2] == {"password": "CorrectHorseBatteryStaple"}
+
+
+def test_password_update_rejects_short_password() -> None:
+    try:
+        supabase_auth.update_password("recovery-access", "short")
+    except ValueError as exc:
+        assert "12 characters" in str(exc)
+    else:
+        raise AssertionError("short passwords must be rejected")
