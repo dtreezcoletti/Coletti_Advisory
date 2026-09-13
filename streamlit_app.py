@@ -9,6 +9,7 @@ from coletti_advisory import (
     profile_menu_patch,
 )
 from coletti_advisory import client_operations
+from coletti_advisory.admin_navigation_fix import patch_admin_client_navigation
 from coletti_advisory.client_dari_context import patch_clients_dari_context
 from coletti_advisory.client_operations import patch_clients_operating_surface
 from coletti_advisory.cross_interface_connections import patch_cross_interface_dashboards
@@ -96,6 +97,9 @@ patch_cross_interface_dashboards(experience_shell)
 # Clients route is owned by the authoritative Client relationship workflow rather
 # than the earlier selected-case compatibility view.
 patch_clients_operating_surface(owner_console_runtime)
+# Admin Client drill-through stays inside Admin navigation rather than mutating
+# the Owner Console page key.
+patch_admin_client_navigation(client_operations)
 # DARI receives only scoped Client context and uses Clients RPCs for deterministic
 # lookups. It never enlarges the current principal's Client/Case permissions.
 patch_clients_dari_context(client_operations, owner_console_live_ui)
