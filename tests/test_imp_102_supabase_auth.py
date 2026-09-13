@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from coletti_advisory import auth
+from types import SimpleNamespace
+
+from coletti_advisory import auth, supabase_auth
 from coletti_advisory.models import Principal, Role
 
 
@@ -39,3 +41,123 @@ def test_supabase_role_mapping_uses_canonical_roles() -> None:
     assert Role("analyst") is Role.ANALYST
     assert Role("reviewer") is Role.REVIEWER
     assert Role("client") is Role.CLIENT
+
+
+def test_password_sign_in_uses_supabase_password_grant(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_auth,
+        "_secret",
+        lambda name, default="": {
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_ANON_KEY": "anon-test",
+        }.get(name, default),
+    )
+    calls = []
+
+    def fake_post(url, *, headers, json, timeout):
+        calls.append((url, headers, json, timeout))
+        return SimpleNamespace(
+            status_code=200,
+            json=lambda: {
+                "access_token": "access-token",
+                "refresh_token": "refresh-token",
+                "expires_in": 3600,
+                "user": {"id": "user-1", "email": "owner@example.test"},
+            },
+        )
+
+    monkeypatch.setattr(supabase_auth.requests, "post", fake_post)
+    session = supabase_auth.sign_in_password(" Owner@Example.Test ", "secret")
+
+    assert session.user["email"] == "owner@example.test"
+    assert calls[0][0].endswith("/auth/v1/token?grant_type=password")
+    assert calls[0][2] == {"email": "owner@example.test", "password": "secret"}
+
+
+def test_password_reset_uses_recovery_endpoint_without_account_disclosure(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_auth,
+        "_secret",
+        lambda name, default="": {
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_ANON_KEY": "anon-test",
+            "PASSWORD_RESET_REDIRECT_URL": "https://owner.example.test/reset-password",
+        }.get(name, default),
+    )
+    calls = []
+
+    def fake_post(url, *, headers, json, timeout):
+        calls.append((url, headers, json, timeout))
+        return SimpleNamespace(status_code=200)
+
+    monkeypatch.setattr(supabase_auth.requests, "post", fake_post)
+    supabase_auth.request_password_reset(" Owner@Example.Test ")
+
+    assert calls[0][0].endswith("/auth/v1/recover")
+    assert calls[0][2] == {
+        "email": "owner@example.test",
+        "redirect_to": "https://owner.example.test/reset-password",
+    }
+
+
+def test_recovery_token_hash_is_verified_as_recovery(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_auth,
+        "_secret",
+        lambda name, default="": {
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_ANON_KEY": "anon-test",
+        }.get(name, default),
+    )
+    calls = []
+
+    def fake_post(url, *, headers, json, timeout):
+        calls.append((url, headers, json, timeout))
+        return SimpleNamespace(
+            status_code=200,
+            json=lambda: {
+                "access_token": "recovery-access",
+                "refresh_token": "recovery-refresh",
+                "expires_in": 3600,
+                "user": {"id": "user-1", "email": "owner@example.test"},
+            },
+        )
+
+    monkeypatch.setattr(supabase_auth.requests, "post", fake_post)
+    session = supabase_auth.verify_recovery_token(" token-hash ")
+
+    assert session.access_token == "recovery-access"
+    assert calls[0][0].endswith("/auth/v1/verify")
+    assert calls[0][2] == {"token_hash": "token-hash", "type": "recovery"}
+
+
+def test_password_update_uses_recovery_access_token(monkeypatch) -> None:
+    monkeypatch.setattr(
+        supabase_auth,
+        "_secret",
+        lambda name, default="": {
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_ANON_KEY": "anon-test",
+        }.get(name, default),
+    )
+    calls = []
+
+    def fake_put(url, *, headers, json, timeout):
+        calls.append((url, headers, json, timeout))
+        return SimpleNamespace(status_code=200)
+
+    monkeypatch.setattr(supabase_auth.requests, "put", fake_put)
+    supabase_auth.update_password("recovery-access", "CorrectHorseBatteryStaple")
+
+    assert calls[0][0].endswith("/auth/v1/user")
+    assert calls[0][1]["Authorization"] == "Bearer recovery-access"
+    assert calls[0][2] == {"password": "CorrectHorseBatteryStaple"}
+
+
+def test_password_update_rejects_short_password() -> None:
+    try:
+        supabase_auth.update_password("recovery-access", "short")
+    except ValueError as exc:
+        assert "12 characters" in str(exc)
+    else:
+        raise AssertionError("short passwords must be rejected")
