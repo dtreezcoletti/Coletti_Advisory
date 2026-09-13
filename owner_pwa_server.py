@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 import json
 
 import streamlit as st
@@ -112,13 +111,6 @@ async def health(_request):
 
 streamlit_app = st.App("owner_pwa_streamlit.py")
 
-
-@asynccontextmanager
-async def lifespan(_app):
-    async with streamlit_app.lifespan():
-        yield
-
-
 app = Starlette(
     routes=[
         Route("/", landing),
@@ -128,5 +120,5 @@ app = Starlette(
         Route("/healthz", health),
         Mount("/app", app=streamlit_app),
     ],
-    lifespan=lifespan,
+    lifespan=streamlit_app.lifespan(),
 )
