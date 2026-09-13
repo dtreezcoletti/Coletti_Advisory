@@ -1,6 +1,7 @@
 import streamlit as st
 
 from coletti_advisory import (
+    client_operations,
     experience_shell,
     owner_console_live_ui,
     owner_console_notifications,
@@ -11,6 +12,8 @@ from coletti_advisory import (
     profile_menu_patch,
     supabase_auth,
 )
+from coletti_advisory.client_dari_context import patch_clients_dari_context
+from coletti_advisory.client_operations import patch_clients_operating_surface
 from coletti_advisory.cross_interface_connections import patch_cross_interface_dashboards
 from coletti_advisory.demo_controls import patch_demo_data_control
 from coletti_advisory.demo_selector_fix import patch_demo_selector_resolution
@@ -26,6 +29,7 @@ from coletti_advisory.owner_page_integration import (
     patch_shared_engagement_selector,
 )
 from coletti_advisory.owner_pwa_patch import patch_owner_pwa
+from coletti_advisory.portal_case_lifecycle import render_lifecycle
 from coletti_advisory.profile_menu_patch import patch_profile_menus
 from coletti_advisory.report_presentation import patch_report_presentation
 
@@ -82,9 +86,34 @@ patch_interface_connections(
 )
 patch_cross_interface_dashboards(experience_shell)
 
+# Install the permanent Client relationship operating surface and constrained
+# DARI Client context before the Owner-PWA wrapper captures the Owner renderer.
+patch_clients_operating_surface(owner_console_runtime)
+patch_clients_dari_context(client_operations, owner_console_live_ui)
+
 # Add the owner-private workspace, safe owner-only fallback workspace, and
 # Supabase logout behavior after the canonical console patches are installed.
 patch_owner_pwa(owner_console_runtime, owner_console_ui)
+
+# Cases in the Owner PWA must read the same authoritative 13-checkpoint Case
+# lifecycle as Client/Employee/Admin portals; keep the existing Case workspace
+# immediately below the lifecycle control surface.
+if not getattr(owner_console_runtime, "_owner_pwa_lifecycle_patched", False):
+    _owner_page_with_private_workspace = owner_console_runtime._render_owner_page
+
+    def _owner_page_with_lifecycle(shell, page: str, **kwargs):
+        if page == "Cases":
+            render_lifecycle(
+                kwargs["principal"],
+                kwargs["engagement_id"],
+                controls=True,
+                title="Owner Case Lifecycle",
+            )
+            st.divider()
+        return _owner_page_with_private_workspace(shell, page, **kwargs)
+
+    owner_console_runtime._render_owner_page = _owner_page_with_lifecycle
+    owner_console_runtime._owner_pwa_lifecycle_patched = True
 
 # Keep the quiet-luxury mobile geometry after responsive patches.
 _patched_theme = experience_shell._apply_brand_theme
