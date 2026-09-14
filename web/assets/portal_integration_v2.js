@@ -103,6 +103,21 @@ function decorateChrome(ctx) {
   }
 }
 
+function sanitizeClientLanguage(ctx) {
+  if (ctx.surface !== 'client') return;
+  const root = document.querySelector('.workspace-shell') || document.body;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    const current = node.nodeValue || '';
+    const next = current
+      .replace(/ColettiOS Source ID/g, 'controlled Source ID')
+      .replace(/ColettiOS/g, 'Coletti & Co.');
+    if (next !== current) node.nodeValue = next;
+  }
+}
+
 async function lifecycleSnapshot(caseId) {
   const {data,error} = await supabase.rpc('case_lifecycle_snapshot_v1',{p_case_id:caseId});
   if (error) throw error;
@@ -193,6 +208,7 @@ async function enhance() {
     ctx.caseId=activeCaseId();
     decorateChrome(ctx);
     await decorateSop(ctx);
+    sanitizeClientLanguage(ctx);
   } finally { rendering = false; }
 }
 

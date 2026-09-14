@@ -11,6 +11,23 @@
   <script>
     window.COLETTI_ENTRY_SURFACE = 'client';
     if (!location.hash) location.hash = '#/sign-in';
+    const sanitizeClientBranding = () => {
+      if (!document.body) return;
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      const nodes = [];
+      while (walker.nextNode()) nodes.push(walker.currentNode);
+      for (const node of nodes) {
+        const current = node.nodeValue || '';
+        const next = current
+          .replace(/ColettiOS Source ID/g, 'controlled Source ID')
+          .replace(/ColettiOS/g, 'Coletti & Co.');
+        if (next !== current) node.nodeValue = next;
+      }
+    };
+    window.addEventListener('DOMContentLoaded', () => {
+      sanitizeClientBranding();
+      new MutationObserver(sanitizeClientBranding).observe(document.body, {childList:true, subtree:true, characterData:true});
+    });
   </script>
 </head>
 <body class="operational-portal" data-portal="client">
