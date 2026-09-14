@@ -64,7 +64,7 @@ def test_public_site_uses_rrda_positioning_and_removes_intelligence_positioning(
     assert "Records Reconstruction &amp;<br/>Documentation Analysis" in index
     assert "Diagnostic Records Review" in services
     assert "Organized Source Production" in services
-    assert "does not independently investigate individuals" in boundaries
+    assert "do not independently investigate individuals" in boundaries
     assert "Records Reconstruction & Documentation Analysis" in public_language
     assert "Records Reconstruction & Operational Intelligence" not in index
     assert "Business Records Intelligence" not in index
