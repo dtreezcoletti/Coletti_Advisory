@@ -7,6 +7,7 @@ const PUBLIC_ROUTES = new Set([
 ]);
 
 const replacements = [
+  [/ColettiOS/g, 'Coletti & Co.'],
   [/Evidence Intelligence & Reconstruction/g, 'Records Reconstruction & Documentation Analysis'],
   [/Records Intelligence & Reconstruction/g, 'Records Reconstruction & Documentation Analysis'],
   [/Records Reconstruction & Operational Intelligence/g, 'Records Reconstruction & Documentation Analysis'],
@@ -106,7 +107,7 @@ function ensureFirstTruthNotice() {
         <div class="professional-boundary-copy">
           <h2>First truth means the record comes first.</h2>
           <p>We work from a defined body of records that is lawfully supplied, uploaded, connected, or otherwise expressly authorized by the client. We report what those records support, what conflicts, what is missing, and what remains unresolved.</p>
-          <p><strong>ColettiOS can determine the condition of the records; it cannot independently determine the protected professional effect of that condition.</strong></p>
+          <p><strong>Coletti &amp; Co. can determine the condition of the records; it cannot independently determine the protected professional effect of that condition.</strong></p>
         </div>
         <a class="professional-boundary-link" href="#/disclaimer">Read the full First Truth boundary →</a>
       </div>`;
