@@ -1,4 +1,4 @@
-/* Public-facing canonical Record vocabulary + First Truth / professional-boundary presentation.
+/* Public-facing canonical Records Reconstruction & Documentation Analysis vocabulary.
    Internal database/API compatibility identifiers are not destructively renamed here. */
 
 const PUBLIC_ROUTES = new Set([
@@ -7,11 +7,16 @@ const PUBLIC_ROUTES = new Set([
 ]);
 
 const replacements = [
-  [/Evidence Intelligence & Reconstruction/g, 'Records Reconstruction & Operational Intelligence'],
-  [/Records Intelligence & Reconstruction/g, 'Records Reconstruction & Operational Intelligence'],
-  [/evidence-intelligence and reconstruction/gi, 'records reconstruction and operational intelligence'],
-  [/records intelligence and reconstruction/gi, 'records reconstruction and operational intelligence'],
-  [/Independent Evidence Intelligence/g, 'Independent Records Intelligence'],
+  [/ColettiOS/g, 'Coletti & Co.'],
+  [/Evidence Intelligence & Reconstruction/g, 'Records Reconstruction & Documentation Analysis'],
+  [/Records Intelligence & Reconstruction/g, 'Records Reconstruction & Documentation Analysis'],
+  [/Records Reconstruction & Operational Intelligence/g, 'Records Reconstruction & Documentation Analysis'],
+  [/evidence-intelligence and reconstruction/gi, 'records reconstruction and documentation analysis'],
+  [/records intelligence and reconstruction/gi, 'records reconstruction and documentation analysis'],
+  [/records reconstruction and operational intelligence/gi, 'records reconstruction and documentation analysis'],
+  [/Independent Evidence Intelligence/g, 'Independent Records Reconstruction'],
+  [/Independent Records Intelligence/g, 'Independent Records Reconstruction'],
+  [/Business Records Intelligence/g, 'Business Records Reconstruction'],
   [/Evidence states/g, 'Record States'],
   [/evidence states/g, 'Record States'],
   [/Evidence state/g, 'Record State'],
@@ -43,7 +48,6 @@ function normalizeText(value) {
 
 function normalizeNode(root) {
   if (!publicRouteActive() || !root) return;
-
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const nodes = [];
   while (walker.nextNode()) nodes.push(walker.currentNode);
@@ -51,7 +55,6 @@ function normalizeNode(root) {
     const next = normalizeText(node.nodeValue);
     if (next !== node.nodeValue) node.nodeValue = next;
   }
-
   const elements = root.querySelectorAll?.('[aria-label],[title],[placeholder]') || [];
   for (const el of elements) {
     for (const attr of ['aria-label','title','placeholder']) {
@@ -91,13 +94,8 @@ function ensureIdentifiedPattern() {
 function ensureFirstTruthNotice() {
   const footer = document.getElementById('site-footer');
   if (!footer) return;
-
   let notice = document.getElementById('first-truth-notice-band');
-  if (!publicRouteActive()) {
-    notice?.remove();
-    return;
-  }
-
+  if (!publicRouteActive()) { notice?.remove(); return; }
   if (!notice) {
     notice = document.createElement('section');
     notice.id = 'first-truth-notice-band';
@@ -105,11 +103,11 @@ function ensureFirstTruthNotice() {
     notice.setAttribute('aria-label', 'First Truth Notice');
     notice.innerHTML = `
       <div class="professional-boundary-inner">
-        <div class="professional-boundary-kicker">First Truth Notice · v2</div>
+        <div class="professional-boundary-kicker">First Truth Notice · v2.1</div>
         <div class="professional-boundary-copy">
           <h2>First truth means the record comes first.</h2>
-          <p>We report what the available records support, what conflicts, what is missing, and what remains unresolved. Record States preserve the difference between documented fact, reconciliation, inconsistency, missing documentation, process deviation, unresolved question, client assertion, third-party conclusion, referral required, and an identified pattern.</p>
-          <p><strong>ColettiOS can determine the condition of the records; it cannot independently determine the protected professional effect of that condition.</strong></p>
+          <p>We work from a defined body of records that is lawfully supplied, uploaded, connected, or otherwise expressly authorized by the client. We report what those records support, what conflicts, what is missing, and what remains unresolved.</p>
+          <p><strong>Coletti &amp; Co. can determine the condition of the records; it cannot independently determine the protected professional effect of that condition.</strong></p>
         </div>
         <a class="professional-boundary-link" href="#/disclaimer">Read the full First Truth boundary →</a>
       </div>`;
@@ -120,13 +118,8 @@ function ensureFirstTruthNotice() {
 function ensureProfessionalBoundary() {
   const footer = document.getElementById('site-footer');
   if (!footer) return;
-
   let boundary = document.getElementById('professional-boundary-band');
-  if (!publicRouteActive()) {
-    boundary?.remove();
-    return;
-  }
-
+  if (!publicRouteActive()) { boundary?.remove(); return; }
   if (!boundary) {
     boundary = document.createElement('section');
     boundary.id = 'professional-boundary-band';
@@ -137,7 +130,7 @@ function ensureProfessionalBoundary() {
         <div class="professional-boundary-kicker">Professional Boundary</div>
         <div class="professional-boundary-copy">
           <h2>Records reconstruction is not substituted professional judgment.</h2>
-          <p>A reconstruction engagement does not authorize Coletti &amp; Co. to act as your attorney, accountant, auditor, investigator, fiduciary, or other licensed professional. Where licensed or regulated professional judgment is required, Coletti &amp; Co. preserves the record, marks the issue <strong>Referral Required</strong>, and prepares the work for handoff to the appropriate qualified professional.</p>
+          <p>A reconstruction engagement does not authorize Coletti &amp; Co. to act as your attorney, accountant, auditor, investigator, fiduciary, or other licensed professional. Coletti &amp; Co. does not independently investigate individuals or determine fraud, wrongdoing, liability, credibility, motive, or intent. Where regulated professional judgment or investigation is required, the record is prepared for the appropriate qualified professional.</p>
         </div>
         <a class="professional-boundary-link" href="#/disclaimer">Read the full boundary →</a>
       </div>`;
@@ -146,11 +139,7 @@ function ensureProfessionalBoundary() {
 }
 
 function applyPublicVocabulary() {
-  if (!publicRouteActive()) {
-    ensureFirstTruthNotice();
-    ensureProfessionalBoundary();
-    return;
-  }
+  if (!publicRouteActive()) { ensureFirstTruthNotice(); ensureProfessionalBoundary(); return; }
   splitServicesScopeNotice();
   ensureIdentifiedPattern();
   ensureFirstTruthNotice();
@@ -168,10 +157,7 @@ let scheduled = false;
 function scheduleNormalization() {
   if (scheduled) return;
   scheduled = true;
-  queueMicrotask(() => {
-    scheduled = false;
-    applyPublicVocabulary();
-  });
+  queueMicrotask(() => { scheduled = false; applyPublicVocabulary(); });
 }
 
 window.addEventListener('hashchange', scheduleNormalization);
