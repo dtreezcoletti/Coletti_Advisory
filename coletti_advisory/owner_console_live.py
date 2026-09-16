@@ -14,7 +14,8 @@ class OwnerControlPlaneClient:
 
     The Streamlit process never receives a Supabase database credential. It reuses
     the existing private ColettiOS service URL and bearer token, while the service
-    performs owner-only Dispatcher reads/writes against authoritative PostgreSQL.
+    performs owner-only Dispatcher and canonical case-state reads/writes against
+    authoritative PostgreSQL.
     """
 
     def __init__(self, core: Any) -> None:
@@ -55,6 +56,27 @@ class OwnerControlPlaneClient:
         return self._post(
             "/v1/owner/snapshot",
             {"auth_context": self._auth(principal, engagement_id)},
+        )
+
+    def case_state_catalog(self, principal, engagement_id: str) -> list[dict[str, Any]]:
+        data = self._post(
+            "/v1/owner/case-state/catalog",
+            {"auth_context": self._auth(principal, engagement_id)},
+        )
+        cases = data.get("cases", [])
+        if not isinstance(cases, list):
+            raise OwnerControlPlaneUnavailable("Owner case-state catalog returned an invalid response")
+        return [dict(item) for item in cases if isinstance(item, dict)]
+
+    def case_state(self, principal, engagement_id: str, case_id: str) -> dict[str, Any]:
+        if not str(case_id).strip():
+            raise ValueError("case_id is required")
+        return self._post(
+            "/v1/owner/case-state",
+            {
+                "case_id": str(case_id).strip(),
+                "auth_context": self._auth(principal, engagement_id),
+            },
         )
 
     def route_command(
