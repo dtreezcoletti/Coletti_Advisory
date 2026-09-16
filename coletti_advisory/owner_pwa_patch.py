@@ -6,6 +6,7 @@ import streamlit as st
 
 from . import supabase_auth
 from .models import Role
+from .owner_docket_surface import render_owner_docket
 from .owner_private_nav import OWNER_PRIVATE_PAGES
 from .owner_private_pages import render_private_page
 
@@ -45,7 +46,7 @@ def patch_supabase_logout() -> None:
 
 
 def patch_owner_private_workspace(owner_runtime, owner_ui) -> None:
-    """Add the owner-private workspace without exposing it to employee/client navigation."""
+    """Add Owner-only institutional/private pages without exposing them to employee/client navigation."""
     if getattr(owner_runtime, "_owner_private_workspace_patched", False):
         return
 
@@ -58,6 +59,18 @@ def patch_owner_private_workspace(owner_runtime, owner_ui) -> None:
             return active
 
         page_key = f"_owner_reference_page:{principal.user_id}"
+
+        st.sidebar.divider()
+        st.sidebar.caption("OWNER INSTITUTIONAL")
+        if st.sidebar.button(
+            "§   Docket",
+            key="owner-institutional-nav:Docket",
+            type="primary" if st.session_state.get(page_key) == "Docket" else "secondary",
+            use_container_width=True,
+        ):
+            st.session_state[page_key] = "Docket"
+            st.rerun()
+
         st.sidebar.divider()
         st.sidebar.caption("OWNER PRIVATE")
         icons = {
@@ -80,11 +93,16 @@ def patch_owner_private_workspace(owner_runtime, owner_ui) -> None:
                 st.rerun()
 
         selected = st.session_state.get(page_key, active)
+        if selected == "Docket":
+            return selected
         return selected if selected in OWNER_PRIVATE_PAGES else active
 
     def render(shell, page: str, **kwargs):
         principal = kwargs["principal"]
         app_mode = kwargs.get("app_mode", "")
+
+        if principal.role == Role.OWNER and page == "Docket":
+            return render_owner_docket(principal)
 
         if principal.role == Role.OWNER and page in OWNER_PRIVATE_PAGES:
             return render_private_page(page)
