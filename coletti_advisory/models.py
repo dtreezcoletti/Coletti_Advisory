@@ -8,7 +8,10 @@ from typing import Iterable
 
 class Role(str, Enum):
     OWNER = "owner"
+    EXECUTIVE = "executive"
     ADMIN = "admin"
+    MANAGER = "manager"
+    STAFF = "staff"
     ANALYST = "analyst"
     REVIEWER = "reviewer"
     CLIENT = "client"
@@ -22,11 +25,24 @@ class Permission(str, Enum):
     REVIEW = "review"
     MANAGE_USERS = "manage_users"
     MANAGE_ENGAGEMENTS = "manage_engagements"
+    MANAGE_WORK = "manage_work"
+    EXECUTIVE_OVERSIGHT = "executive_oversight"
 
 
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     Role.OWNER: frozenset(Permission),
+    Role.EXECUTIVE: frozenset({Permission.VIEW, Permission.EXECUTIVE_OVERSIGHT}),
     Role.ADMIN: frozenset(Permission),
+    Role.MANAGER: frozenset(
+        {
+            Permission.VIEW,
+            Permission.UPLOAD,
+            Permission.ANALYZE,
+            Permission.REVIEW,
+            Permission.MANAGE_WORK,
+        }
+    ),
+    Role.STAFF: frozenset({Permission.VIEW, Permission.UPLOAD, Permission.MANAGE_WORK}),
     Role.ANALYST: frozenset({Permission.VIEW, Permission.UPLOAD, Permission.ANALYZE, Permission.REVIEW}),
     Role.REVIEWER: frozenset({Permission.VIEW, Permission.REVIEW}),
     Role.CLIENT: frozenset({Permission.VIEW, Permission.UPLOAD}),
@@ -51,6 +67,22 @@ class Principal:
 
     def can_access(self, engagement_id: str) -> bool:
         return engagement_id in self.engagement_ids
+
+    @property
+    def is_client(self) -> bool:
+        return self.role is Role.CLIENT
+
+    @property
+    def is_employee(self) -> bool:
+        return self.role in {
+            Role.STAFF,
+            Role.ANALYST,
+            Role.REVIEWER,
+            Role.MANAGER,
+            Role.ADMIN,
+            Role.EXECUTIVE,
+            Role.OWNER,
+        }
 
     def auth_context(self, engagement_id: str) -> dict[str, str]:
         if not self.can_access(engagement_id):

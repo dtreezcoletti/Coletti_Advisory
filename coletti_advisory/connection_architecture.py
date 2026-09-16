@@ -52,18 +52,20 @@ DESTINATION_REGISTRY: Mapping[str, Destination] = {
 
 
 CAPABILITY_ROLES: Mapping[str, frozenset[Role]] = {
-    "records_upload": frozenset({Role.CLIENT, Role.ANALYST, Role.REVIEWER, Role.ADMIN, Role.OWNER}),
-    "google_drive_import": frozenset({Role.CLIENT, Role.ANALYST, Role.REVIEWER, Role.ADMIN, Role.OWNER}),
-    "zip_archive_import": frozenset({Role.CLIENT, Role.ANALYST, Role.REVIEWER, Role.ADMIN, Role.OWNER}),
-    "records_review": frozenset({Role.ANALYST, Role.REVIEWER, Role.ADMIN, Role.OWNER}),
-    "human_review": frozenset({Role.REVIEWER, Role.ADMIN, Role.OWNER}),
-    "reports": frozenset({Role.CLIENT, Role.READ_ONLY, Role.ANALYST, Role.REVIEWER, Role.ADMIN, Role.OWNER}),
-    "client_messages": frozenset({Role.CLIENT, Role.READ_ONLY, Role.ANALYST, Role.REVIEWER, Role.ADMIN, Role.OWNER}),
-    "team_oversight": frozenset({Role.ADMIN, Role.OWNER}),
-    "finance": frozenset({Role.ADMIN, Role.OWNER}),
-    "billing": frozenset({Role.ADMIN, Role.OWNER}),
-    "contracts": frozenset({Role.ADMIN, Role.OWNER}),
-    "knowledge_internal": frozenset({Role.ANALYST, Role.REVIEWER, Role.ADMIN, Role.OWNER}),
+    "records_upload": frozenset({Role.CLIENT, Role.STAFF, Role.ANALYST, Role.REVIEWER, Role.MANAGER, Role.ADMIN, Role.OWNER}),
+    "google_drive_import": frozenset({Role.CLIENT, Role.STAFF, Role.ANALYST, Role.REVIEWER, Role.MANAGER, Role.ADMIN, Role.OWNER}),
+    "zip_archive_import": frozenset({Role.CLIENT, Role.STAFF, Role.ANALYST, Role.REVIEWER, Role.MANAGER, Role.ADMIN, Role.OWNER}),
+    "records_review": frozenset({Role.ANALYST, Role.REVIEWER, Role.MANAGER, Role.ADMIN, Role.OWNER}),
+    "human_review": frozenset({Role.REVIEWER, Role.MANAGER, Role.ADMIN, Role.OWNER}),
+    "reports": frozenset({Role.CLIENT, Role.READ_ONLY, Role.STAFF, Role.ANALYST, Role.REVIEWER, Role.MANAGER, Role.ADMIN, Role.EXECUTIVE, Role.OWNER}),
+    "client_messages": frozenset({Role.CLIENT, Role.READ_ONLY, Role.STAFF, Role.ANALYST, Role.REVIEWER, Role.MANAGER, Role.ADMIN, Role.EXECUTIVE, Role.OWNER}),
+    "staff_workflow": frozenset({Role.STAFF, Role.ANALYST, Role.REVIEWER, Role.MANAGER, Role.ADMIN, Role.OWNER}),
+    "team_oversight": frozenset({Role.MANAGER, Role.ADMIN, Role.EXECUTIVE, Role.OWNER}),
+    "executive_oversight": frozenset({Role.EXECUTIVE, Role.OWNER}),
+    "finance": frozenset({Role.ADMIN, Role.EXECUTIVE, Role.OWNER}),
+    "billing": frozenset({Role.ADMIN, Role.EXECUTIVE, Role.OWNER}),
+    "contracts": frozenset({Role.ADMIN, Role.EXECUTIVE, Role.OWNER}),
+    "knowledge_internal": frozenset({Role.STAFF, Role.ANALYST, Role.REVIEWER, Role.MANAGER, Role.ADMIN, Role.EXECUTIVE, Role.OWNER}),
     "knowledge_client": frozenset({Role.CLIENT, Role.READ_ONLY}),
     "docket": frozenset({Role.OWNER}),
     "implementation_control": frozenset({Role.OWNER}),
@@ -77,6 +79,12 @@ DRILL_THROUGH_CONTRACT = (
     "Every meaningful dashboard card, DARI result, notification, KPI, alert, count, status, and actionable summary "
     "must resolve to the authoritative object or filtered canonical workspace that produced it. A display-only duplicate "
     "of operational state is not connected and cannot be marked Operational."
+)
+
+CLIENT_EMPLOYEE_WIRING_CONTRACT = (
+    "Client and employee interfaces are Operational only when authentication, engagement scope, role capabilities, "
+    "authoritative data access, workflow transitions, review/approval gates, publishing controls, notifications, "
+    "audit attribution, and failure handling are connected end-to-end and verified. Screen presence alone is not completion."
 )
 
 
