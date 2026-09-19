@@ -10,6 +10,7 @@ import streamlit as st
 from . import owner_console_ui as owner_ui
 from .demo_controls import render_demo_experience_switcher
 from .models import Permission, Role
+from .owner_case_state import render_owner_case_state
 from .owner_console_dari import render_owner_dari
 from .owner_console_live_ui import render_live_owner_dashboard, render_owner_page_live
 from .owner_console_notifications import render_live_owner_topbar
@@ -33,6 +34,17 @@ if not any(label == "Record Ingestion" for label, _icon in owner_ui.OWNER_MAIN_N
         len(_owner_main_nav),
     )
     _owner_main_nav.insert(_evidence_index, ("Record Ingestion", "⇧"))
+    owner_ui.OWNER_MAIN_NAV = tuple(_owner_main_nav)
+
+# The canonical reconstructed-case-state layer is owner/internal control data. It
+# receives a dedicated owner-only page and is not added to the client navigation.
+if not any(label == "Case State" for label, _icon in owner_ui.OWNER_MAIN_NAV):
+    _owner_main_nav = list(owner_ui.OWNER_MAIN_NAV)
+    _evidence_index = next(
+        (index for index, (label, _icon) in enumerate(_owner_main_nav) if label == "Evidence"),
+        len(_owner_main_nav) - 1,
+    )
+    _owner_main_nav.insert(_evidence_index + 1, ("Case State", "▦"))
     owner_ui.OWNER_MAIN_NAV = tuple(_owner_main_nav)
 
 _owner_sidebar = owner_ui._owner_sidebar
@@ -211,6 +223,12 @@ def _render_owner_page(shell, page: str, **kwargs) -> None:
         )
         _render_google_drive_import(shell, **kwargs)
         return None
+    if page == "Case State":
+        return render_owner_case_state(
+            principal=kwargs["principal"],
+            engagement_id=kwargs["engagement_id"],
+            core=kwargs["core"],
+        )
     if page == "My Workspace":
         return render_live_owner_dashboard(
             shell,
