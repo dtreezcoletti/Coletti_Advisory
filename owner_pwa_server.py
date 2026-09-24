@@ -184,6 +184,38 @@ async def health(_request):
     return JSONResponse({"ok": True, "service": "colettios-owner-pwa"})
 
 
+async def system_state(request):
+    """Authenticated runtime projection of the authoritative Global Baseline."""
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return JSONResponse({"error": "AUTHENTICATION_REQUIRED"}, status_code=401)
+    if not _supabase_url() or not _supabase_key():
+        return JSONResponse({"error": "SUPABASE_NOT_CONFIGURED"}, status_code=503)
+    token = auth.split(" ", 1)[1].strip()
+    try:
+        response = requests.get(
+            f"{_supabase_url()}/rest/v1/baselines",
+            headers={
+                "apikey": _supabase_key(),
+                "Authorization": f"Bearer {token}",
+            },
+            params={
+                "select": "baseline_id,baseline_version,authority_state,verification_state,exception_state,actual_state,dependency_state,continuity_state,confidence_state,reconciled_at",
+                "order": "baseline_version.desc",
+                "limit": "1",
+            },
+            timeout=20,
+        )
+    except requests.RequestException:
+        return JSONResponse({"error": "AUTHORITATIVE_STATE_UNAVAILABLE"}, status_code=502)
+    if response.status_code >= 400:
+        return JSONResponse({"error": "AUTHORITATIVE_STATE_UNAVAILABLE"}, status_code=502)
+    rows = response.json()
+    if not rows:
+        return JSONResponse({"error": "GLOBAL_BASELINE_UNAVAILABLE"}, status_code=503)
+    return JSONResponse({"ok": True, "source": "supabase.global_state.baselines", "baseline": rows[0]})
+
+
 streamlit_app = st.App("owner_pwa_streamlit.py")
 
 app = Starlette(
@@ -197,6 +229,7 @@ app = Starlette(
         Route("/sw.js", service_worker),
         Route("/pwa-icon.svg", icon),
         Route("/healthz", health),
+        Route("/api/system-state", system_state),
         Mount("/app", app=streamlit_app),
     ],
     lifespan=streamlit_app.lifespan(),
