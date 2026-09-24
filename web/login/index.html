@@ -89,20 +89,28 @@ const routeAuthenticatedSession=async()=>{
   catch(e){console.error('Workspace resolution failed',e);notice('Authentication succeeded, but the authorized workspace could not be resolved. No protected workspace was opened.');return false}
 };
 
-const {data:initialSession}=await supabase.auth.getSession();
-if(initialSession.session?.user && !location.hash.includes('type=recovery')){
-  await routeAuthenticatedSession();
-}
+const recoveryInUrl=()=>new URLSearchParams(location.search).get('type')==='recovery' || new URLSearchParams(location.hash.replace(/^#/,'')).get('type')==='recovery';
+
+let recoveryMode=recoveryInUrl();
 
 supabase.auth.onAuthStateChange((event,session)=>{
   if(event==='PASSWORD_RECOVERY' && session?.user){
+    recoveryMode=true;
     showRecovery();
     return;
   }
   if(event==='SIGNED_IN' && session?.user){
+    if(recoveryMode) return;
     queueMicrotask(()=>void routeAuthenticatedSession());
   }
 });
+
+const {data:initialSession}=await supabase.auth.getSession();
+if(initialSession.session?.user && recoveryMode){
+  showRecovery();
+} else if(initialSession.session?.user){
+  await routeAuthenticatedSession();
+}
 
 $('login').addEventListener('submit',async(e)=>{
   e.preventDefault();$('submit').disabled=true;
