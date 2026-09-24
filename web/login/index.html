@@ -17,7 +17,8 @@
     button{border:0;border-radius:10px;padding:13px 16px;background:#18242b;color:#fff;font:700 14px inherit;cursor:pointer;margin-top:4px}button:disabled{opacity:.6;cursor:wait}
     .secondary{background:transparent;color:#18242b;border:1px solid #cfc5b8}.divider{display:flex;align-items:center;gap:12px;margin:22px 0;color:#87939a;font-size:12px}.divider:before,.divider:after{content:"";height:1px;background:#ded6cc;flex:1}
     .notice{display:none;margin-top:16px;padding:12px 14px;border-radius:10px;background:#f5eee5;color:#5f4630;font-size:13px;line-height:1.5}.notice.show{display:block}.small{font-size:12px;margin-top:22px}
-    a{color:#53636b}.back{display:inline-block;margin-top:20px;text-decoration:none;font-size:13px}
+    a{color:#53636b}.back{display:inline-block;margin-top:20px;text-decoration:none;font-size:13px}.link-button{background:none;border:0;color:#53636b;padding:0;margin:0;font:600 12px inherit;text-decoration:underline;cursor:pointer}
+    .hidden{display:none}
   </style>
 </head>
 <body>
@@ -26,15 +27,25 @@
     <div class="brand"><div class="mark">C</div><div><strong>Coletti &amp; Co.</strong><div style="font-size:12px;color:#7a878d">One secure entry. The right workspace.</div></div></div>
     <div class="eyebrow">Universal Secure Entry</div>
     <h1 id="title">Sign in to Coletti &amp; Co.</h1>
-    <p>Use your authorized account. After authentication, Coletti &amp; Co. will route you to the workspace permitted for your identity and role.</p>
+    <p id="intro">Use your authorized account. After authentication, Coletti &amp; Co. will route you to the workspace permitted for your identity and role.</p>
     <div id="notice" class="notice" role="alert"></div>
+
     <form id="login">
       <label>Email<input id="email" type="email" autocomplete="email" required></label>
       <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
       <button id="submit" type="submit">Sign in</button>
+      <button id="forgot" class="link-button" type="button">Forgot password?</button>
     </form>
+
     <div class="divider">or</div>
     <button id="magic" class="secondary" type="button">Send me a secure sign-in link</button>
+
+    <form id="recovery" class="hidden">
+      <label>New password<input id="new-password" type="password" autocomplete="new-password" minlength="8" required></label>
+      <label>Confirm new password<input id="confirm-password" type="password" autocomplete="new-password" minlength="8" required></label>
+      <button id="update-password" type="submit">Set new password</button>
+    </form>
+
     <p class="small">Access is determined after authentication. Client, employee, admin, and Owner workspaces remain separately authorized.</p>
     <a class="back" href="/">← Back to Coletti &amp; Co.</a>
   </section>
@@ -59,12 +70,16 @@ const destination=async(user)=>{
 };
 const finish=async(user)=>{
   const target=await destination(user);
-  // Use a full navigation so the authenticated workspace initializes from a
-  // clean document instead of allowing the public site/router to retain the
-  // pre-auth route.
   location.replace(target+'#/home');
 };
-
+const showRecovery=()=>{
+  $('login').classList.add('hidden');
+  $('magic').classList.add('hidden');
+  $('forgot').classList.add('hidden');
+  $('recovery').classList.remove('hidden');
+  $('title').textContent='Set a new password';
+  $('intro').textContent='Create a new password for your authorized Coletti & Co. account.';
+};
 const routeAuthenticatedSession=async()=>{
   const {data,error}=await supabase.auth.getSession();
   if(error){console.error('Session resolution failed',error);return false}
@@ -73,11 +88,17 @@ const routeAuthenticatedSession=async()=>{
   catch(e){console.error('Workspace resolution failed',e);notice('Authentication succeeded, but the authorized workspace could not be resolved. No protected workspace was opened.');return false}
 };
 
-// Explicitly consume authentication/recovery callbacks before the public site
-// can render a fallback route.
-await routeAuthenticatedSession();
+const {data:initialSession}=await supabase.auth.getSession();
+if(initialSession.session?.user && !location.hash.includes('type=recovery')){
+  await routeAuthenticatedSession();
+}
+
 supabase.auth.onAuthStateChange((event,session)=>{
-  if(['SIGNED_IN','PASSWORD_RECOVERY','INITIAL_SESSION'].includes(event) && session?.user){
+  if(event==='PASSWORD_RECOVERY' && session?.user){
+    showRecovery();
+    return;
+  }
+  if(event==='SIGNED_IN' && session?.user){
     queueMicrotask(()=>void routeAuthenticatedSession());
   }
 });
@@ -86,13 +107,34 @@ $('login').addEventListener('submit',async(e)=>{
   e.preventDefault();$('submit').disabled=true;
   const {data,error}=await supabase.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});
   $('submit').disabled=false;
-  if(error){notice('Sign-in was not completed. Check your credentials or use the secure sign-in link.');return}
+  if(error){notice('Sign-in was not completed. Check your credentials or use password recovery.');return}
   try{await finish(data.user)}catch(error){console.error(error);notice('Identity verified, but the authorized workspace could not be resolved. Access remains closed.')}
 });
+
+$('forgot').addEventListener('click',async()=>{
+  const email=$('email').value.trim();
+  if(!email){notice('Enter your email address first.');return}
+  const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin+'/login/'});
+  if(error){console.error(error);notice('The password recovery email could not be sent.');return}
+  notice('Password recovery email sent. Check your email and open the recovery link.');
+});
+
 $('magic').addEventListener('click',async()=>{
   const email=$('email').value.trim();if(!email){notice('Enter your email address first.');return}
   const {error}=await supabase.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+'/login/'}});
   if(error) notice('The secure sign-in link could not be sent. Please try again.'); else notice('Secure sign-in link sent. Check your email and return here to complete authentication.');
+});
+
+$('recovery').addEventListener('submit',async(e)=>{
+  e.preventDefault();
+  const password=$('new-password').value;
+  const confirmation=$('confirm-password').value;
+  if(password!==confirmation){notice('The two passwords do not match.');return}
+  const {error}=await supabase.auth.updateUser({password});
+  if(error){console.error(error);notice('The new password could not be saved.');return}
+  notice('Password updated. Signing you into the authorized workspace…');
+  const {data}=await supabase.auth.getSession();
+  if(data.session?.user) await finish(data.session.user);
 });
 </script>
 </body>
