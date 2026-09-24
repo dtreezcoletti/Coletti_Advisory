@@ -73,7 +73,9 @@ async function refreshAuth() {
   state.session=data.session; state.user=data.session?.user || null; state.profile=null; state.caseIds=[];
   if (!state.user) return;
   const { data:profile, error } = await supabase.from('profiles').select('*').eq('id',state.user.id).maybeSingle();
-  if (error) console.error(error); state.profile=profile || {id:state.user.id,display_name:state.user.email,role:'client'};
+  if (error) { console.error(error); state.profile=null; throw new Error('WORKSPACE_AUTHORITY_UNRESOLVED'); }
+  if (!profile?.role) { state.profile=null; throw new Error('WORKSPACE_AUTHORITY_UNRESOLVED'); }
+  state.profile=profile;
   await refreshCases();
 }
 async function refreshCases() {
