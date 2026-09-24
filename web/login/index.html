@@ -49,18 +49,38 @@ const notice=(msg)=>{$('notice').textContent=msg;$('notice').classList.add('show
 const destination=async(user)=>{
   const {data:profile,error}=await supabase.from('profiles').select('role').eq('id',user.id).maybeSingle();
   if(error) throw error;
-  const role=profile?.role||'client';
+  const role=profile?.role;
+  if(!role) throw new Error('WORKSPACE_AUTHORITY_UNRESOLVED');
   if(role==='owner') return '/owner/';
   if(role==='admin') return '/admin/';
   if(['analyst','reviewer'].includes(role)) return '/employee/';
-  return '/portal/';
+  if(role==='client') return '/portal/';
+  throw new Error('WORKSPACE_AUTHORITY_UNRESOLVED');
 };
 const finish=async(user)=>{
   const target=await destination(user);
-  location.assign(target+'#/home');
+  // Use a full navigation so the authenticated workspace initializes from a
+  // clean document instead of allowing the public site/router to retain the
+  // pre-auth route.
+  location.replace(target+'#/home');
 };
-const existing=await supabase.auth.getSession();
-if(existing.data.session?.user){try{await finish(existing.data.session.user)}catch(e){console.error(e)}}
+
+const routeAuthenticatedSession=async()=>{
+  const {data,error}=await supabase.auth.getSession();
+  if(error){console.error('Session resolution failed',error);return false}
+  if(!data.session?.user) return false;
+  try{await finish(data.session.user);return true}
+  catch(e){console.error('Workspace resolution failed',e);notice('Authentication succeeded, but the authorized workspace could not be resolved. No protected workspace was opened.');return false}
+};
+
+// Explicitly consume authentication/recovery callbacks before the public site
+// can render a fallback route.
+await routeAuthenticatedSession();
+supabase.auth.onAuthStateChange((event,session)=>{
+  if(['SIGNED_IN','PASSWORD_RECOVERY','INITIAL_SESSION'].includes(event) && session?.user){
+    queueMicrotask(()=>void routeAuthenticatedSession());
+  }
+});
 
 $('login').addEventListener('submit',async(e)=>{
   e.preventDefault();$('submit').disabled=true;
