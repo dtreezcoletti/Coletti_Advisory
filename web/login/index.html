@@ -57,12 +57,13 @@ import {SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY} from '/assets/config.js';
 const supabase=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
 const $=id=>document.getElementById(id);
 const notice=(msg)=>{$('notice').textContent=msg;$('notice').classList.add('show')};
+const OWNER_WORKSPACE_URL='https://colettios-owner.onrender.com/';
 const destination=async(user)=>{
   const {data:profile,error}=await supabase.from('profiles').select('role').eq('id',user.id).maybeSingle();
   if(error) throw error;
   const role=profile?.role;
   if(!role) throw new Error('WORKSPACE_AUTHORITY_UNRESOLVED');
-  if(role==='owner') return '/owner/';
+  if(role==='owner') return OWNER_WORKSPACE_URL;
   if(role==='admin') return '/admin/';
   if(['analyst','reviewer'].includes(role)) return '/employee/';
   if(role==='client') return '/portal/';
@@ -114,14 +115,14 @@ $('login').addEventListener('submit',async(e)=>{
 $('forgot').addEventListener('click',async()=>{
   const email=$('email').value.trim();
   if(!email){notice('Enter your email address first.');return}
-  const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin+'/login/'});
+  const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:`${location.origin}/login/`});
   if(error){console.error(error);notice('The password recovery email could not be sent.');return}
   notice('Password recovery email sent. Check your email and open the recovery link.');
 });
 
 $('magic').addEventListener('click',async()=>{
   const email=$('email').value.trim();if(!email){notice('Enter your email address first.');return}
-  const {error}=await supabase.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+'/login/'}});
+  const {error}=await supabase.auth.signInWithOtp({email,options:{emailRedirectTo:`${location.origin}/login/`}});
   if(error) notice('The secure sign-in link could not be sent. Please try again.'); else notice('Secure sign-in link sent. Check your email and return here to complete authentication.');
 });
 
