@@ -46,14 +46,20 @@ async function authenticatedRole() {
     console.error('Portal routing profile lookup failed', error);
     return null;
   }
-  return profile?.role || 'client';
+  if (!profile?.role) throw new Error('WORKSPACE_AUTHORITY_UNRESOLVED');
+  return profile.role;
 }
 
 async function enforceRoleAwareLanding() {
   if (routing) return;
   routing = true;
   try {
-    const role = await authenticatedRole();
+    let role;
+    try { role = await authenticatedRole(); } catch (error) {
+      console.error('Workspace authority unresolved', error);
+      location.replace('/login/');
+      return;
+    }
     if (!role) return;
 
     const route = currentRoute();
