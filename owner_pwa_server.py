@@ -86,6 +86,27 @@ send.addEventListener('click',async()=>{{const email=document.getElementById('em
     )
 
 
+async def recovery_gate(request):
+    """Prefetch-safe recovery landing page.
+
+    Email scanners may GET links before the owner clicks them. This page deliberately
+    exposes the one-time Supabase confirmation URL only behind an explicit human click.
+    """
+    confirmation_url = request.query_params.get("confirmation_url", "").strip()
+    if not confirmation_url or not confirmation_url.startswith(_supabase_url() + "/auth/v1/verify"):
+        return HTMLResponse(
+            f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Invalid recovery link</title><style>{AUTH_PAGE_STYLE}</style></head><body><main class="card"><img class="mark" src="/pwa-icon.svg" alt="ColettiOS"><div class="over">Secure Account Recovery</div><div class="title">Recovery link unavailable</div><div class="copy">This recovery link is missing or malformed. Request a new password-reset email.</div><a class="button" href="/forgot-password">Request new reset email</a></main></body></html>""",
+            status_code=400,
+            headers={"Cache-Control": "no-store"},
+        )
+    import html as _html
+    safe_url = _html.escape(confirmation_url, quote=True)
+    return HTMLResponse(
+        f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#2f2b27"><title>Continue to ColettiOS recovery</title><style>{AUTH_PAGE_STYLE}</style></head><body><main class="card"><img class="mark" src="/pwa-icon.svg" alt="ColettiOS"><div class="over">Secure Account Recovery</div><div class="title">Continue to password reset</div><div class="copy">Your recovery request is ready. The next step uses a one-time secure authentication link.</div><a class="button" href="{safe_url}">Continue to reset password</a><div class="note">If you did not request this, close this page.</div></main></body></html>""",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 async def reset_password(_request):
     return HTMLResponse(
         f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#2f2b27"><title>Choose new ColettiOS password</title><style>{AUTH_PAGE_STYLE}</style></head><body>
@@ -223,6 +244,7 @@ app = Starlette(
         Route("/", landing),
         Route("/forgot-password", forgot_password),
         Route("/reset-password", reset_password),
+        Route("/recovery-gate", recovery_gate),
         Route("/api/password-reset-request", password_reset_request, methods=["POST"]),
         Route("/api/password-update", password_update, methods=["POST"]),
         Route("/manifest.webmanifest", manifest),
