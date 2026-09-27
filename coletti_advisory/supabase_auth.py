@@ -70,6 +70,50 @@ def sign_in_password(email: str, password: str) -> SupabaseSession:
     return _session_from_payload(dict(response.json()))
 
 
+def _normalize_phone(phone: str) -> str:
+    normalized = "".join(phone.strip().split())
+    if normalized.startswith("+") and normalized[1:].isdigit():
+        return normalized
+    digits = "".join(ch for ch in normalized if ch.isdigit())
+    if len(digits) == 10:
+        return f"+1{digits}"
+    if len(digits) == 11 and digits.startswith("1"):
+        return f"+{digits}"
+    raise ValueError("Enter a valid mobile phone number")
+
+
+def request_sms_otp(phone: str) -> None:
+    """Send a login-only SMS OTP without allowing automatic account creation."""
+    normalized = _normalize_phone(phone)
+    url = _secret("SUPABASE_URL").rstrip("/")
+    response = requests.post(
+        f"{url}/auth/v1/otp",
+        headers=_headers(),
+        json={"phone": normalized, "create_user": False, "channel": "sms"},
+        timeout=20,
+    )
+    if response.status_code >= 400:
+        raise PermissionError("SMS sign-in code could not be sent")
+
+
+def sign_in_sms_otp(phone: str, token: str) -> SupabaseSession:
+    """Verify an SMS OTP and establish a Supabase session."""
+    normalized = _normalize_phone(phone)
+    code = "".join(token.strip().split())
+    if not code.isdigit() or len(code) != 6:
+        raise ValueError("Enter the 6-digit code")
+    url = _secret("SUPABASE_URL").rstrip("/")
+    response = requests.post(
+        f"{url}/auth/v1/verify",
+        headers=_headers(),
+        json={"phone": normalized, "token": code, "type": "sms"},
+        timeout=20,
+    )
+    if response.status_code >= 400:
+        raise PermissionError("SMS sign-in code was not accepted")
+    return _session_from_payload(dict(response.json()))
+
+
 def request_password_reset(email: str) -> None:
     """Request a recovery email without revealing whether the account exists."""
     normalized = email.strip().lower()
@@ -385,7 +429,7 @@ def require_principal(*, app_mode: str) -> Principal | None:
     session = _load_session()
     if session is None:
         st.title("Coletti & Co.")
-        st.caption("Secure Owner Portal · Email + password")
+        st.caption("Secure Owner Portal")
         with st.form("coletti_supabase_login", clear_on_submit=False):
             email = st.text_input("Email", autocomplete="email")
             password = st.text_input("Password", type="password", autocomplete="current-password")
@@ -397,6 +441,55 @@ def require_principal(*, app_mode: str) -> Principal | None:
                 st.rerun()
             except (PermissionError, requests.RequestException):
                 st.error("Email or password was not accepted.")
+
+        with st.expander("Sign in with a text code"):
+            st.caption("Login only. We will text a one-time 6-digit code to your mobile phone.")
+            sms_phone = st.text_input(
+                "Mobile phone",
+                key="coletti_sms_login_phone",
+                placeholder="+1 346 262 4098",
+                autocomplete="tel",
+            )
+            otp_sent_phone = st.session_state.get("_coletti_sms_otp_phone")
+            if not otp_sent_phone:
+                if st.button("Text me a code", key="coletti_sms_send"):
+                    try:
+                        normalized_phone = _normalize_phone(sms_phone)
+                        request_sms_otp(normalized_phone)
+                        st.session_state["_coletti_sms_otp_phone"] = normalized_phone
+                        st.success("A one-time code was sent to your phone.")
+                    except ValueError:
+                        st.error("Enter a valid mobile phone number.")
+                    except (PermissionError, requests.RequestException):
+                        st.error("A text code could not be sent. Check the number and SMS sign-in setup.")
+            else:
+                st.info("Enter the 6-digit code sent to your phone.")
+                sms_code = st.text_input(
+                    "Text code",
+                    key="coletti_sms_login_code",
+                    max_chars=6,
+                    autocomplete="one-time-code",
+                )
+                verify_col, reset_col = st.columns(2)
+                with verify_col:
+                    verify_sms = st.button("Verify code", key="coletti_sms_verify", type="primary")
+                with reset_col:
+                    use_different = st.button("Use different number", key="coletti_sms_reset")
+                if use_different:
+                    st.session_state.pop("_coletti_sms_otp_phone", None)
+                    st.session_state.pop("coletti_sms_login_code", None)
+                    st.rerun()
+                if verify_sms:
+                    try:
+                        session = sign_in_sms_otp(otp_sent_phone, sms_code)
+                        _save_session(session)
+                        st.session_state.pop("_coletti_sms_otp_phone", None)
+                        st.session_state.pop("coletti_sms_login_code", None)
+                        st.rerun()
+                    except ValueError as exc:
+                        st.error(str(exc))
+                    except (PermissionError, requests.RequestException):
+                        st.error("That text code was not accepted or has expired.")
 
         with st.expander("Forgot your password?"):
             reset_email = st.text_input(
