@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+import os
+
 import requests
 import streamlit as st
 
@@ -20,10 +22,15 @@ class SupabaseSession:
 
 
 def _secret(name: str, default: str = "") -> str:
+    # Render injects production configuration through environment variables.
+    # Streamlit secrets remain supported for local/demo environments.
     try:
-        return str(st.secrets.get(name, default) or default)
+        value = st.secrets.get(name, None)
     except Exception:
-        return default
+        value = None
+    if value:
+        return str(value)
+    return str(os.getenv(name, default) or default)
 
 
 def configured() -> bool:
