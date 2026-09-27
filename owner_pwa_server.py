@@ -89,16 +89,29 @@ send.addEventListener('click',async()=>{{const email=document.getElementById('em
 async def recovery_gate(request):
     """Prefetch-safe recovery landing page.
 
-    Email scanners may GET links before the owner clicks them. This page deliberately
-    exposes the one-time Supabase confirmation URL only behind an explicit human click.
+    Email scanners may GET links before the owner clicks them. This page therefore
+    carries only the non-consuming TokenHash and reveals the single-use verification
+    URL only behind an explicit human click.
     """
-    confirmation_url = request.query_params.get("confirmation_url", "").strip()
-    if not confirmation_url or not confirmation_url.startswith(_supabase_url() + "/auth/v1/verify"):
+    token_hash = request.query_params.get("token_hash", "").strip()
+    recovery_type = request.query_params.get("type", "recovery").strip() or "recovery"
+    redirect_to = request.query_params.get("redirect_to", "").strip()
+    expected_redirect = str(request.base_url).rstrip("/") + "/reset-password"
+    if (
+        not token_hash
+        or recovery_type != "recovery"
+        or redirect_to != expected_redirect
+        or not _supabase_url()
+    ):
         return HTMLResponse(
             f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Invalid recovery link</title><style>{AUTH_PAGE_STYLE}</style></head><body><main class="card"><img class="mark" src="/pwa-icon.svg" alt="ColettiOS"><div class="over">Secure Account Recovery</div><div class="title">Recovery link unavailable</div><div class="copy">This recovery link is missing or malformed. Request a new password-reset email.</div><a class="button" href="/forgot-password">Request new reset email</a></main></body></html>""",
             status_code=400,
             headers={"Cache-Control": "no-store"},
         )
+    from urllib.parse import urlencode
+    confirmation_url = f"{_supabase_url()}/auth/v1/verify?" + urlencode(
+        {"token_hash": token_hash, "type": recovery_type, "redirect_to": redirect_to}
+    )
     import html as _html
     safe_url = _html.escape(confirmation_url, quote=True)
     return HTMLResponse(
