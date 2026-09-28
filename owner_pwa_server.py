@@ -96,11 +96,11 @@ async def recovery_gate(request):
     token_hash = request.query_params.get("token_hash", "").strip()
     recovery_type = request.query_params.get("type", "recovery").strip() or "recovery"
     redirect_to = request.query_params.get("redirect_to", "").strip()
-    expected_redirect = str(request.base_url).rstrip("/") + "/reset-password"
+    expected_origin = str(request.base_url).rstrip("/")
     if (
         not token_hash
         or recovery_type != "recovery"
-        or redirect_to != expected_redirect
+        or redirect_to != expected_origin
         or not _supabase_url()
     ):
         return HTMLResponse(
@@ -109,8 +109,9 @@ async def recovery_gate(request):
             headers={"Cache-Control": "no-store"},
         )
     from urllib.parse import urlencode
+    final_redirect = expected_origin + "/reset-password"
     confirmation_url = f"{_supabase_url()}/auth/v1/verify?" + urlencode(
-        {"token_hash": token_hash, "type": recovery_type, "redirect_to": redirect_to}
+        {"token_hash": token_hash, "type": recovery_type, "redirect_to": final_redirect}
     )
     import html as _html
     safe_url = _html.escape(confirmation_url, quote=True)
