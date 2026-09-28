@@ -124,6 +124,12 @@ def request_password_reset(email: str) -> None:
     payload: dict[str, Any] = {"email": normalized}
     redirect_to = _secret("PASSWORD_RESET_REDIRECT_URL")
     if redirect_to:
+        # The recovery email template uses RedirectTo as the base URL for
+        # /recovery-gate. Keep the auth redirect at the Owner Console origin;
+        # the recovery gate then performs the final redirect to /reset-password.
+        redirect_to = redirect_to.rstrip("/")
+        if redirect_to.endswith("/reset-password"):
+            redirect_to = redirect_to[: -len("/reset-password")]
         payload["redirect_to"] = redirect_to
 
     response = requests.post(
