@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import requests
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -450,5 +451,89 @@ class GoogleCloudEncryptedStorage:
             master_key=self.master_key,
             organization_id=organization_id,
             engagement_id=engagement_id,
+            key_version=self.key_version,
+        )
+
+
+class SupabaseEncryptedStorage:
+    """Production encrypted source storage backed by Supabase Storage."""
+
+    def __init__(
+        self,
+        *,
+        supabase_url: str,
+        access_token: str,
+        bucket_name: str,
+        master_key: bytes,
+        key_version: str = DEFAULT_STORAGE_KEY_VERSION,
+    ) -> None:
+        self.supabase_url = supabase_url.rstrip("/")
+        self.access_token = access_token
+        self.bucket_name = bucket_name
+        self.master_key = master_key
+        self.key_version = _validated_key_version(key_version)
+        if not access_token:
+            raise RuntimeError("Supabase Auth access token is required for production storage")
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.access_token}",
+            "apikey": self._anon_key,
+        }
+
+    @property
+    def _anon_key(self) -> str:
+        # The access token is already bound to the configured Supabase project.
+        # Supabase Storage accepts the JWT for authenticated object operations.
+        return self._anon_key_value
+
+    def set_anon_key(self, value: str) -> None:
+        self._anon_key_value = value
+
+    def put(
+        self,
+        *,
+        organization_id: str,
+        engagement_id: str,
+        source_id: str,
+        filename: str,
+        data: bytes,
+    ) -> StoredObject:
+        digest = hashlib.sha256(data).hexdigest()
+        object_name = "/".join(
+            (_safe(organization_id), _safe(engagement_id), f"{_safe(source_id)}.blob")
+        )
+        data_key = derive_scoped_key(
+            self.master_key,
+            purpose="source-object",
+            organization_id=organization_id,
+            engagement_id=engagement_id,
+            object_id=source_id,
+            key_version=self.key_version,
+        )
+        aad = source_aad(
+            organization_id=organization_id,
+            engagement_id=engagement_id,
+            source_id=source_id,
+            filename=filename,
+            digest=digest,
+            key_version=self.key_version,
+        )
+        encrypted = encrypt_bytes(data, data_key, aad)
+        url = f"{self.supabase_url}/storage/v1/object/{self.bucket_name}/{object_name}"
+        headers = {
+            **self._headers(),
+            "Content-Type": "application/octet-stream",
+            "x-upsert": "false",
+            "cache-control": "no-store",
+            "x-client-info": "coletti-co-production",
+        }
+        response = requests.post(url, headers=headers, data=encrypted, timeout=60)
+        if response.status_code >= 400:
+            raise RuntimeError("Supabase production storage upload failed")
+        return StoredObject(
+            storage_uri=f"supabase://{self.bucket_name}/{object_name}",
+            content_hash=digest,
+            encrypted=True,
             key_version=self.key_version,
         )
