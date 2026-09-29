@@ -23,7 +23,7 @@ def validate_production_configuration(*, app_mode: str, config: Mapping[str, str
 
     This is intentionally fail-closed. It validates presence and safe structure,
     but never logs or returns secret values. Split-plane cryptographic profile
-    `v1` is hard-pinned in the initial release; accepting a future profile is a
+    v1 is hard-pinned in the initial release; accepting a future profile is a
     code+test migration, not a configuration-only change.
     """
     if app_mode != "production":
@@ -70,7 +70,7 @@ def validate_production_configuration(*, app_mode: str, config: Mapping[str, str
     if not core_token:
         errors.append("COLETTIOS_API_TOKEN is required")
 
-        ttl_raw = str(config.get("SESSION_TTL_MINUTES", "480")).strip()
+    ttl_raw = str(config.get("SESSION_TTL_MINUTES", "480")).strip()
     try:
         ttl = int(ttl_raw)
         if not 5 <= ttl <= 1440:
