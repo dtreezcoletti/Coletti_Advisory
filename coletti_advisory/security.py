@@ -11,8 +11,8 @@ def validate_runtime(*, app_mode: str, storage_backend: str, core_backend: str, 
     if app_mode == "production":
         if not authenticated:
             errors.append("Production mode requires authenticated identity")
-        if storage_backend != "gcs":
-            errors.append("Production mode requires durable encrypted GCS storage")
+        if storage_backend != "supabase":
+            errors.append("Production mode requires durable encrypted Supabase Storage")
         if core_backend != "http":
             errors.append("Production mode requires the private ColettiOS service adapter")
     return errors
@@ -31,21 +31,17 @@ def validate_production_configuration(*, app_mode: str, config: Mapping[str, str
 
     errors: list[str] = []
 
-    bucket = str(config.get("GCS_BUCKET", "")).strip()
-    if not bucket:
-        errors.append("GCS_BUCKET is required")
+    supabase_url = str(config.get("SUPABASE_URL", "")).strip()
+    if not supabase_url.startswith("https://"):
+        errors.append("SUPABASE_URL must use HTTPS")
 
-    service_account_raw = str(config.get("GCP_SERVICE_ACCOUNT_JSON", "")).strip()
-    if not service_account_raw:
-        errors.append("GCP_SERVICE_ACCOUNT_JSON is required")
-    else:
-        try:
-            service_account = json.loads(service_account_raw)
-            required = {"project_id", "client_email", "private_key"}
-            if not isinstance(service_account, dict) or not required.issubset(service_account):
-                errors.append("GCP_SERVICE_ACCOUNT_JSON is missing required service-account fields")
-        except json.JSONDecodeError:
-            errors.append("GCP_SERVICE_ACCOUNT_JSON is not valid JSON")
+    supabase_key = str(config.get("SUPABASE_ANON_KEY", "")).strip()
+    if not supabase_key:
+        errors.append("SUPABASE_ANON_KEY is required")
+
+    storage_bucket = str(config.get("SUPABASE_STORAGE_BUCKET", "")).strip()
+    if not storage_bucket:
+        errors.append("SUPABASE_STORAGE_BUCKET is required")
 
     master_key = str(config.get("STORAGE_MASTER_KEY", "")).strip()
     if not master_key:
@@ -74,35 +70,7 @@ def validate_production_configuration(*, app_mode: str, config: Mapping[str, str
     if not core_token:
         errors.append("COLETTIOS_API_TOKEN is required")
 
-    registry_raw = str(config.get("AUTHZ_REGISTRY_JSON", "")).strip()
-    if not registry_raw:
-        errors.append("AUTHZ_REGISTRY_JSON is required")
-    else:
-        try:
-            registry = json.loads(registry_raw)
-            if not isinstance(registry, dict) or not registry:
-                errors.append("AUTHZ_REGISTRY_JSON must contain at least one authorized account")
-            else:
-                enabled = 0
-                for email, record in registry.items():
-                    if not isinstance(email, str) or "@" not in email:
-                        errors.append("AUTHZ_REGISTRY_JSON contains an invalid account key")
-                        break
-                    if not isinstance(record, dict):
-                        errors.append("AUTHZ_REGISTRY_JSON contains an invalid authorization record")
-                        break
-                    required = {"organization_id", "role", "engagement_ids"}
-                    if not required.issubset(record):
-                        errors.append("AUTHZ_REGISTRY_JSON authorization record is missing required fields")
-                        break
-                    if record.get("enabled", True):
-                        enabled += 1
-                if enabled == 0 and not any("AUTHZ_REGISTRY_JSON" in item for item in errors):
-                    errors.append("AUTHZ_REGISTRY_JSON must contain at least one enabled account")
-        except json.JSONDecodeError:
-            errors.append("AUTHZ_REGISTRY_JSON is not valid JSON")
-
-    ttl_raw = str(config.get("SESSION_TTL_MINUTES", "480")).strip()
+        ttl_raw = str(config.get("SESSION_TTL_MINUTES", "480")).strip()
     try:
         ttl = int(ttl_raw)
         if not 5 <= ttl <= 1440:
