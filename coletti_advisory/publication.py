@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import requests
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -386,3 +387,93 @@ def published_reports(records: dict[str, ReportPublicationRecord]) -> dict[str, 
         for report_type, record in records.items()
         if record.revoked_at is None and record.published_snapshot is not None
     }
+
+
+class SupabasePublicationStore:
+    """Encrypted publication state backed by Supabase Storage."""
+
+    def __init__(
+        self,
+        *,
+        supabase_url: str,
+        anon_key: str,
+        access_token: str,
+        bucket_name: str,
+        master_key: bytes,
+        key_version: str = DEFAULT_STORAGE_KEY_VERSION,
+    ) -> None:
+        self.supabase_url = supabase_url.rstrip("/")
+        self.anon_key = anon_key
+        self.access_token = access_token
+        self.bucket_name = bucket_name
+        self.master_key = master_key
+        self.key_version = key_version
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.access_token}",
+            "apikey": self.anon_key,
+        }
+
+    def _path(self, organization_id: str, engagement_id: str) -> str:
+        safe = lambda value: "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in value)
+        return f"{safe(organization_id)}/{safe(engagement_id)}/_state/publication-state.enc"
+
+    def load(self, *, organization_id: str, engagement_id: str) -> dict[str, ReportPublicationRecord]:
+        path = self._path(organization_id, engagement_id)
+        response = requests.get(
+            f"{self.supabase_url}/storage/v1/object/{self.bucket_name}/{path}",
+            headers=self._headers(),
+            timeout=30,
+        )
+        if response.status_code == 404:
+            return {}
+        if response.status_code >= 400:
+            raise RuntimeError("Supabase publication-state read failed")
+        key = _publication_key(
+            self.master_key,
+            organization_id=organization_id,
+            engagement_id=engagement_id,
+            key_version=self.key_version,
+        )
+        try:
+            return _deserialize(_decrypt_json(
+                response.content,
+                key,
+                _aad(organization_id, engagement_id, self.key_version),
+            ))
+        except (InvalidTag, ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise RuntimeError("Stored publication state failed integrity verification") from exc
+
+    def save(
+        self,
+        *,
+        organization_id: str,
+        engagement_id: str,
+        records: dict[str, ReportPublicationRecord],
+    ) -> None:
+        path = self._path(organization_id, engagement_id)
+        key = _publication_key(
+            self.master_key,
+            organization_id=organization_id,
+            engagement_id=engagement_id,
+            key_version=self.key_version,
+        )
+        payload = _encrypt_json(
+            _serialize(records),
+            key,
+            _aad(organization_id, engagement_id, self.key_version),
+        )
+        response = requests.post(
+            f"{self.supabase_url}/storage/v1/object/{self.bucket_name}/{path}",
+            headers={
+                **self._headers(),
+                "Content-Type": "application/octet-stream",
+                "x-upsert": "true",
+                "cache-control": "no-store",
+            },
+            data=payload,
+            timeout=30,
+        )
+        if response.status_code >= 400:
+            raise RuntimeError("Supabase publication-state write failed")
