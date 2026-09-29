@@ -37,11 +37,25 @@ services:
 
   - type: web
     runtime: python
-    name: coletti-co-demo
+    name: coletti-co
     plan: free
     buildCommand: pip install -e .
     startCommand: streamlit run streamlit_app.py --server.address 0.0.0.0 --server.port $PORT --server.headless true
     autoDeployTrigger: checksPass
     envVars:
       - key: APP_MODE
-        value: demo
+        value: production
+      - key: STORAGE_BACKEND
+        value: supabase
+      - key: COLETTIOS_BACKEND
+        value: http
+      - key: SUPABASE_URL
+        value: https://lepdppbygnevzcquvmtt.supabase.co
+      - key: SUPABASE_STORAGE_BUCKET
+        value: client-documents
+      - key: STORAGE_KEY_VERSION
+        value: v1
+      - key: COLETTIOS_API_URL
+        value: https://colettios-core.onrender.com
+      - key: SESSION_TTL_MINUTES
+        value: "480"
