@@ -57,7 +57,6 @@ import {SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY} from '/assets/config.js';
 const supabase=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
 const $=id=>document.getElementById(id);
 const notice=(msg)=>{$('notice').textContent=msg;$('notice').classList.add('show')};
-const PORTAL_URL='https://coletti-co-demo.onrender.com/';
 const destination=async(user)=>{
   const {data:profile,error}=await supabase.from('profiles').select('role').eq('id',user.id).maybeSingle();
   if(error) throw error;
@@ -65,7 +64,7 @@ const destination=async(user)=>{
   if(!role) throw new Error('WORKSPACE_AUTHORITY_UNRESOLVED');
   if(['owner','admin'].includes(role)) return `${location.origin}/owner/#/admin/home`;
   if(['analyst','reviewer'].includes(role)) return `${location.origin}/owner/#/workspace/home`;
-  if(role==='client') return PORTAL_URL;
+  if(role==='client') return `${location.origin}/portal/#/portal/home`;
   throw new Error('WORKSPACE_AUTHORITY_UNRESOLVED');
 };
 const finish=async(user)=>{
