@@ -63,12 +63,14 @@ const destination=async(user)=>{
   if(error) throw error;
   const role=profile?.role;
   if(!role) throw new Error('WORKSPACE_AUTHORITY_UNRESOLVED');
-  if(['owner','admin','analyst','reviewer','client'].includes(role)) return PORTAL_URL;
+  if(['owner','admin'].includes(role)) return `${location.origin}/owner/#/admin/home`;
+  if(['analyst','reviewer'].includes(role)) return `${location.origin}/owner/#/workspace/home`;
+  if(role==='client') return PORTAL_URL;
   throw new Error('WORKSPACE_AUTHORITY_UNRESOLVED');
 };
 const finish=async(user)=>{
   const target=await destination(user);
-  location.replace(target+'#/home');
+  location.replace(target.includes('#') ? target : target+'#/home');
 };
 const showRecovery=()=>{
   $('login').classList.add('hidden');
