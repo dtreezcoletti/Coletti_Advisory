@@ -17,11 +17,9 @@ def test_role_aware_portal_routing_contract():
     assert "route.startsWith('/portal/')" in js
 
 
-def test_four_operational_portal_entrypoints_load_the_shared_authoritative_app():
+def test_canonical_client_and_owner_shells_load_the_shared_authoritative_app():
     expected = {
         "portal/index.html": "client",
-        "employee/index.html": "employee",
-        "admin/index.html": "admin",
         "owner/index.html": "owner",
     }
     for relative, surface in expected.items():
@@ -35,7 +33,22 @@ def test_four_operational_portal_entrypoints_load_the_shared_authoritative_app()
         assert 'id="main"' in html
         assert 'id="toast-region"' in html
         assert "location.hash = '#/sign-in'" in html
-        assert "location.replace('/#/sign-in')" not in html
+
+
+def test_legacy_staff_entrypoints_redirect_to_same_origin_owner_shell():
+    for relative in ("employee/index.html", "admin/index.html"):
+        html = (WEB / relative).read_text(encoding="utf-8")
+        assert "url=/owner/" in html
+        assert "location.replace('/owner/'" in html
+        assert "onrender.com" not in html
+
+
+def test_universal_login_routes_every_role_to_a_same_origin_authenticated_shell():
+    html = (WEB / "login" / "index.html").read_text(encoding="utf-8")
+    assert "${location.origin}/owner/#/admin/home" in html
+    assert "${location.origin}/owner/#/workspace/home" in html
+    assert "${location.origin}/portal/#/portal/home" in html
+    assert "const PORTAL_URL=" not in html
 
 
 def test_portal_sop_reads_authoritative_lifecycle_snapshot():
