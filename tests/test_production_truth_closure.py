@@ -31,3 +31,10 @@ def test_staff_authentication_stays_same_origin_and_owner_surface_exists():
     assert "${location.origin}/owner/#/workspace/home" in login
     assert "data-portal=\"owner\"" in owner
     assert "/assets/portal_routing_v1.js" in owner
+
+
+def test_reconciliation_uses_current_status_vocabulary():
+    sql = MIGRATION.read_text(encoding="utf-8")
+    assert "im.database_status in ('VERIFIED','NOT_REQUIRED')" in sql
+    assert "status_vocabulary','VERIFIED_NOT_REQUIRED'" in sql
+    assert "Database Confirmed" not in sql
