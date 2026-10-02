@@ -191,3 +191,113 @@ begin
 end;
 $function$
 ;
+
+
+-- Reconcile Implementation Control to the current component-status vocabulary.
+create or replace function private.refresh_implementation_control_queue_v1(p_implementation_id text)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'pg_catalog', 'public', 'private'
+as $function$
+declare
+  im registry.implementation_matrix%rowtype;
+  action_name text;
+  reason_text text;
+  created_count integer := 0;
+  resolved_count integer := 0;
+begin
+  select * into im
+  from registry.implementation_matrix
+  where implementation_id::text = p_implementation_id;
+
+  if not found then
+    return jsonb_build_object('status','NOT_FOUND','implementation_id',p_implementation_id);
+  end if;
+
+  update registry.implementation_control_queue
+  set status='RESOLVED', resolved_at=now()
+  where implementation_id=p_implementation_id
+    and status in ('OPEN','IN_PROGRESS','BLOCKED')
+    and (
+      im.verification_ready = true
+      or (
+        action_type='DATABASE_RECONCILIATION'
+        and im.database_status in ('VERIFIED','NOT_REQUIRED')
+      )
+    );
+  get diagnostics resolved_count = row_count;
+
+  if im.implementation_state = 'OPERATIONAL' and coalesce(im.verification_ready,false) = false then
+    action_name := case
+      when coalesce(im.database_status,'UNASSESSED') not in ('VERIFIED','NOT_REQUIRED')
+        then 'DATABASE_RECONCILIATION'
+      else 'VERIFICATION'
+    end;
+
+    reason_text := case
+      when action_name = 'DATABASE_RECONCILIATION'
+        then 'Operational implementation requires authoritative database reconciliation.'
+      else 'Operational implementation requires remaining verification evidence.'
+    end;
+
+    insert into registry.implementation_control_queue
+      (implementation_id, action_type, reason, source_snapshot)
+    values
+      (p_implementation_id, action_name, reason_text, to_jsonb(im))
+    on conflict (implementation_id, action_type) where status in ('OPEN','IN_PROGRESS','BLOCKED')
+    do nothing;
+
+    get diagnostics created_count = row_count;
+  end if;
+
+  insert into registry.implementation_control_events
+    (implementation_id, event_type, resulting_state, evidence)
+  values
+    (p_implementation_id, 'CONTROL_RECONCILIATION',
+     jsonb_build_object(
+       'implementation_state', im.implementation_state,
+       'database_status', im.database_status,
+       'verification_ready', im.verification_ready,
+       'code_status', im.code_status
+     ),
+     jsonb_build_object(
+       'queue_items_created',created_count,
+       'queue_items_resolved',resolved_count,
+       'status_vocabulary','VERIFIED_NOT_REQUIRED'
+     ));
+
+  return jsonb_build_object(
+    'status','RECONCILED',
+    'implementation_id',p_implementation_id,
+    'queue_items_created',created_count,
+    'queue_items_resolved',resolved_count
+  );
+end;
+$function$;
+
+-- Close the EO-0004 record at its own scope. Runtime login/recovery proof remains
+-- owned by the separate runtime acceptance gates.
+update registry.implementation_matrix
+set policy_status='NOT_REQUIRED',
+    blocker=null,
+    updated_at=now()
+where implementation_id='IMP-113';
+
+-- Owner-only production authority and database truth are proven. Runtime/browser
+-- dimensions remain IN_PROGRESS until deployment and identity acceptance pass.
+update registry.implementation_matrix
+set policy_status='NOT_REQUIRED',
+    database_status='VERIFIED',
+    code_status=case when code_status='UNASSESSED' then 'IN_PROGRESS' else code_status end,
+    workflow_status=case when workflow_status='UNASSESSED' then 'IN_PROGRESS' else workflow_status end,
+    human_control_status='VERIFIED',
+    test_status=case when test_status='UNASSESSED' then 'IN_PROGRESS' else test_status end,
+    documentation_status='VERIFIED',
+    blocker='Owner-only production authority is valid and database truth is verified. Remaining proof is current deployment/browser authentication-recovery acceptance plus live runtime verification.',
+    next_action='Verify current Render deployments, Owner login/session routing, password recovery, live DARI/provider path, and recovery evidence before promoting remaining runtime dimensions.',
+    updated_at=now()
+where implementation_id='IMP-152';
+
+select private.refresh_implementation_control_queue_v1('IMP-113');
+select private.refresh_implementation_control_queue_v1('IMP-152');
