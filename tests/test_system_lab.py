@@ -80,7 +80,7 @@ def test_production_readiness_does_not_treat_ci_or_demo_as_production_ready():
 def test_live_storage_pass_does_not_silently_promote_other_production_controls():
     rows = _production_readiness_rows(
         app_mode="production",
-        storage_backend="gcs",
+        storage_backend="supabase",
         core_backend="http",
         storage_probe={"status": "PASS"},
     )

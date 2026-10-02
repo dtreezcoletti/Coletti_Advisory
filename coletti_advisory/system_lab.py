@@ -285,10 +285,10 @@ def _production_readiness_rows(
     storage_probe: dict | None,
 ) -> list[dict[str, str]]:
     storage_status = "NOT VERIFIED"
-    storage_basis = "Requires live production GCS roundtrip evidence."
+    storage_basis = "Requires live production Supabase Storage roundtrip evidence."
     if storage_probe:
         storage_status = str(storage_probe.get("status") or "FAIL")
-        storage_basis = "Live synthetic GCS write/read/decrypt/hash/metadata/cleanup probe."
+        storage_basis = "Live synthetic Supabase Storage write/read/decrypt/hash/metadata/cleanup probe."
 
     production_mode_status = "PASS" if app_mode == "production" else "NOT VERIFIED"
     production_mode_basis = (
@@ -361,7 +361,7 @@ def _render_production_readiness(
 
     can_probe_storage = (
         app_mode == "production"
-        and storage_backend == "gcs"
+        and storage_backend == "supabase"
         and hasattr(storage, "verify_operational")
     )
     if can_probe_storage:

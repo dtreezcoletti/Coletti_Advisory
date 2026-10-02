@@ -7,19 +7,25 @@ import streamlit as st
 from . import main as app
 from .commercial_config import DEFAULT_COMMERCIAL_CONFIG
 from .document_processing import extract_candidate_statements
-from .models import Permission
+from .models import Permission, Role
 from .system_lab import render_system_lab
 from .workspaces import live_workspace_gate_errors, workspace_environment, workspace_label
 
 
 def _workspace_pages(principal) -> list[str]:
-    pages = app._workspace_pages(principal)
-    if principal.can(Permission.MANAGE_USERS) and "System Lab" not in pages:
-        try:
-            admin_index = pages.index("Administration")
-        except ValueError:
-            admin_index = len(pages)
-        pages.insert(admin_index, "System Lab")
+    """Legacy internal workspace navigation backed by current role permissions."""
+    pages = ["Command Center", "Engagements"]
+    if principal.can(Permission.UPLOAD):
+        pages.append("Intake")
+    if principal.can(Permission.ANALYZE) or principal.can(Permission.REVIEW):
+        pages.append("Evidence")
+    if principal.can(Permission.REVIEW):
+        pages.append("Review Center")
+    if principal.can(Permission.ANALYZE):
+        pages.append("Analysis")
+    pages.append("Reports")
+    if principal.can(Permission.MANAGE_USERS):
+        pages.extend(["System Lab", "Administration"])
     return pages
 
 
