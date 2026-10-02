@@ -9,8 +9,7 @@ alter table public.payments
   add column if not exists updated_at timestamptz not null default now();
 
 create unique index if not exists payments_provider_payment_uidx
-  on public.payments (provider, provider_payment_id)
-  where provider is not null and provider_payment_id is not null;
+  on public.payments (provider, provider_payment_id);
 
 create table if not exists public.payment_refunds (
   id uuid primary key default gen_random_uuid(),
