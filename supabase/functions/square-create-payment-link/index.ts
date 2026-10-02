@@ -16,7 +16,10 @@ type InvoiceRow = {
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" },
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "access-control-allow-origin": "*",
+    },
   });
 }
 
@@ -76,7 +79,7 @@ Deno.serve(async (request) => {
       status: 204,
       headers: {
         "access-control-allow-origin": "*",
-        "access-control-allow-headers": "authorization, apikey, content-type",
+        "access-control-allow-headers": "authorization, x-client-info, apikey, content-type",
         "access-control-allow-methods": "POST, OPTIONS",
       },
     });
