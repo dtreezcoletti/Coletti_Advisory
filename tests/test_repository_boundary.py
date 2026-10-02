@@ -59,10 +59,12 @@ def test_commercial_source_does_not_import_core_implementation_directly():
             assert not (imported & PROHIBITED_DIRECT_CORE_IMPORTS), path
 
 
-def test_demo_defaults_are_synthetic_and_nonproduction():
-    """A clean launch must default to the synthetic demo path, never client data."""
+def test_runtime_defaults_match_authorized_production_architecture():
+    """The live runtime defaults to production + Supabase + private ColettiOS HTTP."""
     root = Path(__file__).resolve().parents[1]
     main_source = (root / "coletti_advisory" / "main.py").read_text(encoding="utf-8")
-    assert '_secret("APP_MODE", "demo")' in main_source
-    assert '_secret("STORAGE_BACKEND", "local_demo")' in main_source
-    assert '_secret("COLETTIOS_BACKEND", "synthetic")' in main_source
+    assert '_secret("APP_MODE", "production")' in main_source
+    assert '_secret("STORAGE_BACKEND", "supabase")' in main_source
+    assert '_secret("COLETTIOS_BACKEND", "http")' in main_source
+    assert "SupabaseEncryptedStorage" in main_source
+    assert "EncryptedLocalDemoStorage" in main_source
