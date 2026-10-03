@@ -97,7 +97,7 @@ async function refreshCases() {
 function route() { return (location.hash || '#/home').replace(/^#/, ''); }
 function go(path) { location.hash = path.startsWith('/') ? `#${path}` : `#/${path}`; }
 function isRole(...roles) { return roles.includes(state.profile?.role); }
-function requireAuth() { if(!state.user){ go('/sign-in'); return false;} return true; }
+function requireAuth() { if(!state.user){ location.replace('/login/'); return false;} return true; }
 function requireStaff() { if(!requireAuth()) return false; if(!STAFF_ROLES.includes(state.profile?.role)){ go('/portal/home'); return false;} return true; }
 function requireAdmin() { if(!requireAuth()) return false; if(!ADMIN_ROLES.includes(state.profile?.role)){ go(STAFF_ROLES.includes(state.profile?.role)?'/workspace/home':'/portal/home'); return false;} return true; }
 
@@ -111,7 +111,7 @@ function renderHeader() {
     </nav>
     <div class="header-actions">
       <a class="btn btn-ghost desktop-only" href="#/contact">Request Consultation</a>
-      ${auth?`<a class="btn btn-primary" href="#/${ADMIN_ROLES.includes(state.profile?.role)?'admin/home':STAFF_ROLES.includes(state.profile?.role)?'workspace/home':'portal/home'}">${esc(state.profile?.display_name || 'Workspace')}</a>`:`<a class="btn btn-primary" href="#/sign-in">Secure Sign In</a>`}
+      ${auth?`<a class="btn btn-primary" href="#/${ADMIN_ROLES.includes(state.profile?.role)?'admin/home':STAFF_ROLES.includes(state.profile?.role)?'workspace/home':'portal/home'}">${esc(state.profile?.display_name || 'Workspace')}</a>`:`<a class="btn btn-primary" href="/login/">Secure Sign In</a>`}
     </div>
   </div>`;
 }
@@ -120,7 +120,7 @@ function renderFooter() {
     <div><div class="footer-brand">Coletti &amp; Co.</div><p class="small" style="max-width:360px;margin-top:12px;color:#adbec8">Independent evidence-intelligence and reconstruction. We show what the records support, where they conflict, what is missing, what can be reconciled, and what remains unresolved.</p></div>
     <div><div class="footer-title">Company</div><div class="footer-links"><a href="#/about">About</a><a href="#/services">Services</a><a href="#/how-it-works">How It Works</a><a href="#/pricing">Pricing &amp; Engagement</a></div></div>
     <div><div class="footer-title">Professionals</div><div class="footer-links"><a href="#/referral-partners">Referral Partners</a><a href="#/security">Security &amp; Privacy</a><a href="#/faq">FAQ</a><a href="#/contact">Contact</a></div></div>
-    <div><div class="footer-title">Legal</div><div class="footer-links"><a href="#/privacy">Privacy Notice</a><a href="#/terms">Terms</a><a href="#/disclaimer">Professional Services Disclaimer</a><a href="#/sign-in">Client Portal</a></div></div>
+    <div><div class="footer-title">Legal</div><div class="footer-links"><a href="#/privacy">Privacy Notice</a><a href="#/terms">Terms</a><a href="#/disclaimer">Professional Services Disclaimer</a><a href="/login/">Client Portal</a></div></div>
   </div><div class="footer-bottom"><span>© ${new Date().getFullYear()} Coletti &amp; Co.</span><span>Not a law firm, accounting firm, or investigative agency.</span></div></div>`;
 }
 
@@ -160,7 +160,7 @@ function faqPage() {
   return `${publicHero('Frequently asked questions.','A short guide to the service model, boundaries, and workflow.','FAQ')}<section class="section"><div class="container content-narrow stack">${faqs.map(([q,a])=>`<div class="card card-flat"><h3>${esc(q)}</h3><p class="muted mb-0">${esc(a)}</p></div>`).join('')}</div></section>`;
 }
 function contactPage() {
-  return `${publicHero('Start through the Secure Client Gateway.','Use the secure sign-in flow to begin intake. Do not put sensitive matter details into a public website form.','Request Consultation')}<section class="section"><div class="container grid-2"><div><h2>We start with enough information to scope the reconstruction—not your entire life story.</h2><p class="lede">Enter your email below. We’ll send a secure sign-in link. Once authenticated, you can complete intake and provide matter details inside the gateway.</p><div class="notice notice-warning mt-2">For security, this public page intentionally does not collect documents, account numbers, detailed allegations, medical information, or other sensitive case content.</div></div><div class="card"><form id="contact-signin-form"><div class="form-field"><label for="contact-email">Email address</label><input id="contact-email" name="email" type="email" autocomplete="email" required placeholder="you@example.com" /></div><button class="btn btn-primary mt-2" type="submit">Send Secure Sign-In Link</button><p class="micro mt-1">The link returns you to the Secure Client Gateway. Intake submission does not create an engagement until engagement terms are accepted.</p></form></div></div></section>`;
+  return `${publicHero('Start through the Secure Client Gateway.','Use the secure sign-in flow to begin intake. Do not put sensitive matter details into a public website form.','Request Consultation')}<section class="section"><div class="container grid-2"><div><h2>We start with enough information to scope the reconstruction—not your entire life story.</h2><p class="lede">Enter your email below. We’ll send a secure sign-in link. Once authenticated, you can complete intake and provide matter details inside the gateway.</p><div class="notice notice-warning mt-2">For security, this public page intentionally does not collect documents, account numbers, detailed allegations, medical information, or other sensitive case content.</div></div><div class="card"><h3>Continue securely</h3><p class="muted">Authentication, password recovery, and secure sign-in all use the same Coletti &amp; Co. entry point.</p><a class="btn btn-primary mt-2" href="/login/">Open Secure Sign In</a><p class="micro mt-1">After authentication, your role determines the workspace you are permitted to use.</p></div></div></section>`;
 }
 function legalPage(kind) {
   const content={
@@ -171,8 +171,8 @@ function legalPage(kind) {
   return `${publicHero(content[0],'Controlled legal and service-boundary language for the Coletti & Co. website.','Legal')}<section class="section"><div class="container content-narrow prose">${content[1].split('\n\n').map(p=>`<p>${esc(p)}</p>`).join('')}<div class="notice notice-info mt-2">This is operational website language and should remain subject to final company/legal review before external commercial launch.</div></div></section>`;
 }
 function signInPage() {
-  if(state.user){go('/portal/home');return '<div class="loading">Redirecting…</div>'}
-  return `<section class="auth-shell"><div class="auth-brand"><div class="eyebrow" style="color:#d2c094">Secure Client Gateway</div><h1>Coletti &amp; Co.</h1><p style="max-width:560px;color:#cbd8df">Authenticate before sending sensitive intake information, uploading records, viewing case status, messaging the firm, or retrieving a published report.</p></div><div class="auth-form"><div class="auth-card"><div class="eyebrow">Passwordless access</div><h2>Secure sign in</h2><p class="muted">We’ll send a time-limited sign-in link to your email.</p><form id="signin-form"><div class="form-field"><label for="signin-email">Email address</label><input id="signin-email" name="email" type="email" required autocomplete="email" /></div><button class="btn btn-primary mt-2" type="submit">Send Sign-In Link</button></form><div class="divider"></div><p class="micro">Authentication confirms identity. Access to any case remains separately limited by case membership, staff assignment, and role.</p></div></div></section>`;
+  location.replace('/login/');
+  return '<div class="loading">Redirecting to secure sign in…</div>';
 }
 
 const CLIENT_NAV=[['home','Overview'],['intake','Intake'],['profile','Identity & Contact'],['engagement','Engagement'],['uploads','Secure Uploads'],['requests','Document Requests'],['timeline','Case Status'],['messages','Messages'],['schedule','Meetings'],['billing','Invoices & Payments'],['reports','Published Reports'],['support','Support']];
@@ -383,12 +383,10 @@ async function secureUpload(bucket,path,file){ const {error}=await supabase.stor
 
 async function handleSubmit(e) {
   const f=e.target; if(!(f instanceof HTMLFormElement)) return; const id=f.id; if(!id) return;
-  const known=['signin-form','contact-signin-form','profile-form','intake-form','engagement-form','upload-form','message-form','meeting-form','support-form','evidence-form','narrative-form','document-request-form','case-note-form','qa-form','handoff-form','assignment-form','service-form','template-form','publish-report-form','referral-partner-form'];
+  const known=['profile-form','intake-form','engagement-form','upload-form','message-form','meeting-form','support-form','evidence-form','narrative-form','document-request-form','case-note-form','qa-form','handoff-form','assignment-form','service-form','template-form','publish-report-form','referral-partner-form'];
   if(!known.includes(id)) return; e.preventDefault(); const fd=new FormData(f); const button=f.querySelector('button[type="submit"],button:not([type])'); if(button)button.disabled=true;
   try {
-    if(id==='signin-form'||id==='contact-signin-form'){
-      const email=String(fd.get('email')).trim(); const {error}=await supabase.auth.signInWithOtp({email,options:{emailRedirectTo:`${location.origin}${location.pathname}#/portal/intake`}}); if(error)throw error; toast('Secure sign-in link sent. Check your email.','success');
-    } else if(id==='profile-form'){
+    if(id==='profile-form'){
       const {error}=await supabase.from('profiles').update({display_name:fd.get('display_name'),phone:fd.get('phone')||null,organization_name:fd.get('organization_name')||null}).eq('id',state.user.id); if(error)throw error; await refreshAuth(); toast('Profile updated.','success');
     } else if(id==='intake-form'){
       const payload={user_id:state.user.id,status:'SUBMITTED',service_requested:fd.get('service_requested'),matter_summary:fd.get('matter_summary'),referral_source:fd.get('referral_source')||null,contact:{email:state.user.email,display_name:state.profile?.display_name,phone:state.profile?.phone},submitted_at:new Date().toISOString()}; const {error}=await supabase.from('intake_submissions').insert(payload); if(error)throw error; toast('Intake submitted for review.','success');

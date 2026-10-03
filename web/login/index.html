@@ -52,7 +52,7 @@
 </main>
 <script type="module">
 import {createClient} from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/+esm';
-import {SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY} from '/assets/config.js';
+import {SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,APP_ORIGIN} from '/assets/config.js';
 
 const supabase=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
 const $=id=>document.getElementById(id);
@@ -62,9 +62,9 @@ const destination=async(user)=>{
   if(error) throw error;
   const role=profile?.role;
   if(!role) throw new Error('WORKSPACE_AUTHORITY_UNRESOLVED');
-  if(['owner','admin'].includes(role)) return `${location.origin}/owner/#/admin/home`;
-  if(['analyst','reviewer'].includes(role)) return `${location.origin}/owner/#/workspace/home`;
-  if(role==='client') return `${location.origin}/portal/#/portal/home`;
+  if(['owner','admin'].includes(role)) return `${APP_ORIGIN}/workspace/#/admin/home`;
+  if(['analyst','reviewer'].includes(role)) return `${APP_ORIGIN}/workspace/#/workspace/home`;
+  if(role==='client') return `${APP_ORIGIN}/workspace/#/portal/home`;
   throw new Error('WORKSPACE_AUTHORITY_UNRESOLVED');
 };
 const finish=async(user)=>{
@@ -121,14 +121,14 @@ $('login').addEventListener('submit',async(e)=>{
 $('forgot').addEventListener('click',async()=>{
   const email=$('email').value.trim();
   if(!email){notice('Enter your email address first.');return}
-  const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:`${location.origin}/login/`});
+  const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:`${APP_ORIGIN}/login/`});
   if(error){console.error(error);notice('The password recovery email could not be sent.');return}
   notice('Password recovery email sent. Check your email and open the recovery link.');
 });
 
 $('magic').addEventListener('click',async()=>{
   const email=$('email').value.trim();if(!email){notice('Enter your email address first.');return}
-  const {error}=await supabase.auth.signInWithOtp({email,options:{emailRedirectTo:`${location.origin}/login/`}});
+  const {error}=await supabase.auth.signInWithOtp({email,options:{emailRedirectTo:`${APP_ORIGIN}/login/`}});
   if(error) notice('The secure sign-in link could not be sent. Please try again.'); else notice('Secure sign-in link sent. Check your email and return here to complete authentication.');
 });
 
