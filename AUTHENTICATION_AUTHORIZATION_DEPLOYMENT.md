@@ -2,71 +2,56 @@
 
 Status: controlled deployment runbook
 
-The `Coletti & Co. Live` workspace must remain locked until production identity and application authorization both pass this gate.
+## Single authentication authority
 
-## Identity boundary
+Supabase Auth is the sole production authentication and password authority for Coletti & Co.
 
-Coletti & Co. uses Streamlit OIDC with Google as the configured identity provider. Password verification, provider-side authentication, signed identity-token validation, OAuth/OIDC state and nonce handling, and provider session behavior remain delegated to Google and Streamlit/Authlib.
+There is one production sign-in and recovery surface:
 
-The application independently requires the authenticated identity token to contain:
+- `https://colettico.com/login/`
 
-- a valid issuance time (`iat`);
-- a future expiration time (`exp`);
-- a stable subject identifier (`sub`);
-- an email address;
-- `email_verified=true`.
+The application must not operate a second password-reset API, Streamlit/OIDC login, owner-only login service, or proxy-derived recovery URL.
 
-Expired, malformed, subject-less, email-less, or unverified-email identities fail closed and are logged out.
+## Redirect contract
 
-## Application session boundary
+Production authentication redirects are pinned to the canonical HTTPS origin:
 
-Coletti & Co. separately enforces an application-session lifetime using `SESSION_TTL_MINUTES`. A newly issued OIDC token rotates the application session ID and resets the application-session start time. Expired application sessions require re-authentication.
+- Site URL: `https://colettico.com`
+- Password recovery: `https://colettico.com/login/`
+- Magic-link return: `https://colettico.com/login/`
 
-## Authorization boundary
+The exact redirect URL must be present in the Supabase Auth Redirect URLs configuration. Supabase documents that an unapproved `redirectTo` may fall back to the configured Site URL, so both settings must agree with the canonical production host.
 
-Authentication does not grant Coletti & Co. access by itself. After identity verification, the application resolves the verified email against `AUTHZ_REGISTRY_JSON`.
+Compatibility routes `/recovery/` and `/reset-password/` only forward recovery parameters to `/login/`; they do not implement authentication themselves.
 
-Each authorization record controls:
+## Application routing after authentication
 
-- display name;
-- organization ID;
-- role;
-- authorized engagement/workspace IDs;
-- enabled/revoked status.
+The authenticated shell is `https://colettico.com/workspace/`.
 
-An authenticated identity absent from the registry, or a record with `enabled=false`, receives no application access. Workspace selection is limited to the engagement IDs assigned to that principal, and engagement authorization is checked again before source intake or Core operations.
+Role-aware UI routing:
+- `owner` / `admin` -> `#/admin/home`
+- `analyst` / `reviewer` -> `#/workspace/home`
+- `client` -> `#/portal/home`
 
-For the owner account, the production registry must explicitly include `eng-coletti-co-live`. Client engagements must receive their own engagement IDs rather than sharing the firm live workspace.
+Routing does not grant authorization. Supabase Auth, authoritative role records, RLS, case membership, and staff assignment remain the enforcement controls.
 
-## Deployment secrets
+## Production deployment boundary
 
-Configure these only in Streamlit Community Cloud App settings / Secrets, never in Git:
+Render serves one static application rooted at `web/`. No Python or Streamlit web service is part of the canonical production request path.
 
-- `AUTH_PROVIDER="google"`
-- `SESSION_TTL_MINUTES`
-- `AUTHZ_REGISTRY_JSON`
-- `[auth].redirect_uri`
-- `[auth].cookie_secret`
-- `[auth.google].client_id`
-- `[auth.google].client_secret`
-- `[auth.google].server_metadata_url`
+## Acceptance checks
 
-The Google OAuth client must authorize the exact deployed callback URI used by the Streamlit application.
+Authentication is not VERIFIED or OPERATIONAL until deployed evidence confirms all of the following:
 
-## Acceptance check
+1. `https://colettico.com/login/` loads over HTTPS.
+2. A password-reset request is accepted by Supabase.
+3. The recovery email returns to `https://colettico.com/login/`, not HTTP and not another app.
+4. The `PASSWORD_RECOVERY` event exposes the new-password form.
+5. `updateUser({password})` succeeds and a subsequent password sign-in succeeds.
+6. An unauthenticated `/workspace/` request is routed to `/login/`.
+7. owner/admin, analyst/reviewer, and client identities land only in their permitted workspace routes.
+8. `/owner/` and `/portal/` redirect into the same `/workspace/` application.
+9. `/recovery/` and `/reset-password/` preserve recovery parameters and forward to `/login/`.
+10. No legacy Python/Streamlit service is attached to the canonical domain.
 
-Authentication/authorization is considered production-ready only when all of the following are verified in the deployed app:
-
-1. an unauthenticated visitor cannot enter the production application;
-2. Google sign-in completes through the configured callback;
-3. an identity without a registry record is denied;
-4. a disabled registry record is denied;
-5. an authorized owner account receives the owner role and `eng-coletti-co-live` workspace;
-6. an authorized client account cannot enter an engagement not assigned to it;
-7. expired OIDC tokens require re-authentication;
-8. application-session expiration requires re-authentication;
-9. a newly issued OIDC token rotates the application session ID;
-10. logout ends the application session;
-11. the authenticated user ID propagated to ColettiOS is based on the OIDC subject, not a client-supplied display value.
-
-Do not switch `APP_MODE` to `production` solely because authentication unit tests pass. The deployed Google OIDC client and real authorization registry must also pass this acceptance check.
+Do not promote production authorization solely because repository tests pass. Deployed browser and role tests must also pass.
