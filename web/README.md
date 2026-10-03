@@ -1,6 +1,6 @@
 # Coletti & Co. Operational Website
 
-This directory contains the browser-based operational front end for Coletti & Co. It is designed to coexist with the existing Python/Streamlit commercial application while providing a public website, Secure Client Gateway, employee operations workspace, and owner/admin command center backed by Supabase.
+This directory is the canonical production application surface for Coletti & Co. It contains the public website, the single secure authentication/recovery entry, and one authenticated workspace shell for client, employee, and owner/admin experiences backed by Supabase. The prior Python/Streamlit generation is not part of the production request path.
 
 ## Surfaces
 
@@ -63,11 +63,12 @@ This directory contains the browser-based operational front end for Coletti & Co
 
 ## Canonical routing contract
 
-The current production frontend is a single-host application. The canonical public host is `https://colettico.com` and the canonical secure sign-in route is `https://colettico.com/#/sign-in`.
+The production frontend is a single-host application. The canonical public host is `https://colettico.com`, the canonical secure sign-in/recovery route is `https://colettico.com/login/`, and the authenticated application shell is `https://colettico.com/workspace/`.
 
 Convenience paths under the canonical host are supported:
-- `https://colettico.com/portal/` → secure sign-in
-- `https://colettico.com/owner/` → secure sign-in
+- `https://colettico.com/portal/` → compatibility redirect to `/workspace/`
+- `https://colettico.com/owner/` → compatibility redirect to `/workspace/`
+- `https://colettico.com/recovery/` and `/reset-password/` → compatibility redirects to `/login/` preserving recovery parameters
 
 A separate `portal.colettico.com` hostname is **not** an application requirement. It must not be published or treated as operational unless DNS and the hosting provider are explicitly configured for that hostname. The application uses hash routes so authenticated users remain on the canonical host.
 
@@ -111,7 +112,7 @@ The internal `registry`, `dispatcher`, and `chapter2_private` schemas intentiona
 
 ## Sites/static deployment
 
-The site is intentionally build-free: serve `web/` as the static document root with `index.html` as the entry point. It uses hash-based routes so it does not require server-side route rewrites. If a site builder/importer expects a static source directory, use the contents of `web/`.
+The site is intentionally build-free: serve `web/` as the static document root. `index.html` is the public site, `login/index.html` is the sole auth/recovery UI, and `workspace/index.html` is the sole authenticated application shell. Hash routing selects client, employee, or admin views inside that same shell.
 
 Before external commercial launch, complete these gates:
 1. Resolve the unconfirmed/secondary owner identity through the human security gate.
