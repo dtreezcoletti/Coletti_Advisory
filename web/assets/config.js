@@ -5,3 +5,4 @@ export const SUPABASE_URL = 'https://lepdppbygnevzcquvmtt.supabase.co';
 export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_HfJRgbXuJsCGzDDKtDl-og_xyAVlrnc';
 export const APP_NAME = 'Coletti & Co.';
 export const APP_ENV = 'production-frontend';
+export const APP_ORIGIN = 'https://colettico.com';
