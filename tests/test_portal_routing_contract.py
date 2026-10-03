@@ -17,39 +17,34 @@ def test_role_aware_portal_routing_contract():
     assert "route.startsWith('/portal/')" in js
 
 
-def test_canonical_client_and_owner_shells_load_the_shared_authoritative_app():
-    expected = {
-        "portal/index.html": "client",
-        "owner/index.html": "owner",
-    }
-    for relative, surface in expected.items():
-        html = (WEB / relative).read_text(encoding="utf-8")
-        assert f"COLETTI_ENTRY_SURFACE = '{surface}'" in html
-        assert "/assets/styles.css" in html
-        assert "/assets/portal_integration_v2.css" in html
-        assert "/assets/portal_routing_v1.js" in html
-        assert "/assets/app.js" in html
-        assert "/assets/portal_integration_v2.js" in html
-        assert 'id="main"' in html
-        assert 'id="toast-region"' in html
-        assert "location.hash = '#/sign-in'" in html
+def test_canonical_authenticated_shell_is_unified():
+    workspace = (WEB / "workspace" / "index.html").read_text(encoding="utf-8")
+    assert 'data-portal="unified"' in workspace
+    assert "/assets/styles.css" in workspace
+    assert "/assets/portal_integration_v2.css" in workspace
+    assert "/assets/portal_routing_v1.js" in workspace
+    assert "/assets/app.js" in workspace
+    assert "/assets/portal_integration_v2.js" in workspace
+    assert 'id="main"' in workspace
+    assert 'id="toast-region"' in workspace
+    assert "location.hash = '#/sign-in'" in workspace
 
 
-def test_legacy_staff_entrypoints_redirect_to_same_origin_owner_shell():
-    for relative in ("employee/index.html", "admin/index.html"):
+def test_legacy_role_entrypoints_redirect_to_unified_workspace():
+    for relative in ("portal/index.html", "owner/index.html", "employee/index.html", "admin/index.html"):
         html = (WEB / relative).read_text(encoding="utf-8")
-        assert "url=/owner/" in html
-        assert "location.replace('/owner/'" in html
+        assert "/workspace/" in html
+        assert "location.replace('/workspace/'" in html
         assert "onrender.com" not in html
 
 
-def test_universal_login_routes_every_role_to_a_same_origin_authenticated_shell():
+def test_universal_login_routes_every_role_to_one_authenticated_shell():
     html = (WEB / "login" / "index.html").read_text(encoding="utf-8")
-    assert "${location.origin}/owner/#/admin/home" in html
-    assert "${location.origin}/owner/#/workspace/home" in html
-    assert "${location.origin}/portal/#/portal/home" in html
-    assert "const PORTAL_URL=" not in html
-
+    assert "${APP_ORIGIN}/workspace/#/admin/home" in html
+    assert "${APP_ORIGIN}/workspace/#/workspace/home" in html
+    assert "${APP_ORIGIN}/workspace/#/portal/home" in html
+    assert "/owner/#/" not in html
+    assert "/portal/#/" not in html
 
 def test_portal_sop_reads_authoritative_lifecycle_snapshot():
     js = (WEB / "assets" / "portal_integration_v2.js").read_text(encoding="utf-8")
