@@ -2,43 +2,68 @@
 
 Coletti & Co. is the commercial application layer for the private ColettiOS provenance-first record analysis core.
 
-## Current replacement architecture
+## Canonical production architecture
 
-`Streamlit UI -> OIDC identity -> RBAC/engagement authorization -> encrypted intake -> ColettiOS adapter -> private ColettiOS service`
+Production has one application surface and one authentication authority:
 
-The public repository contains no approved real-client or historical-case data. The default application mode is a synthetic demonstration. Real client data must not be entered while `APP_MODE=demo`.
+```text
+https://colettico.com
+        |
+        v
+Render static web application (web/)
+        |
+        v
+Supabase
+  - Auth
+  - Postgres / RLS
+  - Storage
+  - Edge Functions
+        |
+        +--> external rails such as Square
+```
+
+The browser application owns the public site, secure sign-in, password recovery UI, client workspace, employee workspace, and owner/admin workspace. Role-aware routing changes the permitted workspace after authentication; it does not create a separate application.
+
+### Canonical routes
+
+- Public site: `https://colettico.com/`
+- Secure authentication and recovery: `https://colettico.com/login/`
+- Authenticated application shell: `https://colettico.com/workspace/`
+- Legacy `/owner/` and `/portal/` paths are compatibility redirects into `/workspace/`.
+- Legacy `/recovery/` and `/reset-password/` paths are compatibility redirects into `/login/` while preserving the recovery parameters.
 
 ## Authentication
 
-The app uses Streamlit OIDC (`st.login`, `st.user`, `st.logout`) for identity. Password verification remains with the configured identity provider. Coletti & Co. owns authorization through a server-side allowlist/registry and enforces role and engagement access separately.
+Supabase Auth is the sole production identity and password authority. The browser uses the Supabase publishable key only. Password-reset and magic-link redirects are pinned to the canonical HTTPS origin instead of being derived from proxy request metadata.
 
-## Storage
+After authentication:
+- owner/admin -> `/workspace/#/admin/home`
+- analyst/reviewer -> `/workspace/#/workspace/home`
+- client -> `/workspace/#/portal/home`
 
-Demo mode uses client-side AES-256-GCM encryption on ephemeral local storage. Production mode fails closed unless Google Cloud Storage is configured; bytes are encrypted before upload and plaintext SHA-256 hashes are registered as source integrity metadata.
+Authorization remains enforced by authoritative roles, RLS, case membership, and assignment controls.
 
-## ColettiOS boundary
+## Deployment
 
-The commercial repository does not duplicate private ColettiOS engine logic. `HttpColettiOSAdapter` defines the released service contract. Production mode requires an HTTPS ColettiOS service URL and server-side service token.
+`render.yaml` defines exactly one production-facing Render service: the static `web/` application.
+
+The prior Streamlit/Python application generation is not a production runtime and must not be attached to `colettico.com`, used for password recovery, or treated as an alternate owner/client portal. Historical Python code may remain for tests or migration reference until separately retired, but it is outside the production request path.
 
 ## Institutional control plane
 
-This repository is authoritative for the **Coletti & Co. commercial application/data plane only**. It is not the complete source of truth for the Coletti institution.
-
-The complete Coletti system state is centralized through the private Colettico Supabase institutional registry and its release-manifest control plane. A unified release manifest pins four separately owned components:
+This repository is authoritative for the **Coletti & Co. commercial application/data plane only**. The complete Coletti system state remains controlled through the institutional Supabase registry/release manifest across:
 
 1. ColettiOS Core/IP — `dtreezcoletti/ColettiOS`.
-2. Coletti & Co. commercial application — this repository (`dtreezcoletti/Coletti_Advisory`, controlled `main`).
-3. Institutional database/state — Colettico Supabase registry.
+2. Coletti & Co. commercial application — this repository.
+3. Institutional database/state — Colettico Supabase.
 4. Dispatcher — Supabase Dispatcher State and reconciliation/enforcement controls.
 
-A Git commit, database migration, chat decision, or application change by itself does not represent the complete Coletti system release. Cross-component drift is resolved through the institutional release manifest and Dispatcher reconciliation. Production authorization remains a separate controlled gate.
+A code commit alone does not authorize production. `production_authorized` remains a separate evidence-based gate.
 
-## Run
+## Local checks
 
 ```bash
-pip install -e .[dev]
-streamlit run streamlit_app.py
 pytest
 ```
 
-See `SECURITY_RELEASE_GATE.md`, `PROJECT_BOUNDARY.md`, and `MIGRATION_REGISTER.md`.
+See `SECURITY_RELEASE_GATE.md`, `PROJECT_BOUNDARY.md`, `MIGRATION_REGISTER.md`, and `web/README.md`.
