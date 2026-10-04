@@ -10,6 +10,12 @@ services:
     autoDeployTrigger: checksPass
     routes:
       - type: rewrite
+        source: /recovery-gate
+        destination: /recovery-gate/index.html
+      - type: rewrite
+        source: /recovery-gate/
+        destination: /recovery-gate/index.html
+      - type: rewrite
         source: /reset-password
         destination: /reset-password/index.html
       - type: rewrite
