@@ -87,7 +87,15 @@ const routeAuthenticatedSession=async()=>{
   catch(e){console.error('Workspace resolution failed',e);notice('Authentication succeeded, but the authorized workspace could not be resolved. No protected workspace was opened.');return false}
 };
 
-const recoveryInUrl=()=>new URLSearchParams(location.search).get('type')==='recovery' || new URLSearchParams(location.hash.replace(/^#/,'')).get('type')==='recovery';
+const recoveryParams=()=>{
+  const search=new URLSearchParams(location.search);
+  const hash=new URLSearchParams(location.hash.replace(/^#/,''));
+  return {
+    type:search.get('type') || hash.get('type'),
+    tokenHash:search.get('token_hash') || hash.get('token_hash')
+  };
+};
+const recoveryInUrl=()=>recoveryParams().type==='recovery';
 
 let recoveryMode=recoveryInUrl();
 
@@ -103,11 +111,34 @@ supabase.auth.onAuthStateChange((event,session)=>{
   }
 });
 
-const {data:initialSession}=await supabase.auth.getSession();
+const establishRecoverySessionFromToken=async()=>{
+  const {type,tokenHash}=recoveryParams();
+  if(type!=='recovery' || !tokenHash) return false;
+  recoveryMode=true;
+  const {data,error}=await supabase.auth.verifyOtp({token_hash:tokenHash,type:'recovery'});
+  if(error || !data.session?.user){
+    console.error('Recovery token verification failed',error);
+    recoveryMode=false;
+    history.replaceState(null,'',location.pathname);
+    notice('This password recovery link is invalid or expired. Enter your email address and request a new link.');
+    return false;
+  }
+  history.replaceState(null,'',location.pathname+'?type=recovery');
+  showRecovery();
+  return true;
+};
+
+const establishedFromToken=await establishRecoverySessionFromToken();
+const {data:initialSession,error:initialSessionError}=await supabase.auth.getSession();
+if(initialSessionError) console.error('Initial session resolution failed',initialSessionError);
 if(initialSession.session?.user && recoveryMode){
   showRecovery();
 } else if(initialSession.session?.user){
   await routeAuthenticatedSession();
+} else if(recoveryMode && !establishedFromToken){
+  recoveryMode=false;
+  history.replaceState(null,'',location.pathname);
+  notice('This password recovery link is no longer active. Enter your email address and request a new link.');
 }
 
 $('login').addEventListener('submit',async(e)=>{
