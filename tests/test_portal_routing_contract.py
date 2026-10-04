@@ -128,3 +128,24 @@ def test_public_home_remains_separate_from_authenticated_operational_shell():
     assert "/assets/site.css" in index
     assert "/assets/site.js" in index
     assert "/assets/app.js" not in index
+
+
+def test_password_recovery_token_hash_is_exchanged_in_canonical_login():
+    html = (WEB / "login" / "index.html").read_text(encoding="utf-8")
+    assert "verifyOtp({token_hash:tokenHash,type:'recovery'})" in html
+    assert "history.replaceState(null,'',location.pathname+'?type=recovery')" in html
+    assert "resetPasswordForEmail(email,{redirectTo:`${APP_ORIGIN}/login/`})" in html
+
+
+def test_legacy_recovery_gate_preserves_parameters_and_uses_single_auth_surface():
+    recovery_gate = (WEB / "recovery-gate" / "index.html").read_text(encoding="utf-8")
+    assert "location.replace(target)" in recovery_gate
+    assert "'/login/'+location.search+location.hash" in recovery_gate
+    assert "createClient" not in recovery_gate
+
+    not_found = (WEB / "404.html").read_text(encoding="utf-8")
+    assert '"/recovery-gate":"/login/"' in not_found
+
+    render = (ROOT / "render.yaml").read_text(encoding="utf-8")
+    assert "source: /recovery-gate" in render
+    assert "destination: /recovery-gate/index.html" in render
