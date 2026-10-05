@@ -56,3 +56,17 @@ def test_square_secrets_are_not_embedded_in_browser_source() -> None:
     app = read("web/assets/app.js")
     assert "SQUARE_ACCESS_TOKEN" not in app
     assert "SQUARE_WEBHOOK_SIGNATURE_KEY" not in app
+
+
+def test_square_booking_webhooks_route_into_consultation_control() -> None:
+    webhook = read("supabase/functions/square-webhook/index.ts")
+    assert 'eventType === "booking.created"' in webhook
+    assert 'eventType === "booking.updated"' in webhook
+    assert "bookingEventState" in webhook
+    assert "bookingEndAt" in webhook
+    assert "square_consultation_event_v1" in webhook
+    assert "COLETTI_TIMEZONE" in webhook
+    assert "p_provider_booking_id" in webhook
+    assert "p_event_type" in webhook
+    assert "p_start_at" in webhook
+    assert "p_end_at" in webhook
