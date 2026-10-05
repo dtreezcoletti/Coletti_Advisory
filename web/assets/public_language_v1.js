@@ -1,4 +1,4 @@
-/* Public-facing canonical Records Reconstruction & Documentation Analysis vocabulary.
+/* Public-facing canonical Business Record Intelligence vocabulary.
    Internal database/API compatibility identifiers are not destructively renamed here. */
 
 const PUBLIC_ROUTES = new Set([
@@ -8,15 +8,15 @@ const PUBLIC_ROUTES = new Set([
 
 const replacements = [
   [/ColettiOS/g, 'Coletti & Co.'],
-  [/Evidence Intelligence & Reconstruction/g, 'Records Reconstruction & Documentation Analysis'],
-  [/Records Intelligence & Reconstruction/g, 'Records Reconstruction & Documentation Analysis'],
-  [/Records Reconstruction & Operational Intelligence/g, 'Records Reconstruction & Documentation Analysis'],
-  [/evidence-intelligence and reconstruction/gi, 'records reconstruction and documentation analysis'],
-  [/records intelligence and reconstruction/gi, 'records reconstruction and documentation analysis'],
-  [/records reconstruction and operational intelligence/gi, 'records reconstruction and documentation analysis'],
+  [/Evidence Intelligence & Reconstruction/g, 'Business Record Intelligence'],
+  [/Records Intelligence & Reconstruction/g, 'Business Record Intelligence'],
+  [/Records Reconstruction & Operational Intelligence/g, 'Business Record Intelligence'],
+  [/evidence-intelligence and reconstruction/gi, 'business record intelligence'],
+  [/records intelligence and reconstruction/gi, 'business record intelligence'],
+  [/records reconstruction and operational intelligence/gi, 'business record intelligence'],
   [/Independent Evidence Intelligence/g, 'Independent Records Reconstruction'],
   [/Independent Records Intelligence/g, 'Independent Records Reconstruction'],
-  [/Business Records Intelligence/g, 'Business Records Reconstruction'],
+  [/Business Records Intelligence/g, 'Business Record Intelligence'],
   [/Evidence states/g, 'Record States'],
   [/evidence states/g, 'Record States'],
   [/Evidence state/g, 'Record State'],
