@@ -15,12 +15,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_controlling_business_model_identity_and_catalog():
-    assert BUSINESS_MODEL_KEY == "CCO-RRDA-001"
-    assert BUSINESS_MODEL_VERSION == "1.0"
-    assert BUSINESS_MODEL_NAME == "Records Reconstruction & Documentation Analysis"
-    assert "Diagnostic Records Review" in SERVICE_CATALOG
+    assert BUSINESS_MODEL_KEY == "CCO-BRI-003"
+    assert BUSINESS_MODEL_VERSION == "3.0"
+    assert BUSINESS_MODEL_NAME == "Business Record Intelligence"
+    assert "Record Diagnostic" in SERVICE_CATALOG
     assert "Professional Handoff" in SERVICE_CATALOG
-    assert "Organized Source Production" in SERVICE_CATALOG
+    assert "Indexed Chronological Record Package" in SERVICE_CATALOG
 
 
 def test_intake_accepts_authorized_record_reconstruction():
@@ -55,24 +55,24 @@ def test_intake_routes_state_clearance_to_professional_review():
     assert "JURISDICTIONS:PA,TX" in result.reasons
 
 
-def test_public_site_uses_rrda_positioning_and_removes_intelligence_positioning():
+def test_public_site_uses_business_record_intelligence_positioning():
     index = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     services = (ROOT / "web" / "services.html").read_text(encoding="utf-8")
     boundaries = (ROOT / "web" / "boundaries.html").read_text(encoding="utf-8")
     public_language = (ROOT / "web" / "assets" / "public_language_v1.js").read_text(encoding="utf-8")
 
-    assert "Records Reconstruction &amp;<br/>Documentation Analysis" in index
-    assert "Diagnostic Records Review" in services
-    assert "Organized Source Production" in services
+    assert "We Reconstruct What<br/>Actually Happened." in index
+    assert "Record Diagnostic" in services
+    assert "Indexed Chronological Record Package" in services
     assert "do not independently investigate individuals" in boundaries
-    assert "Records Reconstruction & Documentation Analysis" in public_language
+    assert "Business Record Intelligence" in public_language
     assert "Records Reconstruction & Operational Intelligence" not in index
-    assert "Business Records Intelligence" not in index
+    assert "Business Record Intelligence" in index
 
 
 def test_service_scope_memorializes_source_universe_and_four_way_gate():
-    scope = (ROOT / "services" / "SERVICE_SCOPE_v1.md").read_text(encoding="utf-8")
-    assert "CCO-RRDA-001" in scope
+    scope = (ROOT / "services" / "SERVICE_SCOPE_v3.md").read_text(encoding="utf-8")
+    assert "CCO-BRI-003" in scope
     assert "versioned **Source Universe**" in scope
     for disposition in ("ACCEPT", "MODIFY_SCOPE", "PROFESSIONAL_REVIEW", "DECLINE_REFER"):
         assert f"`{disposition}`" in scope

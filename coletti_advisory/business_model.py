@@ -4,24 +4,24 @@ from dataclasses import dataclass
 from enum import Enum
 
 
-BUSINESS_MODEL_KEY = "CCO-RRDA-001"
-BUSINESS_MODEL_VERSION = "1.0"
-BUSINESS_MODEL_NAME = "Records Reconstruction & Documentation Analysis"
+BUSINESS_MODEL_KEY = "CCO-BRI-003"
+BUSINESS_MODEL_VERSION = "3.0"
+BUSINESS_MODEL_NAME = "Business Record Intelligence"
 CORE_PROMISE = (
-    "Give us the records and the question you are trying to understand; we reconstruct "
-    "what the records document, what they conflict with, what is missing, and what remains unresolved."
+    "We reconstruct what actually happened—what the records support, what conflicts, "
+    "what is missing, and what remains unresolved."
 )
 
 SERVICE_CATALOG = (
-    "Diagnostic Records Review",
-    "Full Records Reconstruction",
-    "Transaction Reconciliation",
-    "Timeline & Narrative Reconstruction",
-    "Process & Operations Reconstruction",
-    "Record Conditions & Pattern Analysis",
+    "Record Diagnostic",
+    "Business Reconstruction",
+    "Complex Reconstruction",
+    "Transaction Reconstruction",
+    "Timeline & Reconstruction Narrative",
+    "Operations Reconstruction",
     "Professional Handoff",
-    "Organized Source Production",
-    "Recurring Records Review",
+    "Indexed Chronological Record Package",
+    "Ongoing Record Intelligence",
 )
 
 
