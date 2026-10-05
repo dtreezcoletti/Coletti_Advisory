@@ -333,6 +333,101 @@ async function processRefund(eventId: string, refund: JsonRecord): Promise<void>
   });
 }
 
+
+function bookingEventState(eventType: string, squareStatus: string): string {
+  const status = (squareStatus ?? "").toUpperCase();
+  if (status === "CANCELLED_BY_CUSTOMER" || status === "CANCELLED_BY_SELLER" || status === "DECLINED") {
+    return "CANCELLED";
+  }
+  if (status === "NO_SHOW") return "COMPLETED";
+  if (eventType === "booking.created") {
+    return status === "ACCEPTED" ? "CONFIRMED" : "BOOKED";
+  }
+  return "UPDATED";
+}
+
+function bookingEndAt(booking: JsonRecord): string {
+  const startAt = String(booking?.start_at ?? "");
+  const start = Date.parse(startAt);
+  if (!startAt || Number.isNaN(start)) throw new Error("Square booking start_at is invalid");
+
+  const segmentMinutes = Array.isArray(booking?.appointment_segments)
+    ? booking.appointment_segments.reduce(
+        (sum: number, segment: any) => sum + Number(segment?.duration_minutes ?? 0),
+        0,
+      )
+    : 0;
+  const transitionMinutes = Number(booking?.transition_time_minutes ?? 0);
+  const totalMinutes = segmentMinutes + transitionMinutes;
+
+  if (!Number.isFinite(totalMinutes) || totalMinutes <= 0) {
+    throw new Error("Square booking duration is invalid");
+  }
+  return new Date(start + totalMinutes * 60_000).toISOString();
+}
+
+async function processBooking(eventId: string, eventType: string, booking: JsonRecord): Promise<void> {
+  const bookingId = String(booking?.id ?? "");
+  const startAt = String(booking?.start_at ?? "");
+  if (!bookingId || !startAt) {
+    await markEvent(eventId, {
+      processing_status: "IGNORED",
+      processed_at: new Date().toISOString(),
+      error_message: "Square booking event did not include booking.id and start_at.",
+    });
+    return;
+  }
+
+  const mappedState = bookingEventState(eventType, String(booking?.status ?? ""));
+  const endAt = bookingEndAt(booking);
+  const firstSegment = Array.isArray(booking?.appointment_segments)
+    ? booking.appointment_segments[0] ?? {}
+    : {};
+  const timezone = Deno.env.get("COLETTI_TIMEZONE") ?? "America/Chicago";
+
+  const rpc = await fetchJson(
+    `${Deno.env.get("SUPABASE_URL")}/rest/v1/rpc/square_consultation_event_v1`,
+    {
+      method: "POST",
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        p_provider_booking_id: bookingId,
+        p_event_type: mappedState,
+        p_start_at: mappedState === "CANCELLED" ? null : startAt,
+        p_end_at: mappedState === "CANCELLED" ? null : endAt,
+        p_timezone: timezone,
+        p_google_event_id: null,
+        p_payment_state: null,
+        p_service_key: String(firstSegment?.service_variation_id ?? "") || null,
+        p_client_ref: String(booking?.customer_id ?? "") || null,
+        p_payload: {
+          square_event_id: eventId,
+          square_event_type: eventType,
+          square_status: String(booking?.status ?? ""),
+          booking_version: booking?.version ?? null,
+          location_id: booking?.location_id ?? null,
+          service_variation_ids: Array.isArray(booking?.appointment_segments)
+            ? booking.appointment_segments
+                .map((segment: any) => String(segment?.service_variation_id ?? ""))
+                .filter(Boolean)
+            : [],
+        },
+      }),
+    },
+  );
+
+  if (!rpc.response.ok) {
+    console.error("Square booking reconciliation RPC failed", rpc.response.status, rpc.body);
+    throw new Error("booking reconciliation rpc failed");
+  }
+
+  await markEvent(eventId, {
+    processing_status: "PROCESSED",
+    processed_at: new Date().toISOString(),
+    error_message: null,
+  });
+}
+
 Deno.serve(async (request) => {
   if (request.method !== "POST") return jsonResponse({ error: "method_not_allowed" }, 405);
 
@@ -372,7 +467,8 @@ Deno.serve(async (request) => {
 
   const payment = event?.data?.object?.payment;
   const refund = event?.data?.object?.refund;
-  const object = payment ?? refund ?? {};
+  const booking = event?.data?.object?.booking;
+  const object = payment ?? refund ?? booking ?? {};
   const objectId = String(object?.id ?? "") || null;
   const orderId = String(payment?.order_id ?? "") || null;
   const providerStatus = String(object?.status ?? "") || null;
@@ -411,11 +507,14 @@ Deno.serve(async (request) => {
     } else if (eventType === "refund.created" || eventType === "refund.updated") {
       if (!refund) throw new Error("refund event missing refund object");
       await processRefund(eventId, refund);
+    } else if (eventType === "booking.created" || eventType === "booking.updated") {
+      if (!booking) throw new Error("booking event missing booking object");
+      await processBooking(eventId, eventType, booking);
     } else {
       await markEvent(eventId, {
         processing_status: "IGNORED",
         processed_at: new Date().toISOString(),
-        error_message: "Webhook event type is not used by Coletti Billing.",
+        error_message: "Webhook event type is not used by Coletti Billing or consultation scheduling.",
       });
     }
   } catch (error) {
