@@ -158,3 +158,25 @@ If Square link creation succeeds but the local invoice update fails, the functio
 If a valid webhook cannot be processed, the event is marked `FAILED` and the endpoint returns a non-2xx status so Square can retry.
 
 Webhook events unrelated to a Coletti-linked Square order are marked `IGNORED`; they do not mutate Coletti billing data.
+
+
+## Consultation booking events
+
+Square remains the client-facing booking/payment desk. Google Calendar remains the human-facing master calendar. ColettiOS does not create a duplicate consultation appointment.
+
+The Square webhook must subscribe to:
+
+- `booking.created`
+- `booking.updated`
+
+The webhook reads `data.object.booking`, derives the appointment end from the booking's appointment segments, and calls the service-role-only `square_consultation_event_v1` RPC. ColettiOS then stages only the separate **Consultation Morning — Protected** block through Dispatcher.
+
+Required acceptance before operational promotion:
+
+1. Square webhook signature/HMAC validation passes.
+2. Bookings webhook subscription is configured for the correct Square application/location scope.
+3. A sandbox booking reaches ColettiOS once, despite webhook replay.
+4. The Square-origin consultation appointment appears in Google Calendar through the Square/Google sync.
+5. ColettiOS creates exactly one 8:00 AM–12:00 PM protection block and does not duplicate the consultation.
+6. Reschedule moves the protection to the new morning.
+7. Cancellation removes/reconciles only the protection block.
