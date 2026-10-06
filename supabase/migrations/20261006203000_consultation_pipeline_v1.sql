@@ -26,6 +26,8 @@ create table if not exists public.preconsultation_assignments (
 alter table public.preconsultation_assignments enable row level security;
 revoke all on public.preconsultation_assignments from public,anon;
 grant select on public.preconsultation_assignments to authenticated;
+revoke insert,update,delete,truncate,references,trigger on public.preconsultation_assignments from authenticated;
+create index if not exists idx_preconsultation_assignments_user on public.preconsultation_assignments(user_id);
 drop policy if exists preconsultation_select on public.preconsultation_assignments;
 create policy preconsultation_select on public.preconsultation_assignments for select to authenticated
 using (user_id=(select auth.uid()) or private.is_staff());
@@ -64,6 +66,11 @@ create table if not exists public.consultation_workflows (
 alter table public.consultation_workflows enable row level security;
 revoke all on public.consultation_workflows from public,anon;
 grant select on public.consultation_workflows to authenticated;
+revoke insert,update,delete,truncate,references,trigger on public.consultation_workflows from authenticated;
+create index if not exists idx_consultation_workflows_user on public.consultation_workflows(user_id);
+create index if not exists idx_consultation_workflows_owner_decided_by on public.consultation_workflows(owner_decided_by);
+create index if not exists idx_consultation_workflows_qualification_assessment on public.consultation_workflows(qualification_assessment_id);
+create index if not exists idx_consultation_workflows_qualified_by on public.consultation_workflows(qualified_by);
 drop policy if exists consultation_workflows_select on public.consultation_workflows;
 create policy consultation_workflows_select on public.consultation_workflows for select to authenticated
 using (user_id=(select auth.uid()) or private.is_staff());
@@ -84,6 +91,7 @@ create table if not exists public.consultation_notifications (
 );
 alter table public.consultation_notifications enable row level security;
 revoke all on public.consultation_notifications from public,anon,authenticated;
+create index if not exists idx_consultation_notifications_consultation on public.consultation_notifications(consultation_id);
 
 CREATE OR REPLACE FUNCTION private.submit_preconsultation_assignment_impl_v1(p_intake_id uuid, p_engagement_question text, p_client_goal text, p_client_position text, p_proposition_to_test text, p_intended_recipient text, p_expected_record_count integer, p_known_sources jsonb DEFAULT '[]'::jsonb, p_known_entities jsonb DEFAULT '[]'::jsonb, p_known_gaps jsonb DEFAULT '[]'::jsonb, p_known_conflicts jsonb DEFAULT '[]'::jsonb, p_complexity_factors text DEFAULT ''::text, p_preliminary_scope text DEFAULT ''::text)
  RETURNS uuid
