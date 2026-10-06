@@ -357,8 +357,8 @@ async function staffPage(view) {
       }}
     ],true);
     return workspaceLayout('workspace','intake','Intake & qualification','Consultation, qualification, acceptance and case opening are distinct controlled states.',
-      panel('Consultation assessment',consultationForm,'Client statements remain assertions until separately supported by records.')+
-      panel('Intake pipeline',queue,'A qualified consultation is required before administrative acceptance. A controlled engagement agreement is required before case opening.')
+      panel('Consultation control','<div class="notice notice-info">Pre-Consultation Assignment review, Owner approval, booking/payment clearance, and post-consultation qualification are controlled from Owner / Admin -> Consultations.</div>')+
+      panel('Intake pipeline',queue,'Post-consultation QUALIFIED status is required before administrative acceptance. A controlled engagement agreement is required before case opening.')
     );
   }
 
