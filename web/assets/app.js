@@ -335,8 +335,37 @@ async function staffPage(view) {
 
   if(!c) return workspaceLayout('workspace',view,'Operations Workspace','Choose an assigned case to continue.',noCase());
   if(view==='documents'){
-    const [requests,uploads]=await Promise.all([q('document_requests','*',x=>x.eq('case_id',c).order('created_at',{ascending:false})),q('upload_records','*',x=>x.eq('case_id',c).order('created_at',{ascending:false}))]);
-    return workspaceLayout('workspace','documents','Document completeness',c,panel('Requests',table(requests,[{label:'Request',key:'title'},{label:'Due',render:r=>fmtDate(r.due_date)},{label:'Status',render:r=>badge(r.status)}]))+panel('Received uploads',table(uploads,[{label:'File',key:'original_filename'},{label:'Source ID',render:r=>esc(r.source_id||'Not ingested')},{label:'Status',render:r=>badge(r.status)},{label:'Hash',render:r=>`<span class="micro">${esc(r.sha256?r.sha256.slice(0,16)+'…':'Pending')}</span>`}]),'An upload is not a Source ID until controlled ingestion/registration occurs.'));
+    const [requests,uploads]=await Promise.all([
+      q('document_requests','*',x=>x.eq('case_id',c).order('created_at',{ascending:false})),
+      q('upload_records','*',x=>x.eq('case_id',c).order('created_at',{ascending:false}))
+    ]);
+    const requestTable=table(requests,[
+      {label:'Request',key:'title'},
+      {label:'Due',render:r=>fmtDate(r.due_date)},
+      {label:'Status',render:r=>`<select data-action="document-request-status" data-id="${r.id}">${['OPEN','UPLOADED','UNDER_REVIEW','SATISFIED','WAIVED'].map(x=>`<option ${x===r.status?'selected':''}>${x}</option>`).join('')}</select>`}
+    ]);
+    const uploadTable=table(uploads,[
+      {label:'File',render:r=>`<strong>${esc(r.original_filename)}</strong><div class="micro">${fmtDate(r.created_at)}</div>`},
+      {label:'Source ID',render:r=>esc(r.source_id||'Not registered')},
+      {label:'Status',render:r=>badge(r.status)},
+      {label:'Hash',render:r=>`<span class="micro">${esc(r.sha256?r.sha256.slice(0,16)+'…':'Pending')}</span>`},
+      {label:'Registration',render:r=>{
+        if(r.source_id)return badge('registered');
+        if(!['RECEIVED','PROCESSING'].includes(r.status))return '—';
+        return `<div class="stack">
+          <input data-source-type="${r.id}" placeholder="Source type, e.g. Correspondence" />
+          <input data-source-label="${r.id}" placeholder="Client-facing label (optional)" />
+          <select data-source-role="${r.id}">
+            <option>NATIVE_SOURCE</option><option>PRODUCTION_COPY</option><option>SUPPLEMENTAL_COPY</option><option>EXHIBIT</option><option>CORRECTED_RECORD</option><option>DERIVATIVE</option><option>OTHER</option>
+          </select>
+          <button class="btn btn-primary btn-sm" data-action="register-upload-source" data-id="${r.id}">Register as Source</button>
+        </div>`;
+      }}
+    ],true);
+    return workspaceLayout('workspace','documents','Document completeness',c,
+      panel('Record requests',requestTable,'SATISFIED or WAIVED requests no longer block Record Universe lock.')+
+      panel('Received uploads',uploadTable,'Registration preserves the upload hash and provenance. New sources enter as NOT_TESTED authenticity and APPROVAL_REQUIRED publication; registration is not verification.')
+    );
   }
   if(view==='evidence' || view==='contradictions'){
     const filter=view==='contradictions'?['CONTRADICTION','RECONCILIATION']:null;
@@ -571,11 +600,20 @@ async function handleClick(e) {
     if(action==='open-case-from-intake'){ const {data,error}=await supabase.rpc('admin_open_case_from_intake_v1',{p_intake_id:btn.dataset.id,p_case_prefix:'BRI',p_assignment_role:'case_manager'}); if(error)throw error; await refreshCases(); toast(`Case opened and assigned: ${data}`,'success'); await render(); }
     if(action==='lock-record-universe'){ const {data,error}=await supabase.rpc('lock_record_universe_v1',{p_case_id:state.activeCase}); if(error)throw error; toast(`Record Universe locked: ${data}`,'success'); await render(); }
     if(action==='submit-reconstruction-review'){ const {error}=await supabase.rpc('submit_reconstruction_for_review_v1',{p_reconstruction_id:btn.dataset.id}); if(error)throw error; toast('Reconstruction sealed and routed to human review.','success'); await render(); }
+    if(action==='register-upload-source'){
+      const sourceType=document.querySelector(`[data-source-type="${CSS.escape(btn.dataset.id)}"]`)?.value?.trim();
+      const sourceRole=document.querySelector(`[data-source-role="${CSS.escape(btn.dataset.id)}"]`)?.value||'NATIVE_SOURCE';
+      const clientLabel=document.querySelector(`[data-source-label="${CSS.escape(btn.dataset.id)}"]`)?.value?.trim()||null;
+      if(!sourceType)throw new Error('Enter a source type before registration.');
+      const {data,error}=await supabase.rpc('register_upload_as_source_v1',{p_upload_id:btn.dataset.id,p_source_type:sourceType,p_source_role:sourceRole,p_client_label:clientLabel}); if(error)throw error;
+      toast(`Source registered: ${data}`,'success'); await render();
+    }
   } catch(err){console.error(err);toast(err.message||'Action failed.','error');}
 }
 async function handleChange(e) {
   if(e.target.id==='case-selector'){ state.activeCase=e.target.value; localStorage.setItem('coletti.activeCase',state.activeCase); await render(); }
   if(e.target.dataset.action==='intake-status'){ const {error}=await supabase.from('intake_submissions').update({status:e.target.value}).eq('id',e.target.dataset.id); if(error)toast(error.message,'error'); else {toast('Intake status updated.','success');await render();} }
+  if(e.target.dataset.action==='document-request-status'){ const {error}=await supabase.rpc('set_document_request_status_v1',{p_request_id:e.target.dataset.id,p_status:e.target.value}); if(error)toast(error.message,'error'); else {toast('Record request status updated.','success');await render();} }
 }
 
 async function render() {
