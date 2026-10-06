@@ -7,6 +7,8 @@ def read(path: str) -> str:
 
 def test_records_intake_architecture_contract():
     migration = read("supabase/migrations/20261006233624_automated_records_intake_exception_routing_v1.sql")
+    approval = read("supabase/migrations/20261006234245_approve_records_receipt_source_registration_sop_v1.sql")
+    architecture = migration + "\n" + approval
     required = [
         "public.source_taxonomy",
         "public.record_intake_jobs",
@@ -24,7 +26,7 @@ def test_records_intake_architecture_contract():
         "APPROVAL_REQUIRED",
     ]
     for item in required:
-        assert item in migration
+        assert item in architecture
 
 def test_records_intake_ui_is_exception_driven():
     app = read("web/assets/app.js")
