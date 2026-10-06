@@ -1,0 +1,56 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Request a confidential consultation with Coletti & Co. for Business Record Intelligence and records reconstruction."><meta name="theme-color" content="#f4efe6"><title>Consultation | Coletti & Co.</title><link rel="stylesheet" href="/assets/site.css"><style>
+.consult-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:18px}.consult-form{display:grid;gap:16px}.consult-form label{display:grid;gap:7px;font-family:var(--serif);font-size:12px;letter-spacing:.04em}.consult-form input{width:100%;min-height:46px;border:1px solid var(--line);background:#fff;padding:0 14px;font:14px var(--sans);color:var(--graphite)}.consult-form input:focus{outline:2px solid rgba(164,123,66,.22);border-color:var(--brass)}.consult-form button{cursor:pointer}.consult-form button:disabled{opacity:.55;cursor:wait}.consult-note{font-size:11px;line-height:1.65;color:var(--muted);margin:0}.consult-status{display:none;padding:14px 16px;border:1px solid var(--line);background:#f5efe6;font-size:12px;line-height:1.6}.consult-status.show{display:block}.consult-steps{display:grid;gap:0}.consult-step{padding:20px 0;border-bottom:1px solid var(--line)}.consult-step:first-child{padding-top:0}.consult-step:last-child{border-bottom:0;padding-bottom:0}.consult-step strong{font-family:var(--serif);font-size:18px;font-weight:400}.consult-step p{margin:7px 0 0}.consult-boundary{margin-top:18px;padding:18px;border-left:2px solid var(--brass);background:#f7f2eb}.consult-boundary p{margin:0}.existing-access{margin-top:16px}.existing-access a{color:var(--brass2);font-weight:600;text-decoration:none}@media(max-width:900px){.consult-grid{grid-template-columns:1fr}}
+</style></head><body><div id="site-shell-start"></div><main id="main">
+<section class="page-hero"><p class="kicker">Consultation</p><h1>Start with the records. Decide from there.</h1><p>A consultation is the controlled first step for determining whether Coletti & Co. is the right fit for your record problem, what needs to be reconstructed, and what the next engagement should look like.</p></section>
+<section class="content" id="process"><div class="consult-grid">
+<article class="content-card"><h2>How consultation works</h2><div class="consult-steps">
+<div class="consult-step"><span class="kicker">01</span><br><strong>Secure intake</strong><p>Use the protected client gateway to describe the record problem and the kind of reconstruction you believe you need.</p></div>
+<div class="consult-step"><span class="kicker">02</span><br><strong>Pre-Consultation Assignment</strong><p>Before any consultation is approved, you complete a structured assignment covering the question, known sources, gaps, conflicts, expected record volume, intended recipient, and preliminary scope.</p></div>
+<div class="consult-step"><span class="kicker">03</span><br><strong>Owner review</strong><p>Coletti & Co. reviews the assignment and decides whether to offer a consultation, request more information, or decline the consultation.</p></div>
+<div class="consult-step"><span class="kicker">04</span><br><strong>Appointment & payment</strong><p>If approved, the appointment and consultation fee are handled through the controlled scheduling and payment process. Full payment is required before the consultation proceeds.</p></div>
+<div class="consult-step"><span class="kicker">05</span><br><strong>Qualification decision</strong><p>After the consultation, Coletti & Co. determines whether the matter is qualified for an engagement, needs a Record Assessment first, or is not a fit.</p></div>
+</div></article>
+<article class="content-card" id="start"><p class="kicker">Start Securely</p><h2>Request a consultation.</h2><p>Enter only your name and email here. Sensitive facts, documents, account numbers, medical information, legal allegations, and other matter details belong inside the secure client gateway—not on the public website.</p>
+<form id="consultation-access-form" class="consult-form">
+<label>Full name<input id="consult-name" name="full_name" autocomplete="name" required maxlength="120"></label>
+<label>Email<input id="consult-email" name="email" type="email" autocomplete="email" required maxlength="254"></label>
+<button id="consult-submit" class="btn btn-solid" type="submit">Start Secure Consultation Request <span>→</span></button>
+<p class="consult-note">We will send a secure sign-in link. If this is your first visit, your protected client access will be created automatically. No engagement exists until Coletti & Co. formally accepts one.</p>
+<div id="consult-status" class="consult-status" role="status" aria-live="polite"></div>
+</form>
+<p class="existing-access">Already have secure access? <a href="/login/?next=consultation">Continue your consultation request →</a></p>
+<div class="consult-boundary"><p><strong>Professional boundary:</strong> A consultation is for scoping Business Record Intelligence and records-reconstruction work. It is not legal, accounting, tax, insurance, investment, medical, valuation, or investigative advice.</p></div>
+</article>
+</div></section>
+</main><div id="site-shell-end"></div><script src="/assets/site.js"></script><script type="module">
+import {createClient} from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/+esm';
+import {SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,APP_ORIGIN} from '/assets/config.js';
+const supabase=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+const form=document.getElementById('consultation-access-form');
+const button=document.getElementById('consult-submit');
+const status=document.getElementById('consult-status');
+const show=(msg)=>{status.textContent=msg;status.classList.add('show')};
+const session=await supabase.auth.getSession();
+if(session.data?.session?.user){
+  button.textContent='Continue to Secure Consultation Intake →';
+  form.addEventListener('submit',(e)=>{e.preventDefault();location.href='/workspace/#/portal/intake';});
+}else{
+  form.addEventListener('submit',async(e)=>{
+    e.preventDefault();button.disabled=true;status.classList.remove('show');
+    const email=document.getElementById('consult-email').value.trim();
+    const fullName=document.getElementById('consult-name').value.trim();
+    const {error}=await supabase.auth.signInWithOtp({
+      email,
+      options:{
+        emailRedirectTo:`${APP_ORIGIN}/login/?next=consultation`,
+        shouldCreateUser:true,
+        data:{full_name:fullName,entry_source:'public_consultation'}
+      }
+    });
+    button.disabled=false;
+    if(error){console.error(error);show('The secure consultation link could not be sent. Please check the email address and try again.');return;}
+    show('Secure access link sent. Open the email from Coletti & Co. to continue into the protected consultation intake.');
+    form.reset();
+  });
+}
+</script></body></html>
