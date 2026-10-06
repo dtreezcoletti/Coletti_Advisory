@@ -186,7 +186,7 @@ function signInPage() {
 
 const CLIENT_NAV=[['home','Overview'],['intake','Intake'],['preconsultation','Pre-Consultation'],['profile','Identity & Contact'],['engagement','Engagement'],['uploads','Secure Uploads'],['requests','Document Requests'],['timeline','Case Status'],['messages','Messages'],['schedule','Meetings'],['billing','Invoices & Payments'],['reports','Published Reports'],['support','Support']];
 const STAFF_NAV=[['home','Assigned Cases'],['intake','Intake Review'],['documents','Document Completeness'],['evidence','Records & Reconstruction'],['contradictions','Contradictions / Reconciliation'],['narratives','Review Narratives'],['requests','Client Requests & Deadlines'],['notes','Case Notes'],['qa','QA Checklist'],['publishing','Publishing Handoff']];
-const ADMIN_NAV=[['home','Command Center'],['consultations','Consultations'],['users','Users & Roles'],['assignments','Case Assignment'],['audit','Audit Trail'],['access','Access Controls'],['services','Services & Pricing'],['procedures','Procedures & SOPs'],['templates','Templates'],['publications','Publication Controls'],['analytics','Analytics / KPIs'],['billing','Billing Overview'],['referrals','Referral Pipeline'],['capacity','Capacity / Workload'],['health','System Health'],['security','Security Alerts'],['backups','Backup / Recovery'],['settings','Settings']];
+const ADMIN_NAV=[['home','Command Center'],['consultations','Consultations'],['records','Records Intake'],['users','Users & Roles'],['assignments','Case Assignment'],['audit','Audit Trail'],['access','Access Controls'],['services','Services & Pricing'],['procedures','Procedures & SOPs'],['templates','Templates'],['publications','Publication Controls'],['analytics','Analytics / KPIs'],['billing','Billing Overview'],['referrals','Referral Pipeline'],['capacity','Capacity / Workload'],['health','System Health'],['security','Security Alerts'],['backups','Backup / Recovery'],['settings','Settings']];
 function caseSelector() {
   if(!state.caseIds.length) return '<span class="badge badge-neutral">No active case access</span>';
   return `<select id="case-selector" aria-label="Active case" style="width:auto;min-width:190px">${state.caseIds.map(id=>`<option value="${esc(id)}" ${id===state.activeCase?'selected':''}>${esc(id)}</option>`).join('')}</select>`;
@@ -364,36 +364,85 @@ async function staffPage(view) {
 
   if(!c) return workspaceLayout('workspace',view,'Operations Workspace','Choose an assigned case to continue.',noCase());
   if(view==='documents'){
-    const [requests,uploads]=await Promise.all([
+    if(!c) return workspaceLayout('workspace','documents','Records Intake','Select an authorized case to review received records.',noCase());
+    const [requests,uploads,jobs,taxonomies,metricResult]=await Promise.all([
       q('document_requests','*',x=>x.eq('case_id',c).order('created_at',{ascending:false})),
-      q('upload_records','*',x=>x.eq('case_id',c).order('created_at',{ascending:false}))
+      q('upload_records','*',x=>x.eq('case_id',c).order('created_at',{ascending:false})),
+      q('record_intake_jobs','*',x=>x.eq('case_id',c).order('created_at',{ascending:false})),
+      q('source_taxonomy','*',x=>x.eq('active',true).order('sort_order',{ascending:true})),
+      supabase.rpc('record_intake_metrics_v1',{p_case_id:c})
     ]);
+    if(metricResult.error) throw metricResult.error;
+    const metrics=metricResult.data||{};
+    const byUpload=new Map(jobs.map(j=>[j.upload_id,j]));
+    const routeBadge=route=>{
+      const cls=route==='GREEN'?'badge-success':route==='AMBER'?'badge-warning':route==='RED'?'badge-danger':'badge-neutral';
+      return `<span class="badge ${cls}">${esc(route||'NONE')}</span>`;
+    };
+    const taxonomyOptions=(selected='')=>taxonomies.map(t=>`<option value="${esc(t.taxonomy_key)}" ${t.taxonomy_key===selected?'selected':''}>${esc(t.label)} · ${esc(t.source_type)}</option>`).join('');
+    const roleOptions=(selected='NATIVE_SOURCE')=>['NATIVE_SOURCE','PRODUCTION_COPY','SUPPLEMENTAL_COPY','EXHIBIT','CORRECTED_RECORD','DERIVATIVE','OTHER'].map(x=>`<option value="${x}" ${x===selected?'selected':''}>${esc(titleCase(x))}</option>`).join('');
     const requestTable=table(requests,[
       {label:'Request',key:'title'},
       {label:'Due',render:r=>fmtDate(r.due_date)},
       {label:'Status',render:r=>`<select data-action="document-request-status" data-id="${r.id}">${['OPEN','UPLOADED','UNDER_REVIEW','SATISFIED','WAIVED'].map(x=>`<option ${x===r.status?'selected':''}>${x}</option>`).join('')}</select>`}
     ]);
     const uploadTable=table(uploads,[
-      {label:'File',render:r=>`<strong>${esc(r.original_filename)}</strong><div class="micro">${fmtDate(r.created_at)}</div>`},
-      {label:'Source ID',render:r=>esc(r.source_id||'Not registered')},
-      {label:'Status',render:r=>badge(r.status)},
-      {label:'Hash',render:r=>`<span class="micro">${esc(r.sha256?r.sha256.slice(0,16)+'…':'Pending')}</span>`},
-      {label:'Registration',render:r=>{
+      {label:'File',render:r=>{
+        const j=byUpload.get(r.id);
+        return `<strong>${esc(r.original_filename)}</strong><div class="micro">${fmtDate(r.created_at)} · ${esc(r.mime_type||'Unknown type')}</div><div class="mt-1"><button class="btn btn-ghost btn-sm" data-action="preview-intake-upload" data-bucket="${esc(r.storage_bucket)}" data-path="${esc(r.storage_path)}" data-job="${esc(j?.id||'')}">Preview</button></div>`;
+      }},
+      {label:'Source',render:r=>r.source_id?`<strong>${esc(r.source_id)}</strong>`:esc('Not registered')},
+      {label:'Triage',render:r=>{
+        const j=byUpload.get(r.id);
+        if(r.source_id)return `${routeBadge('GREEN')}<div class="micro mt-1">Registered</div>`;
+        if(!j)return `${routeBadge('NONE')}<div class="micro mt-1">Queued</div>`;
+        const confidence=j.classification_confidence==null?'—':`${Math.round(Number(j.classification_confidence)*100)}%`;
+        return `${routeBadge(j.route)}<div class="micro mt-1">${esc(titleCase(j.status))} · ${esc(confidence)}</div>`;
+      }},
+      {label:'Suggested classification',render:r=>{
+        const j=byUpload.get(r.id);
         if(r.source_id)return badge('registered');
-        if(!['RECEIVED','PROCESSING'].includes(r.status))return '—';
+        if(!j)return '<span class="micro">Processing…</span>';
+        return `<div><strong>${esc(j.suggested_source_type||'Unclassified')}</strong></div><div class="micro">${esc(j.suggested_client_label||r.original_filename)}</div>`;
+      }},
+      {label:'Exception / relationship',render:r=>{
+        const j=byUpload.get(r.id);
+        if(!j||r.source_id)return '—';
+        const codes=Array.isArray(j.exception_codes)?j.exception_codes:[];
+        if(j.exact_duplicate_source_id)return `<div class="small"><strong>Exact duplicate candidate</strong><br/><span class="micro">${esc(j.exact_duplicate_source_id)}</span></div>`;
+        if(j.duplicate_upload_id)return '<div class="small"><strong>Exact duplicate upload candidate</strong></div>';
+        if(j.bundle_state==='PROBABLE_BUNDLE')return '<div class="small"><strong>Possible multi-document bundle</strong><br/><span class="micro">Boundary review required.</span></div>';
+        return codes.length?`<div class="micro">${codes.map(titleCase).map(esc).join(' · ')}</div>`:'—';
+      }},
+      {label:'Decision',render:r=>{
+        if(r.source_id)return badge('registered');
+        const j=byUpload.get(r.id);
+        if(!j)return '—';
+        if(j.status==='RESOLVED_DUPLICATE')return badge('resolved duplicate');
+        if(j.status==='REJECTED')return badge('rejected');
+        const selected=j.suggested_taxonomy_key||'other_unclassified';
+        const duplicateAction=(j.exact_duplicate_source_id||j.duplicate_upload_id)?`<button class="btn btn-ghost btn-sm" data-action="mark-intake-duplicate" data-id="${j.id}">Mark Duplicate</button>`:'';
+        const registerLabel=j.bundle_state==='PROBABLE_BUNDLE'?'Confirm Single Source & Register':'Confirm & Register';
         return `<div class="stack">
-          <input data-source-type="${r.id}" placeholder="Source type, e.g. Correspondence" />
-          <input data-source-label="${r.id}" placeholder="Client-facing label (optional)" />
-          <select data-source-role="${r.id}">
-            <option>NATIVE_SOURCE</option><option>PRODUCTION_COPY</option><option>SUPPLEMENTAL_COPY</option><option>EXHIBIT</option><option>CORRECTED_RECORD</option><option>DERIVATIVE</option><option>OTHER</option>
-          </select>
-          <button class="btn btn-primary btn-sm" data-action="register-upload-source" data-id="${r.id}">Register as Source</button>
+          <select data-intake-taxonomy="${j.id}">${taxonomyOptions(selected)}</select>
+          <input data-intake-label="${j.id}" value="${esc(j.suggested_client_label||'')}" placeholder="Client-facing label" />
+          <select data-intake-role="${j.id}">${roleOptions(j.suggested_source_role||'NATIVE_SOURCE')}</select>
+          <div class="flex gap-1"><button class="btn btn-primary btn-sm" data-action="confirm-intake-job" data-id="${j.id}">${registerLabel}</button>${duplicateAction}</div>
         </div>`;
       }}
     ],true);
-    return workspaceLayout('workspace','documents','Document completeness',c,
-      panel('Record requests',requestTable,'SATISFIED or WAIVED requests no longer block Record Universe lock.')+
-      panel('Received uploads',uploadTable,'Registration preserves the upload hash and provenance. New sources enter as NOT_TESTED authenticity and APPROVAL_REQUIRED publication; registration is not verification.')
+    const metricCards=`<div class="grid-4">
+      <div class="card metric"><div class="metric-value">${Number(metrics.total||0)}</div><div class="metric-label">Received</div></div>
+      <div class="card metric"><div class="metric-value">${Number(metrics.registered||0)}</div><div class="metric-label">Registered</div></div>
+      <div class="card metric"><div class="metric-value">${Number(metrics.amber||0)}</div><div class="metric-label">Quick confirmations</div></div>
+      <div class="card metric"><div class="metric-value">${Number(metrics.red||0)}</div><div class="metric-label">Exceptions</div></div>
+    </div>`;
+    const batch=Number(metrics.green||0)>0?`<div class="notice notice-info mt-1"><strong>${Number(metrics.green)} Green item(s) are batch-ready.</strong> These are routine administrative classifications, not authenticity findings. <button class="btn btn-primary btn-sm" data-action="batch-register-green-intake">Register Green Batch</button></div>`:'';
+    const operationalNote=`<div class="notice notice-warning mt-1"><strong>Intake triage is administrative, not evidentiary verification.</strong> Current automated routing uses controlled taxonomy, file metadata, filename signals, duplicate hashes, and bundle-risk flags. Ambiguous records remain Amber/Red. Content-aware document segmentation and deeper classification remain a separate processor activation gate.</div>`;
+    return workspaceLayout('workspace','documents','Records Intake & Source Registration',c,
+      metricCards+batch+operationalNote+
+      panel('Record requests',requestTable,'An upload does not automatically satisfy a request. Confirm that the requested material was actually supplied.')+
+      panel('Exception-driven intake queue',uploadTable,'Source IDs are allocated automatically. Registration preserves the original upload, hash and provenance; authenticity begins NOT_TESTED and publication remains APPROVAL_REQUIRED.')
     );
   }
   if(view==='evidence' || view==='contradictions'){
@@ -464,6 +513,8 @@ async function staffPage(view) {
 }
 
 async function adminPage(view) {
+  if(view==='records'){ go('/workspace/documents'); return ''; }
+
   if(!requireAdmin()) return '';
   if(view==='home'){
     const [intakes, invoices, tickets, alerts, handoffs] = await Promise.all([
