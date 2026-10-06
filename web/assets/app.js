@@ -217,9 +217,12 @@ async function portalPage(view) {
   if(view==='engagement'){
     const rows=await q('engagement_acceptances','*',x=>x.eq('user_id',state.user.id).order('created_at',{ascending:false}));
     const latestIntake=(await q('intake_submissions','id,status',x=>x.eq('user_id',state.user.id).order('created_at',{ascending:false}).limit(1)))[0];
-    const form=`<form id="engagement-form"><input type="hidden" name="intake_id" value="${esc(latestIntake?.id||'')}" /><div class="notice notice-warning">Electronic acknowledgment placeholder: the final controlled engagement agreement and any third-party e-sign certificate must be substituted before commercial launch. This screen records an application acknowledgment only.</div><div class="form-field mt-2"><label>Signature name</label><input name="signature_name" required value="${esc(state.profile?.display_name||'')}" /></div><div class="checkbox-row mt-1"><input type="checkbox" id="engage-ack" required /><label for="engage-ack">I acknowledge the service boundary and understand an engagement is not accepted until Coletti &amp; Co. confirms it.</label></div><div class="form-actions"><button class="btn btn-primary" ${!latestIntake?'disabled':''}>Record acknowledgment</button></div></form>`;
-    return workspaceLayout('portal','engagement','Engagement & acknowledgments','Controlled acceptance records and e-sign integration placeholder.',panel('Engagement acknowledgment',form,latestIntake?'Latest intake found.':'Submit intake before recording an engagement acknowledgment.')+panel('Acknowledgment history',table(rows,[{label:'Document',key:'document_key'},{label:'Version',key:'document_version'},{label:'Accepted',render:r=>badge(r.accepted?'accepted':'not accepted')},{label:'Date',render:r=>fmtDate(r.accepted_at)}])));
+    const controlled=rows.find(r=>r.accepted===true&&r.acknowledgement_type==='ENGAGEMENT_AGREEMENT_ACCEPTANCE'&&r.metadata?.controlled_document===true);
+    const form=`<form id="engagement-form"><input type="hidden" name="intake_id" value="${esc(latestIntake?.id||'')}" /><div class="notice notice-warning"><strong>Service-boundary acknowledgment only.</strong><br/>A controlled Coletti & Co. engagement agreement is not currently loaded in this portal. Recording this acknowledgment does not authorize work, create a case, or satisfy the engagement gate.</div><div class="form-field mt-2"><label>Name</label><input name="signature_name" required value="${esc(state.profile?.display_name||'')}" /></div><div class="checkbox-row mt-1"><input type="checkbox" id="engage-ack" required /><label for="engage-ack">I acknowledge the service boundary and understand that a separate controlled engagement agreement must be accepted before work begins.</label></div><div class="form-actions"><button class="btn btn-primary" ${!latestIntake?'disabled':''}>Record boundary acknowledgment</button></div></form>`;
+    const status=controlled?'<div class="notice notice-info"><strong>Controlled engagement accepted.</strong> The administrative case-opening gate may proceed after all other requirements are satisfied.</div>':'<div class="notice notice-warning"><strong>Engagement gate not satisfied.</strong> A controlled engagement agreement/version must be loaded and accepted before a case can be opened.</div>';
+    return workspaceLayout('portal','engagement','Engagement & acknowledgments','Boundary acknowledgments are separate from controlled engagement acceptance.',status+panel('Service-boundary acknowledgment',form,latestIntake?'Latest intake found.':'Submit intake before recording an acknowledgment.')+panel('Acknowledgment history',table(rows,[{label:'Type',render:r=>esc(titleCase(r.acknowledgement_type))},{label:'Document',key:'document_key'},{label:'Version',key:'document_version'},{label:'Gate status',render:r=>r.accepted&&r.acknowledgement_type==='ENGAGEMENT_AGREEMENT_ACCEPTANCE'?badge('engagement accepted'):badge('acknowledgment only')},{label:'Date',render:r=>fmtDate(r.accepted_at||r.created_at)}])));
   }
+
   if(view==='uploads'){
     const rows=await q('upload_records','*',x=>c?x.eq('case_id',c).order('created_at',{ascending:false}):x.eq('uploaded_by',state.user.id).order('created_at',{ascending:false}));
     const intakes=await q('intake_submissions','id,status,submitted_at',x=>x.eq('user_id',state.user.id).order('created_at',{ascending:false}));
@@ -271,8 +274,65 @@ async function staffPage(view) {
   }
   if(view==='intake'){
     const rows=await q('intake_submissions','*',x=>x.order('created_at',{ascending:false}).limit(100));
-    return workspaceLayout('workspace','intake','Intake review','Review incoming engagements without converting intake assertions into findings.',panel('Intake queue',table(rows,[{label:'Received',render:r=>fmtDate(r.created_at)},{label:'Service',render:r=>esc(titleCase(r.service_requested))},{label:'Summary',render:r=>`<span class="small">${esc((r.matter_summary||'').slice(0,180))}</span>`},{label:'Status',render:r=>badge(r.status)},{label:'Action',render:r=>`<select data-action="intake-status" data-id="${r.id}"><option>${r.status}</option>${['IN_REVIEW','ACCEPTED','DECLINED'].filter(x=>x!==r.status).map(x=>`<option>${x}</option>`).join('')}</select>`}]),'Client statements in intake remain client assertions unless separately supported by records.'));
+    const intakeIds=rows.map(r=>r.id);
+    const adminLike=ADMIN_ROLES.includes(state.profile?.role);
+    const [assessments,acceptances]=await Promise.all([
+      intakeIds.length?q('consultation_assessments','*',x=>x.in('intake_id',intakeIds).order('created_at',{ascending:false})) : Promise.resolve([]),
+      adminLike&&intakeIds.length?q('engagement_acceptances','*',x=>x.in('intake_id',intakeIds).order('created_at',{ascending:false})) : Promise.resolve([])
+    ]);
+    const latestAssessment=new Map();
+    assessments.forEach(a=>{if(!latestAssessment.has(a.intake_id))latestAssessment.set(a.intake_id,a);});
+    const controlledAcceptance=new Map();
+    acceptances.forEach(a=>{
+      const controlled=a.accepted===true && a.acknowledgement_type==='ENGAGEMENT_AGREEMENT_ACCEPTANCE' && a.metadata?.controlled_document===true && !String(a.document_version||'').toUpperCase().includes('DRAFT') && !String(a.document_key||'').toUpperCase().startsWith('PLACEHOLDER');
+      if(controlled)controlledAcceptance.set(a.intake_id,a);
+    });
+    const reviewable=rows.filter(r=>!['DECLINED','WITHDRAWN','ACCEPTED'].includes(r.status));
+    const consultationForm=reviewable.length?`<form id="consultation-form"><div class="form-grid">
+      <div class="form-field"><label>Intake</label><select name="intake_id" required>${reviewable.map(r=>`<option value="${r.id}">${esc((r.matter_summary||r.service_requested||r.id).slice(0,90))}</option>`).join('')}</select></div>
+      <div class="form-field"><label>Qualification decision</label><select name="qualification_decision"><option>QUALIFIED</option><option>NEEDS_RECORD_ASSESSMENT</option><option>NOT_QUALIFIED</option></select></div>
+      <div class="form-field full"><label>Engagement question</label><textarea name="engagement_question" required></textarea></div>
+      <div class="form-field full"><label>Client goal</label><textarea name="client_goal"></textarea></div>
+      <div class="form-field full"><label>Client position / current understanding</label><textarea name="client_position"></textarea></div>
+      <div class="form-field full"><label>Proposition to test</label><textarea name="proposition_to_test"></textarea></div>
+      <div class="form-field"><label>Intended recipient</label><input name="intended_recipient" placeholder="Client, attorney, CPA, internal…" /></div>
+      <div class="form-field"><label>Expected record count</label><input name="expected_record_count" type="number" min="0" /></div>
+      <div class="form-field"><label>Complexity</label><select name="complexity_level"><option value="">Not yet rated</option><option>LOW</option><option>MODERATE</option><option>HIGH</option><option>VERY_HIGH</option></select></div>
+      <div class="form-field"><label>Recommended products</label><input name="recommended_products" placeholder="Comma-separated service keys" /></div>
+      <div class="form-field full"><label>Known sources</label><textarea name="known_sources" placeholder="One source per line"></textarea></div>
+      <div class="form-field full"><label>Known entities</label><textarea name="known_entities" placeholder="One entity per line"></textarea></div>
+      <div class="form-field full"><label>Known gaps</label><textarea name="known_gaps" placeholder="One gap per line"></textarea></div>
+      <div class="form-field full"><label>Known conflicts</label><textarea name="known_conflicts" placeholder="One conflict per line"></textarea></div>
+      <div class="form-field full"><label>Complexity factors</label><textarea name="complexity_factors"></textarea></div>
+      <div class="form-field full"><label>Preliminary scope</label><textarea name="preliminary_scope"></textarea></div>
+      <div class="form-field full"><label>Decision reason</label><textarea name="decision_reason"></textarea></div>
+    </div><div class="form-actions"><button class="btn btn-primary">Record consultation assessment</button></div></form>`:'<div class="empty">No submitted or in-review intakes require consultation assessment.</div>';
+    const queue=table(rows,[
+      {label:'Received',render:r=>fmtDate(r.created_at)},
+      {label:'Service',render:r=>esc(titleCase(r.service_requested))},
+      {label:'Summary',render:r=>`<span class="small">${esc((r.matter_summary||'').slice(0,160))}</span>`},
+      {label:'Qualification',render:r=>{const a=latestAssessment.get(r.id);return a?badge(a.qualification_decision):badge('not assessed');}},
+      {label:'Engagement gate',render:r=>controlledAcceptance.has(r.id)?badge('controlled acceptance'):badge('not satisfied')},
+      {label:'Status',render:r=>badge(r.status)},
+      {label:'Action',render:r=>{
+        const a=latestAssessment.get(r.id);
+        const qualified=a?.qualification_decision==='QUALIFIED'&&a?.status==='QUALIFIED';
+        const controlled=controlledAcceptance.has(r.id);
+        const statusControl=!['ACCEPTED','DECLINED','WITHDRAWN'].includes(r.status)?`<select data-action="intake-status" data-id="${r.id}"><option>${r.status}</option>${['IN_REVIEW','DECLINED'].filter(x=>x!==r.status).map(x=>`<option>${x}</option>`).join('')}</select>`:'';
+        if(!adminLike)return statusControl||'—';
+        const clientType=`<select data-client-type="${r.id}" aria-label="Client type"><option>INDIVIDUAL</option><option>ORGANIZATION</option></select>`;
+        const accept=qualified&&r.status!=='ACCEPTED'?`<button class="btn btn-primary btn-sm" data-action="accept-qualified-intake" data-id="${r.id}">Accept qualified intake</button>`:'';
+        const open=r.status==='ACCEPTED'&&controlled&&!r.case_id?`<button class="btn btn-primary btn-sm" data-action="open-case-from-intake" data-id="${r.id}">Open & assign case</button>`:'';
+        const existing=r.case_id?`<span class="badge badge-success">${esc(r.case_id)}</span>`:'';
+        return `<div class="stack">${statusControl}${qualified&&r.status!=='ACCEPTED'?clientType:''}${accept}${open}${existing}</div>`;
+      }}
+    ],true);
+    return workspaceLayout('workspace','intake','Intake & qualification','Consultation, qualification, acceptance and case opening are distinct controlled states.',
+      panel('Consultation assessment',consultationForm,'Client statements remain assertions until separately supported by records.')+
+      panel('Intake pipeline',queue,'A qualified consultation is required before administrative acceptance. A controlled engagement agreement is required before case opening.')
+    );
   }
+
   if(!c) return workspaceLayout('workspace',view,'Operations Workspace','Choose an assigned case to continue.',noCase());
   if(view==='documents'){
     const [requests,uploads]=await Promise.all([q('document_requests','*',x=>x.eq('case_id',c).order('created_at',{ascending:false})),q('upload_records','*',x=>x.eq('case_id',c).order('created_at',{ascending:false}))]);
@@ -432,7 +492,7 @@ async function secureUpload(bucket,path,file){ const {error}=await supabase.stor
 
 async function handleSubmit(e) {
   const f=e.target; if(!(f instanceof HTMLFormElement)) return; const id=f.id; if(!id) return;
-  const known=['profile-form','intake-form','engagement-form','upload-form','message-form','meeting-form','support-form','evidence-form','reconstruction-form','narrative-form','document-request-form','case-note-form','qa-form','handoff-form','assignment-form','service-form','template-form','publish-report-form','referral-partner-form'];
+  const known=['profile-form','intake-form','engagement-form','upload-form','message-form','meeting-form','support-form','consultation-form','evidence-form','reconstruction-form','narrative-form','document-request-form','case-note-form','qa-form','handoff-form','assignment-form','service-form','template-form','publish-report-form','referral-partner-form'];
   if(!known.includes(id)) return; e.preventDefault(); const fd=new FormData(f); const button=f.querySelector('button[type="submit"],button:not([type])'); if(button)button.disabled=true;
   try {
     if(id==='profile-form'){
@@ -440,7 +500,7 @@ async function handleSubmit(e) {
     } else if(id==='intake-form'){
       const payload={user_id:state.user.id,status:'SUBMITTED',service_requested:fd.get('service_requested'),matter_summary:fd.get('matter_summary'),referral_source:fd.get('referral_source')||null,contact:{email:state.user.email,display_name:state.profile?.display_name,phone:state.profile?.phone},submitted_at:new Date().toISOString()}; const {error}=await supabase.from('intake_submissions').insert(payload); if(error)throw error; toast('Intake submitted for review.','success');
     } else if(id==='engagement-form'){
-      const payload={user_id:state.user.id,intake_id:fd.get('intake_id')||null,case_id:state.activeCase||null,acknowledgement_type:'ENGAGEMENT_BOUNDARY_ACK',document_key:'standard_engagement_terms',document_version:'PLACEHOLDER-2026-09-DRAFT',signature_name:fd.get('signature_name'),accepted:true,accepted_at:new Date().toISOString(),metadata:{electronic_signature_placeholder:true}}; const {error}=await supabase.from('engagement_acceptances').insert(payload); if(error)throw error; toast('Acknowledgment recorded.','success');
+      const payload={user_id:state.user.id,intake_id:fd.get('intake_id')||null,case_id:state.activeCase||null,acknowledgement_type:'SERVICE_BOUNDARY_ACK',document_key:'service_boundary_ack',document_version:'V1-2026-10',signature_name:fd.get('signature_name'),accepted:false,accepted_at:null,metadata:{application_acknowledgement:true,not_engagement_acceptance:true}}; const {error}=await supabase.from('engagement_acceptances').insert(payload); if(error)throw error; toast('Service-boundary acknowledgment recorded.','success');
     } else if(id==='upload-form'){
       const file=fd.get('file'); if(!(file instanceof File)||!file.size)throw new Error('Choose a file.'); const destination=fd.get('destination'); let case_id=null,intake_id=null,path; const stamp=Date.now(); const name=cleanFilename(file.name); if(destination==='case'){case_id=state.activeCase;if(!case_id)throw new Error('No authorized case selected.');path=`case/${case_id}/${state.user.id}/${stamp}-${name}`;}else{const latest=(await q('intake_submissions','id',x=>x.eq('user_id',state.user.id).order('created_at',{ascending:false}).limit(1)))[0];if(!latest)throw new Error('Submit intake before uploading to intake.');intake_id=latest.id;path=`intake/${state.user.id}/${intake_id}/${stamp}-${name}`;} const hash=await sha256(file); await secureUpload('client-documents',path,file); const {error}=await supabase.from('upload_records').insert({case_id,intake_id,uploaded_by:state.user.id,storage_bucket:'client-documents',storage_path:path,original_filename:file.name,mime_type:file.type||null,size_bytes:file.size,sha256:hash,status:'RECEIVED'}); if(error)throw error; toast('File uploaded to private storage.','success');
     } else if(id==='message-form'){
@@ -449,6 +509,28 @@ async function handleSubmit(e) {
       const {error}=await supabase.from('meeting_requests').insert({case_id:state.activeCase,user_id:state.user.id,topic:fd.get('topic'),preferred_slots:[fd.get('slot')],notes:fd.get('notes')||null}); if(error)throw error; toast('Meeting request submitted.','success');
     } else if(id==='support-form'){
       const {error}=await supabase.from('support_tickets').insert({user_id:state.user.id,case_id:state.activeCase||null,category:fd.get('category'),subject:fd.get('subject'),body:fd.get('body')}); if(error)throw error; toast('Support request opened.','success');
+    } else if(id==='consultation-form'){
+      const lines=name=>String(fd.get(name)||'').split(/\r?\n|,/).map(x=>x.trim()).filter(Boolean);
+      const payload={
+        p_intake_id:fd.get('intake_id'),
+        p_engagement_question:fd.get('engagement_question'),
+        p_client_goal:fd.get('client_goal')||null,
+        p_client_position:fd.get('client_position')||null,
+        p_proposition_to_test:fd.get('proposition_to_test')||null,
+        p_intended_recipient:fd.get('intended_recipient')||null,
+        p_expected_record_count:fd.get('expected_record_count')?Number(fd.get('expected_record_count')):null,
+        p_known_sources:lines('known_sources'),
+        p_known_entities:lines('known_entities'),
+        p_known_gaps:lines('known_gaps'),
+        p_known_conflicts:lines('known_conflicts'),
+        p_complexity_factors:fd.get('complexity_factors')?{notes:String(fd.get('complexity_factors'))}:{},
+        p_complexity_level:fd.get('complexity_level')||null,
+        p_recommended_products:lines('recommended_products'),
+        p_preliminary_scope:fd.get('preliminary_scope')?{summary:String(fd.get('preliminary_scope'))}:{},
+        p_qualification_decision:fd.get('qualification_decision'),
+        p_decision_reason:fd.get('decision_reason')||null
+      };
+      const {error}=await supabase.rpc('admin_record_consultation_v1',payload); if(error)throw error; toast('Consultation assessment recorded.','success');
     } else if(id==='evidence-form'){
       const payload={case_id:state.activeCase,queue_type:fd.get('queue_type'),evidence_state:fd.get('evidence_state')||null,source_id:fd.get('source_id')||null,proposition_id:fd.get('proposition_id')||null,summary:fd.get('summary'),internal_notes:fd.get('internal_notes')||null,assignee_id:state.user.id}; const {error}=await supabase.from('evidence_work_items').insert(payload); if(error)throw error; toast('Evidence work item added.','success');
     } else if(id==='reconstruction-form'){
@@ -485,6 +567,8 @@ async function handleClick(e) {
     if(action==='signout'){ await supabase.auth.signOut(); await refreshAuth(); go('/home'); }
     if(action==='download-report'){ const {data,error}=await supabase.storage.from('published-reports').createSignedUrl(btn.dataset.path,60); if(error)throw error; window.open(data.signedUrl,'_blank','noopener'); }
     if(action==='save-role'){ const user=btn.dataset.user; const role=document.querySelector(`[data-role-user="${CSS.escape(user)}"]`)?.value; const {error}=await supabase.rpc('admin_set_user_role',{target_user_id:user,target_role:role}); if(error)throw error; toast('Role updated.','success'); await render(); }
+    if(action==='accept-qualified-intake'){ const clientType=document.querySelector(`[data-client-type="${CSS.escape(btn.dataset.id)}"]`)?.value||'INDIVIDUAL'; const {data,error}=await supabase.rpc('admin_accept_qualified_intake_v1',{p_intake_id:btn.dataset.id,p_client_type:clientType}); if(error)throw error; toast(`Qualified intake accepted: ${data}`,'success'); await render(); }
+    if(action==='open-case-from-intake'){ const {data,error}=await supabase.rpc('admin_open_case_from_intake_v1',{p_intake_id:btn.dataset.id,p_case_prefix:'BRI',p_assignment_role:'case_manager'}); if(error)throw error; await refreshCases(); toast(`Case opened and assigned: ${data}`,'success'); await render(); }
     if(action==='lock-record-universe'){ const {data,error}=await supabase.rpc('lock_record_universe_v1',{p_case_id:state.activeCase}); if(error)throw error; toast(`Record Universe locked: ${data}`,'success'); await render(); }
     if(action==='submit-reconstruction-review'){ const {error}=await supabase.rpc('submit_reconstruction_for_review_v1',{p_reconstruction_id:btn.dataset.id}); if(error)throw error; toast('Reconstruction sealed and routed to human review.','success'); await render(); }
   } catch(err){console.error(err);toast(err.message||'Action failed.','error');}
