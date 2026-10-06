@@ -711,7 +711,7 @@ async function handleSubmit(e) {
     } else if(id==='engagement-form'){
       const payload={user_id:state.user.id,intake_id:fd.get('intake_id')||null,case_id:state.activeCase||null,acknowledgement_type:'SERVICE_BOUNDARY_ACK',document_key:'service_boundary_ack',document_version:'V1-2026-10',signature_name:fd.get('signature_name'),accepted:false,accepted_at:null,metadata:{application_acknowledgement:true,not_engagement_acceptance:true}}; const {error}=await supabase.from('engagement_acceptances').insert(payload); if(error)throw error; toast('Service-boundary acknowledgment recorded.','success');
     } else if(id==='upload-form'){
-      const file=fd.get('file'); if(!(file instanceof File)||!file.size)throw new Error('Choose a file.'); const destination=fd.get('destination'); let case_id=null,intake_id=null,path; const stamp=Date.now(); const name=cleanFilename(file.name); if(destination==='case'){case_id=state.activeCase;if(!case_id)throw new Error('No authorized case selected.');path=`case/${case_id}/${state.user.id}/${stamp}-${name}`;}else{const latest=(await q('intake_submissions','id',x=>x.eq('user_id',state.user.id).order('created_at',{ascending:false}).limit(1)))[0];if(!latest)throw new Error('Submit intake before uploading to intake.');intake_id=latest.id;path=`intake/${state.user.id}/${intake_id}/${stamp}-${name}`;} const hash=await sha256(file); await secureUpload('client-documents',path,file); const {error}=await supabase.from('upload_records').insert({case_id,intake_id,uploaded_by:state.user.id,storage_bucket:'client-documents',storage_path:path,original_filename:file.name,mime_type:file.type||null,size_bytes:file.size,sha256:hash,status:'RECEIVED'}); if(error)throw error; toast('File uploaded to private storage.','success');
+      const file=fd.get('file'); if(!(file instanceof File)||!file.size)throw new Error('Choose a file.'); const destination=fd.get('destination'); let case_id=null,intake_id=null,path; const stamp=Date.now(); const name=cleanFilename(file.name); if(destination==='case'){case_id=state.activeCase;if(!case_id)throw new Error('No authorized case selected.');path=`case/${case_id}/${state.user.id}/${stamp}-${name}`;}else{const latest=(await q('intake_submissions','id',x=>x.eq('user_id',state.user.id).order('created_at',{ascending:false}).limit(1)))[0];if(!latest)throw new Error('Submit intake before uploading to intake.');intake_id=latest.id;path=`intake/${state.user.id}/${intake_id}/${stamp}-${name}`;} const hash=await sha256(file); await secureUpload('client-documents',path,file); const {data:created,error}=await supabase.from('upload_records').insert({case_id,intake_id,uploaded_by:state.user.id,storage_bucket:'client-documents',storage_path:path,original_filename:file.name,mime_type:file.type||null,size_bytes:file.size,sha256:hash,status:'RECEIVED'}).select('id').single(); if(error)throw error; const analysis=await supabase.functions.invoke('record-intake-process',{body:{upload_id:created.id}}); if(analysis.error)console.warn('Automated content analysis was not queued',analysis.error); toast(analysis.error?'File uploaded securely; automated triage will require retry.':'File uploaded securely. Automated intake triage queued.','success');
     } else if(id==='message-form'){
       const {error}=await supabase.from('portal_messages').insert({case_id:state.activeCase,sender_id:state.user.id,body:fd.get('body'),thread_type:'CLIENT'}); if(error)throw error; toast('Message sent.','success');
     } else if(id==='meeting-form'){
@@ -797,6 +797,29 @@ async function handleClick(e) {
     if(action==='open-case-from-intake'){ const {data,error}=await supabase.rpc('admin_open_case_from_intake_v1',{p_intake_id:btn.dataset.id,p_case_prefix:'BRI',p_assignment_role:'case_manager'}); if(error)throw error; await refreshCases(); toast(`Case opened and assigned: ${data}`,'success'); await render(); }
     if(action==='lock-record-universe'){ const {data,error}=await supabase.rpc('lock_record_universe_v1',{p_case_id:state.activeCase}); if(error)throw error; toast(`Record Universe locked: ${data}`,'success'); await render(); }
     if(action==='submit-reconstruction-review'){ const {error}=await supabase.rpc('submit_reconstruction_for_review_v1',{p_reconstruction_id:btn.dataset.id}); if(error)throw error; toast('Reconstruction sealed and routed to human review.','success'); await render(); }
+    if(action==='reprocess-intake-content'){
+      const {error}=await supabase.functions.invoke('record-intake-process',{body:{upload_id:btn.dataset.upload}});
+      if(error)throw error;
+      toast('Content-aware intake analysis queued.','success');
+    }
+    if(action==='save-intake-segments'){
+      const rows=[...document.querySelectorAll(`[data-segment-row="${CSS.escape(btn.dataset.id)}"]`)];
+      const segments=rows.map((row,index)=>({
+        segment_index:index+1,
+        page_start:Number(row.querySelector('[data-seg-start]')?.value),
+        page_end:Number(row.querySelector('[data-seg-end]')?.value),
+        taxonomy_key:row.querySelector('[data-seg-taxonomy]')?.value,
+        client_label:row.querySelector('[data-seg-label]')?.value?.trim()||null
+      }));
+      const {data,error}=await supabase.rpc('replace_record_intake_segments_v1',{p_job_id:btn.dataset.id,p_segments:segments});
+      if(error)throw error;
+      toast(`${Number(data)} document boundaries saved.`,'success'); await render();
+    }
+    if(action==='confirm-intake-segments'){
+      const {data,error}=await supabase.rpc('confirm_record_intake_segments_v1',{p_job_id:btn.dataset.id});
+      if(error)throw error;
+      toast(`Bundle registered as ${Number(data?.source_count||0)} canonical Sources.`,'success'); await render();
+    }
     if(action==='preview-intake-upload'){
       if(btn.dataset.job) await supabase.rpc('start_record_intake_review_v1',{p_job_id:btn.dataset.job});
       const {data,error}=await supabase.storage.from(btn.dataset.bucket).createSignedUrl(btn.dataset.path,120);
