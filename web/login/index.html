@@ -19,6 +19,8 @@
     .notice{display:none;margin-top:16px;padding:12px 14px;border-radius:10px;background:#f5eee5;color:#5f4630;font-size:13px;line-height:1.5}.notice.show{display:block}.small{font-size:12px;margin-top:22px}
     a{color:#53636b}.back{display:inline-block;margin-top:20px;text-decoration:none;font-size:13px}.link-button{background:none;border:0;color:#53636b;padding:0;margin:0;font:600 12px inherit;text-decoration:underline;cursor:pointer}
     .hidden{display:none}
+    .access-prompt{margin:18px 0 0;padding-top:18px;border-top:1px solid #ded6cc;font-size:13px}.access-prompt a{font-weight:700;color:#5f4630;text-decoration:none}.access-prompt a:hover,.access-prompt a:focus-visible{text-decoration:underline}
+    .setup-note{font-size:12px;margin:0;color:#6d7a80}.confirmed-badge{display:inline-block;margin:0 0 10px;padding:6px 9px;border:1px solid #cabba9;border-radius:999px;background:#f5eee5;color:#5f4630;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
   </style>
 </head>
 <body>
@@ -39,6 +41,16 @@
 
     <div class="divider">or</div>
     <button id="magic" class="secondary" type="button">Send me a secure sign-in link</button>
+    <p class="access-prompt">Don’t have portal access? <a href="/consultation.html#start">Request Access →</a></p>
+
+    <form id="setup" class="hidden">
+      <div><span class="confirmed-badge">Email confirmed</span></div>
+      <label>Full name<input id="setup-name" type="text" autocomplete="name" maxlength="120" required></label>
+      <label>Create password<input id="setup-password" type="password" autocomplete="new-password" minlength="8" required></label>
+      <label>Confirm password<input id="setup-confirm-password" type="password" autocomplete="new-password" minlength="8" required></label>
+      <p class="setup-note">This password creates reusable secure sign-in access. You can also continue to use secure email links later.</p>
+      <button id="finish-setup" type="submit">Finish Setup</button>
+    </form>
 
     <form id="recovery" class="hidden">
       <label>New password<input id="new-password" type="password" autocomplete="new-password" minlength="8" required></label>
@@ -56,7 +68,12 @@ import {SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,APP_ORIGIN} from '/assets/config.j
 
 const supabase=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
 const $=id=>document.getElementById(id);
+const searchParams=new URLSearchParams(location.search);
+const next=searchParams.get('next');
 const notice=(msg)=>{$('notice').textContent=msg;$('notice').classList.add('show')};
+const clearNotice=()=>{$('notice').textContent='';$('notice').classList.remove('show')};
+const loginRedirect=()=>`${APP_ORIGIN}/login/${next?`?next=${encodeURIComponent(next)}`:''}`;
+
 const destination=async(user)=>{
   const {data:profile,error}=await supabase.from('profiles').select('role').eq('id',user.id).maybeSingle();
   if(error) throw error;
@@ -67,29 +84,72 @@ const destination=async(user)=>{
   if(role==='client') return `${APP_ORIGIN}/workspace/#/portal/home`;
   throw new Error('WORKSPACE_AUTHORITY_UNRESOLVED');
 };
+
 const finish=async(user)=>{
   const target=await destination(user);
-  const next=new URLSearchParams(location.search).get('next');
   if(next==='consultation' && target.includes('/workspace/#/portal/home')){
     location.replace(`${APP_ORIGIN}/workspace/#/portal/intake`);
     return;
   }
   location.replace(target.includes('#') ? target : target+'#/home');
 };
+
+const setupRequired=(user)=>Boolean(
+  next==='consultation' &&
+  user?.user_metadata?.entry_source==='public_consultation' &&
+  user?.user_metadata?.setup_completed!==true
+);
+
+const showLogin=()=>{
+  $('setup').classList.add('hidden');
+  $('recovery').classList.add('hidden');
+  $('login').classList.remove('hidden');
+  $('magic').classList.remove('hidden');
+  document.querySelector('.access-prompt')?.classList.remove('hidden');
+  $('title').textContent='Sign in to Coletti & Co.';
+  $('intro').textContent='Use your authorized account. After authentication, Coletti & Co. will route you to the workspace permitted for your identity and role.';
+};
+
+const showSetup=(user)=>{
+  clearNotice();
+  $('login').classList.add('hidden');
+  $('magic').classList.add('hidden');
+  document.querySelector('.access-prompt')?.classList.add('hidden');
+  $('recovery').classList.add('hidden');
+  $('setup').classList.remove('hidden');
+  $('title').textContent='Email confirmed.';
+  $('intro').textContent='Your email address has been verified. Finish setting up your secure Coletti & Co. access, then you will continue to the protected consultation intake.';
+  $('setup-name').value=user?.user_metadata?.full_name || user?.user_metadata?.name || '';
+};
+
 const showRecovery=()=>{
   $('login').classList.add('hidden');
   $('magic').classList.add('hidden');
-  $('forgot').classList.add('hidden');
+  document.querySelector('.access-prompt')?.classList.add('hidden');
+  $('setup').classList.add('hidden');
   $('recovery').classList.remove('hidden');
   $('title').textContent='Set a new password';
   $('intro').textContent='Create a new password for your authorized Coletti & Co. account.';
 };
+
 const routeAuthenticatedSession=async()=>{
   const {data,error}=await supabase.auth.getSession();
   if(error){console.error('Session resolution failed',error);return false}
-  if(!data.session?.user) return false;
-  try{await finish(data.session.user);return true}
-  catch(e){console.error('Workspace resolution failed',e);notice('Authentication succeeded, but the authorized workspace could not be resolved. No protected workspace was opened.');return false}
+  const user=data.session?.user;
+  if(!user) return false;
+  if(setupRequired(user)){showSetup(user);return true}
+  try{await finish(user);return true}
+  catch(e){console.error('Workspace resolution failed',e);showLogin();notice('Authentication succeeded, but the authorized workspace could not be resolved. No protected workspace was opened.');return false}
+};
+
+const callbackError=()=>{
+  const search=new URLSearchParams(location.search);
+  const hash=new URLSearchParams(location.hash.replace(/^#/,''));
+  return {
+    error:search.get('error') || hash.get('error'),
+    code:search.get('error_code') || hash.get('error_code'),
+    description:search.get('error_description') || hash.get('error_description')
+  };
 };
 
 const recoveryParams=()=>{
@@ -112,6 +172,7 @@ supabase.auth.onAuthStateChange((event,session)=>{
   }
   if(event==='SIGNED_IN' && session?.user){
     if(recoveryMode) return;
+    if(setupRequired(session.user)){showSetup(session.user);return}
     queueMicrotask(()=>void routeAuthenticatedSession());
   }
 });
@@ -125,6 +186,7 @@ const establishRecoverySessionFromToken=async()=>{
     console.error('Recovery token verification failed',error);
     recoveryMode=false;
     history.replaceState(null,'',location.pathname);
+    showLogin();
     notice('This password recovery link is invalid or expired. Enter your email address and request a new link.');
     return false;
   }
@@ -136,40 +198,92 @@ const establishRecoverySessionFromToken=async()=>{
 const establishedFromToken=await establishRecoverySessionFromToken();
 const {data:initialSession,error:initialSessionError}=await supabase.auth.getSession();
 if(initialSessionError) console.error('Initial session resolution failed',initialSessionError);
+
 if(initialSession.session?.user && recoveryMode){
   showRecovery();
 } else if(initialSession.session?.user){
-  await routeAuthenticatedSession();
+  if(setupRequired(initialSession.session.user)) showSetup(initialSession.session.user);
+  else await routeAuthenticatedSession();
 } else if(recoveryMode && !establishedFromToken){
   recoveryMode=false;
   history.replaceState(null,'',location.pathname);
+  showLogin();
   notice('This password recovery link is no longer active. Enter your email address and request a new link.');
+} else {
+  const authError=callbackError();
+  if(authError.error || authError.code || authError.description){
+    const clean=next?`${location.pathname}?next=${encodeURIComponent(next)}`:location.pathname;
+    history.replaceState(null,'',clean);
+    showLogin();
+    notice('This secure email link is invalid or expired. If you already confirmed this email, sign in below. Otherwise, enter your email and request a new secure sign-in link.');
+  }
 }
 
 $('login').addEventListener('submit',async(e)=>{
-  e.preventDefault();$('submit').disabled=true;
+  e.preventDefault();clearNotice();$('submit').disabled=true;
   const {data,error}=await supabase.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});
   $('submit').disabled=false;
   if(error){notice('Sign-in was not completed. Check your credentials or use password recovery.');return}
+  if(setupRequired(data.user)){showSetup(data.user);return}
   try{await finish(data.user)}catch(error){console.error(error);notice('Identity verified, but the authorized workspace could not be resolved. Access remains closed.')}
 });
 
 $('forgot').addEventListener('click',async()=>{
+  clearNotice();
   const email=$('email').value.trim();
   if(!email){notice('Enter your email address first.');return}
-  const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:`${APP_ORIGIN}/login/`});
+  const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:loginRedirect()});
   if(error){console.error(error);notice('The password recovery email could not be sent.');return}
-  notice('Password recovery email sent. Check your email and open the recovery link.');
+  notice('Password recovery email sent. Open the recovery link in that email to continue.');
 });
 
 $('magic').addEventListener('click',async()=>{
-  const email=$('email').value.trim();if(!email){notice('Enter your email address first.');return}
-  const {error}=await supabase.auth.signInWithOtp({email,options:{emailRedirectTo:`${APP_ORIGIN}/login/`}});
-  if(error) notice('The secure sign-in link could not be sent. Please try again.'); else notice('Secure sign-in link sent. Check your email and return here to complete authentication.');
+  clearNotice();
+  const email=$('email').value.trim();
+  if(!email){notice('Enter your email address first.');return}
+  $('magic').disabled=true;
+  const {error}=await supabase.auth.signInWithOtp({email,options:{emailRedirectTo:loginRedirect(),shouldCreateUser:false}});
+  $('magic').disabled=false;
+  if(error){
+    console.error(error);
+    notice('The secure sign-in link could not be sent. If you do not yet have portal access, use Request Access below.');
+    return;
+  }
+  notice('If an authorized account exists for that email, a secure sign-in link has been sent. Open it to sign in.');
+});
+
+$('setup').addEventListener('submit',async(e)=>{
+  e.preventDefault();clearNotice();
+  const fullName=$('setup-name').value.trim();
+  const password=$('setup-password').value;
+  const confirmation=$('setup-confirm-password').value;
+  if(!fullName){notice('Enter your full name to finish setup.');return}
+  if(password!==confirmation){notice('The two passwords do not match.');return}
+  $('finish-setup').disabled=true;
+  const {data:sessionData}=await supabase.auth.getSession();
+  const currentUser=sessionData.session?.user;
+  if(!currentUser){
+    $('finish-setup').disabled=false;
+    showLogin();
+    notice('Your secure session expired before setup finished. Enter your email and request a new secure sign-in link.');
+    return;
+  }
+  const metadata={...(currentUser.user_metadata||{}),full_name:fullName,setup_completed:true,setup_completed_at:new Date().toISOString()};
+  const {data,error}=await supabase.auth.updateUser({password,data:metadata});
+  if(error){
+    console.error(error);
+    $('finish-setup').disabled=false;
+    notice('Secure access setup could not be completed. Check the password requirements and try again.');
+    return;
+  }
+  const {error:profileError}=await supabase.from('profiles').update({display_name:fullName}).eq('id',data.user.id);
+  if(profileError) console.error('Profile display name update failed',profileError);
+  notice('Setup complete. Opening the secure consultation intake…');
+  await finish(data.user);
 });
 
 $('recovery').addEventListener('submit',async(e)=>{
-  e.preventDefault();
+  e.preventDefault();clearNotice();
   const password=$('new-password').value;
   const confirmation=$('confirm-password').value;
   if(password!==confirmation){notice('The two passwords do not match.');return}
