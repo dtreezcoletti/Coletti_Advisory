@@ -365,16 +365,23 @@ async function staffPage(view) {
   if(!c) return workspaceLayout('workspace',view,'Operations Workspace','Choose an assigned case to continue.',noCase());
   if(view==='documents'){
     if(!c) return workspaceLayout('workspace','documents','Records Intake','Select an authorized case to review received records.',noCase());
-    const [requests,uploads,jobs,taxonomies,metricResult]=await Promise.all([
+    const [requests,uploads,jobs,taxonomies,segments,matches,metricResult]=await Promise.all([
       q('document_requests','*',x=>x.eq('case_id',c).order('created_at',{ascending:false})),
       q('upload_records','*',x=>x.eq('case_id',c).order('created_at',{ascending:false})),
       q('record_intake_jobs','*',x=>x.eq('case_id',c).order('created_at',{ascending:false})),
       q('source_taxonomy','*',x=>x.eq('active',true).order('sort_order',{ascending:true})),
+      q('record_intake_segments','*',x=>x.order('segment_index',{ascending:true})),
+      q('record_request_matches','*',x=>x.order('match_confidence',{ascending:false})),
       supabase.rpc('record_intake_metrics_v1',{p_case_id:c})
     ]);
     if(metricResult.error) throw metricResult.error;
     const metrics=metricResult.data||{};
     const byUpload=new Map(jobs.map(j=>[j.upload_id,j]));
+    const requestById=new Map(requests.map(r=>[r.id,r]));
+    const segmentsByJob=new Map();
+    for(const seg of segments){const arr=segmentsByJob.get(seg.job_id)||[];arr.push(seg);segmentsByJob.set(seg.job_id,arr);}
+    const matchesByUpload=new Map();
+    for(const m of matches){const arr=matchesByUpload.get(m.upload_id)||[];arr.push(m);matchesByUpload.set(m.upload_id,arr);}
     const routeBadge=route=>{
       const cls=route==='GREEN'?'badge-success':route==='AMBER'?'badge-warning':route==='RED'?'badge-danger':'badge-neutral';
       return `<span class="badge ${cls}">${esc(route||'NONE')}</span>`;
@@ -389,46 +396,64 @@ async function staffPage(view) {
     const uploadTable=table(uploads,[
       {label:'File',render:r=>{
         const j=byUpload.get(r.id);
-        return `<strong>${esc(r.original_filename)}</strong><div class="micro">${fmtDate(r.created_at)} · ${esc(r.mime_type||'Unknown type')}</div><div class="mt-1"><button class="btn btn-ghost btn-sm" data-action="preview-intake-upload" data-bucket="${esc(r.storage_bucket)}" data-path="${esc(r.storage_path)}" data-job="${esc(j?.id||'')}">Preview</button></div>`;
+        const closed=j&&['REGISTERED','RESOLVED_DUPLICATE','REJECTED'].includes(j.status);
+        return `<strong>${esc(r.original_filename)}</strong><div class="micro">${fmtDate(r.created_at)} · ${esc(r.mime_type||'Unknown type')}${j?.page_count?` · ${Number(j.page_count)} page(s)`:''}</div><div class="mt-1 flex gap-1"><button class="btn btn-ghost btn-sm" data-action="preview-intake-upload" data-bucket="${esc(r.storage_bucket)}" data-path="${esc(r.storage_path)}" data-job="${esc(j?.id||'')}">Preview</button>${!closed?`<button class="btn btn-ghost btn-sm" data-action="reprocess-intake-content" data-upload="${r.id}">Analyze content</button>`:''}</div>`;
       }},
-      {label:'Source',render:r=>r.source_id?`<strong>${esc(r.source_id)}</strong>`:esc('Not registered')},
+      {label:'Source',render:r=>{
+        const j=byUpload.get(r.id);
+        if(r.source_id)return `<strong>${esc(r.source_id)}</strong>`;
+        if(j?.status==='REGISTERED'&&Number(j.proposed_segment_count||0)>1)return `<strong>${Number(j.proposed_segment_count)} Sources</strong><div class="micro">Page-level segmented registration</div>`;
+        return esc('Not registered');
+      }},
       {label:'Triage',render:r=>{
         const j=byUpload.get(r.id);
-        if(r.source_id)return `${routeBadge('GREEN')}<div class="micro mt-1">Registered</div>`;
+        if(r.source_id||j?.status==='REGISTERED')return `${routeBadge('GREEN')}<div class="micro mt-1">Registered</div>`;
         if(!j)return `${routeBadge('NONE')}<div class="micro mt-1">Queued</div>`;
         const confidence=j.classification_confidence==null?'—':`${Math.round(Number(j.classification_confidence)*100)}%`;
-        return `${routeBadge(j.route)}<div class="micro mt-1">${esc(titleCase(j.status))} · ${esc(confidence)}</div>`;
+        const basis=String(j.processor_version||'').startsWith('record_content_processor')?'content-aware':'metadata';
+        return `${routeBadge(j.route)}<div class="micro mt-1">${esc(titleCase(j.status))} · ${esc(confidence)} · ${esc(basis)}</div>`;
       }},
       {label:'Suggested classification',render:r=>{
         const j=byUpload.get(r.id);
         if(r.source_id)return badge('registered');
         if(!j)return '<span class="micro">Processing…</span>';
-        return `<div><strong>${esc(j.suggested_source_type||'Unclassified')}</strong></div><div class="micro">${esc(j.suggested_client_label||r.original_filename)}</div>`;
+        return `<div><strong>${esc(j.suggested_source_type||'Unclassified')}</strong></div><div class="micro">${esc(j.suggested_client_label||r.original_filename)}</div>${j.probable_version_family_key?`<div class="micro mt-1"><strong>Possible version family:</strong> ${esc(j.probable_version_family_key)}</div>`:''}`;
       }},
-      {label:'Exception / relationship',render:r=>{
+      {label:'Exception / request match',render:r=>{
         const j=byUpload.get(r.id);
         if(!j||r.source_id)return '—';
         const codes=Array.isArray(j.exception_codes)?j.exception_codes:[];
-        if(j.exact_duplicate_source_id)return `<div class="small"><strong>Exact duplicate candidate</strong><br/><span class="micro">${esc(j.exact_duplicate_source_id)}</span></div>`;
-        if(j.duplicate_upload_id)return '<div class="small"><strong>Exact duplicate upload candidate</strong></div>';
-        if(j.bundle_state==='PROBABLE_BUNDLE')return '<div class="small"><strong>Possible multi-document bundle</strong><br/><span class="micro">Boundary review required.</span></div>';
-        return codes.length?`<div class="micro">${codes.map(titleCase).map(esc).join(' · ')}</div>`:'—';
+        const suggestedMatches=matchesByUpload.get(r.id)||[];
+        let relationship='—';
+        if(j.exact_duplicate_source_id)relationship=`<div class="small"><strong>Exact duplicate candidate</strong><br/><span class="micro">${esc(j.exact_duplicate_source_id)}</span></div>`;
+        else if(j.duplicate_upload_id)relationship='<div class="small"><strong>Exact duplicate upload candidate</strong></div>';
+        else if(Number(j.proposed_segment_count||0)>1)relationship=`<div class="small"><strong>${Number(j.proposed_segment_count)} logical documents proposed</strong><br/><span class="micro">Review page boundaries before registration.</span></div>`;
+        else if(j.bundle_state==='PROBABLE_BUNDLE')relationship='<div class="small"><strong>Possible multi-document bundle</strong><br/><span class="micro">Boundary review required.</span></div>';
+        else if(codes.length)relationship=`<div class="micro">${codes.map(titleCase).map(esc).join(' · ')}</div>`;
+        const matchText=suggestedMatches.length?`<div class="micro mt-1"><strong>Possible request:</strong> ${suggestedMatches.slice(0,2).map(m=>esc(requestById.get(m.request_id)?.title||'Record request')).join(' · ')}</div>`:'';
+        return relationship+matchText;
       }},
       {label:'Decision',render:r=>{
-        if(r.source_id)return badge('registered');
         const j=byUpload.get(r.id);
+        if(r.source_id)return badge('registered');
         if(!j)return '—';
+        if(j.status==='REGISTERED')return badge(Number(j.proposed_segment_count||0)>1?'segmented & registered':'registered');
         if(j.status==='RESOLVED_DUPLICATE')return badge('resolved duplicate');
         if(j.status==='REJECTED')return badge('rejected');
-        const selected=j.suggested_taxonomy_key||'other_unclassified';
+        const proposed=segmentsByJob.get(j.id)||[];
         const duplicateAction=(j.exact_duplicate_source_id||j.duplicate_upload_id)?`<button class="btn btn-ghost btn-sm" data-action="mark-intake-duplicate" data-id="${j.id}">Mark Duplicate</button>`:'';
-        const registerLabel=j.bundle_state==='PROBABLE_BUNDLE'?'Confirm Single Source & Register':'Confirm & Register';
-        return `<div class="stack">
-          <select data-intake-taxonomy="${j.id}">${taxonomyOptions(selected)}</select>
+        const singleControls=`<select data-intake-taxonomy="${j.id}">${taxonomyOptions(j.suggested_taxonomy_key||'other_unclassified')}</select>
           <input data-intake-label="${j.id}" value="${esc(j.suggested_client_label||'')}" placeholder="Client-facing label" />
           <select data-intake-role="${j.id}">${roleOptions(j.suggested_source_role||'NATIVE_SOURCE')}</select>
-          <div class="flex gap-1"><button class="btn btn-primary btn-sm" data-action="confirm-intake-job" data-id="${j.id}">${registerLabel}</button>${duplicateAction}</div>
-        </div>`;
+          <div class="flex gap-1"><button class="btn btn-primary btn-sm" data-action="confirm-intake-job" data-id="${j.id}">${j.bundle_state==='PROBABLE_BUNDLE'?'Treat as One Source':'Confirm & Register'}</button>${duplicateAction}</div>`;
+        if(proposed.length<2)return `<div class="stack">${singleControls}</div>`;
+        const segmentRows=proposed.map(seg=>`<div class="card card-flat" data-segment-row="${j.id}" data-segment-index="${seg.segment_index}">
+          <div class="grid-2">
+            <div class="form-field"><label>Pages</label><div class="flex gap-1"><input type="number" min="1" max="${Number(j.page_count||9999)}" data-seg-start value="${Number(seg.page_start)}" /><span>–</span><input type="number" min="1" max="${Number(j.page_count||9999)}" data-seg-end value="${Number(seg.page_end)}" /></div></div>
+            <div class="form-field"><label>Classification</label><select data-seg-taxonomy>${taxonomyOptions(seg.suggested_taxonomy_key||j.suggested_taxonomy_key||'other_unclassified')}</select></div>
+            <div class="form-field full"><label>Label</label><input data-seg-label value="${esc(seg.suggested_client_label||'')}" /></div>
+          </div></div>`).join('');
+        return `<div class="stack"><details><summary><strong>Review ${proposed.length} proposed documents</strong></summary><div class="stack mt-1">${segmentRows}<div class="flex gap-1"><button class="btn btn-ghost btn-sm" data-action="save-intake-segments" data-id="${j.id}">Save Boundaries</button><button class="btn btn-primary btn-sm" data-action="confirm-intake-segments" data-id="${j.id}">Accept Boundaries & Register ${proposed.length} Sources</button></div></div></details><div class="micro">If the processor is wrong and this is one document, use the single-source controls below.</div>${singleControls}</div>`;
       }}
     ],true);
     const metricCards=`<div class="grid-4">
@@ -437,11 +462,12 @@ async function staffPage(view) {
       <div class="card metric"><div class="metric-value">${Number(metrics.amber||0)}</div><div class="metric-label">Quick confirmations</div></div>
       <div class="card metric"><div class="metric-value">${Number(metrics.red||0)}</div><div class="metric-label">Exceptions</div></div>
     </div>`;
+    const workload=`<div class="notice notice-info mt-1"><strong>Intake complexity: ${esc(metrics.intake_complexity_band||'LOW')} · ${Number(metrics.intake_complexity_index||0)}/100</strong> · Human review time recorded: ${Number(metrics.human_attention_minutes||0)} min. <span class="micro">The complexity index is an uncalibrated operational workload indicator, not a promised turnaround time.</span></div>`;
     const batch=Number(metrics.green||0)>0?`<div class="notice notice-info mt-1"><strong>${Number(metrics.green)} Green item(s) are batch-ready.</strong> These are routine administrative classifications, not authenticity findings. <button class="btn btn-primary btn-sm" data-action="batch-register-green-intake">Register Green Batch</button></div>`:'';
-    const operationalNote=`<div class="notice notice-warning mt-1"><strong>Intake triage is administrative, not evidentiary verification.</strong> Current automated routing uses controlled taxonomy, file metadata, filename signals, duplicate hashes, and bundle-risk flags. Ambiguous records remain Amber/Red. Content-aware document segmentation and deeper classification remain a separate processor activation gate.</div>`;
+    const operationalNote=`<div class="notice notice-warning mt-1"><strong>Intake triage is administrative, not evidentiary verification.</strong> Content-aware PDF analysis can propose classification, page boundaries, probable versions and record-request matches. Raw extracted text is not persisted by the processor. Image-only/scanned PDFs, oversized files and uncertain classifications remain Red for human review.</div>`;
     return workspaceLayout('workspace','documents','Records Intake & Source Registration',c,
-      metricCards+batch+operationalNote+
-      panel('Record requests',requestTable,'An upload does not automatically satisfy a request. Confirm that the requested material was actually supplied.')+
+      metricCards+workload+batch+operationalNote+
+      panel('Record requests',requestTable,'An upload does not automatically satisfy a request. Suggested matches remain proposals until a human confirms the request status.')+
       panel('Exception-driven intake queue',uploadTable,'Source IDs are allocated automatically. Registration preserves the original upload, hash and provenance; authenticity begins NOT_TESTED and publication remains APPROVAL_REQUIRED.')
     );
   }
