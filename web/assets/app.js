@@ -11,6 +11,15 @@ const EVIDENCE_STATES = [
 ];
 const STAFF_ROLES = ['owner','admin','analyst','reviewer'];
 const ADMIN_ROLES = ['owner','admin'];
+const CASE_ASSIGNMENT_ROLES = [
+  ['case_manager','Case Manager'],
+  ['analyst','Analyst / Reconstructor'],
+  ['reviewer','Human Reviewer'],
+  ['fresh_eyes_reviewer','Fresh Eyes Reviewer'],
+  ['qa_reviewer','QA Reviewer'],
+  ['publication_preparer','Publication Preparer'],
+  ['delivery_coordinator','Delivery Coordinator']
+];
 const state = {
   session: null, user: null, profile: null, services: [], pricing: [], settings: {},
   caseIds: [], activeCase: localStorage.getItem('coletti.activeCase') || null
@@ -176,7 +185,7 @@ function signInPage() {
 }
 
 const CLIENT_NAV=[['home','Overview'],['intake','Intake'],['profile','Identity & Contact'],['engagement','Engagement'],['uploads','Secure Uploads'],['requests','Document Requests'],['timeline','Case Status'],['messages','Messages'],['schedule','Meetings'],['billing','Invoices & Payments'],['reports','Published Reports'],['support','Support']];
-const STAFF_NAV=[['home','Assigned Cases'],['intake','Intake Review'],['documents','Document Completeness'],['evidence','Evidence & Provenance'],['contradictions','Contradictions / Reconciliation'],['narratives','Review Narratives'],['requests','Client Requests & Deadlines'],['notes','Case Notes'],['qa','QA Checklist'],['publishing','Publishing Handoff']];
+const STAFF_NAV=[['home','Assigned Cases'],['intake','Intake Review'],['documents','Document Completeness'],['evidence','Records & Reconstruction'],['contradictions','Contradictions / Reconciliation'],['narratives','Review Narratives'],['requests','Client Requests & Deadlines'],['notes','Case Notes'],['qa','QA Checklist'],['publishing','Publishing Handoff']];
 const ADMIN_NAV=[['home','Command Center'],['users','Users & Roles'],['assignments','Case Assignment'],['audit','Audit Trail'],['access','Access Controls'],['services','Services & Pricing'],['templates','Templates'],['publications','Publication Controls'],['analytics','Analytics / KPIs'],['billing','Billing Overview'],['referrals','Referral Pipeline'],['capacity','Capacity / Workload'],['health','System Health'],['security','Security Alerts'],['backups','Backup / Recovery'],['settings','Settings']];
 function caseSelector() {
   if(!state.caseIds.length) return '<span class="badge badge-neutral">No active case access</span>';
@@ -272,8 +281,41 @@ async function staffPage(view) {
   if(view==='evidence' || view==='contradictions'){
     const filter=view==='contradictions'?['CONTRADICTION','RECONCILIATION']:null;
     const rows=await q('evidence_work_items','*',x=>{let y=x.eq('case_id',c).order('created_at',{ascending:false});return filter?y.in('queue_type',filter):y;});
-    const form=`<form id="evidence-form"><input type="hidden" name="view" value="${view}" /><div class="form-grid"><div class="form-field"><label>Queue type</label><select name="queue_type">${['SOURCE_REVIEW','EVIDENCE_STATE','CONTRADICTION','RECONCILIATION','MISSING_DOCUMENTATION','REFERRAL'].map(x=>`<option ${view==='contradictions'&&['CONTRADICTION','RECONCILIATION'].includes(x)?'selected':''}>${x}</option>`).join('')}</select></div><div class="form-field"><label>Evidence state</label><select name="evidence_state"><option value="">Not assigned</option>${EVIDENCE_STATES.map(x=>`<option>${x}</option>`).join('')}</select></div><div class="form-field"><label>Source ID (optional)</label><input name="source_id" placeholder="SRB-001" /></div><div class="form-field"><label>Proposition UUID (optional)</label><input name="proposition_id" /></div><div class="form-field full"><label>Summary</label><textarea name="summary" required></textarea></div><div class="form-field full"><label>Private internal notes</label><textarea name="internal_notes"></textarea></div></div><div class="form-actions"><button class="btn btn-primary">Add work item</button></div></form>`;
-    return workspaceLayout('workspace',view,view==='contradictions'?'Contradiction & reconciliation queue':'Evidence & provenance review',c,panel('New internal work item',form,'Internal notes are never exposed by client portal policies.')+panel('Queue',table(rows,[{label:'Type',render:r=>badge(r.queue_type)},{label:'Source',render:r=>esc(r.source_id||'—')},{label:'Summary',key:'summary'},{label:'Evidence state',render:r=>r.evidence_state?evidenceBadge(r.evidence_state):'—'},{label:'Status',render:r=>badge(r.status)}],true)));
+    let reconstruction=null;
+    if(view==='evidence'){
+      const {data,error}=await supabase.rpc('reconstruction_workspace_snapshot_v1',{p_case_id:c});
+      if(error) throw error;
+      reconstruction=data;
+    }
+    const form=`<form id="evidence-form"><input type="hidden" name="view" value="${view}" /><div class="form-grid"><div class="form-field"><label>Queue type</label><select name="queue_type">${['SOURCE_REVIEW','EVIDENCE_STATE','CONTRADICTION','RECONCILIATION','MISSING_DOCUMENTATION','REFERRAL'].map(x=>`<option ${view==='contradictions'&&['CONTRADICTION','RECONCILIATION'].includes(x)?'selected':''}>${x}</option>`).join('')}</select></div><div class="form-field"><label>Record State</label><select name="evidence_state"><option value="">Not assigned</option>${EVIDENCE_STATES.map(x=>`<option>${x}</option>`).join('')}</select></div><div class="form-field"><label>Source ID (optional)</label><input name="source_id" placeholder="SRB-001" /></div><div class="form-field"><label>Proposition UUID (optional)</label><input name="proposition_id" /></div><div class="form-field full"><label>Summary</label><textarea name="summary" required></textarea></div><div class="form-field full"><label>Private internal notes</label><textarea name="internal_notes"></textarea></div></div><div class="form-actions"><button class="btn btn-primary">Add work item</button></div></form>`;
+    if(view==='contradictions'){
+      return workspaceLayout('workspace',view,'Contradiction & reconciliation queue',c,panel('New internal work item',form,'Internal notes are never exposed by client portal policies.')+panel('Queue',table(rows,[{label:'Type',render:r=>badge(r.queue_type)},{label:'Source',render:r=>esc(r.source_id||'—')},{label:'Summary',key:'summary'},{label:'Record State',render:r=>r.evidence_state?evidenceBadge(r.evidence_state):'—'},{label:'Status',render:r=>badge(r.status)}],true)));
+    }
+    const ready=reconstruction?.readiness||{};
+    const blockers=Array.isArray(ready.blockers)?ready.blockers:[];
+    const lockBlockers=blockers.filter(x=>!['RECORD_UNIVERSE_NOT_LOCKED','POST_LOCK_SOURCE_DRIFT'].includes(x));
+    const canLock=lockBlockers.length===0 && Number(ready.active_sources||0)>0;
+    const ru=reconstruction?.record_universe||null;
+    const recs=Array.isArray(reconstruction?.reconstructions)?reconstruction.reconstructions:[];
+    const readinessBody=`<div class="grid-4">
+      <div class="card metric"><div class="metric-value">${ready.ready?'READY':'BLOCKED'}</div><div class="metric-label">Reconstruction readiness</div></div>
+      <div class="card metric"><div class="metric-value">${Number(ready.active_sources||0)}</div><div class="metric-label">Active sources</div></div>
+      <div class="card metric"><div class="metric-value">${Number(ready.unprocessed_uploads||0)}</div><div class="metric-label">Unprocessed uploads</div></div>
+      <div class="card metric"><div class="metric-value">${Number(ready.open_document_requests||0)}</div><div class="metric-label">Open record requests</div></div>
+    </div>
+    <div class="notice ${blockers.length?'notice-warning':'notice-info'} mt-1"><strong>${blockers.length?'Blocking conditions':'Readiness gate satisfied'}</strong><br/>${blockers.length?blockers.map(titleCase).join(' · '):'The case is eligible to begin reconstruction against its sealed Record Universe.'}</div>`;
+    const universeBody=ru?`<div class="grid-3"><div><strong>Snapshot</strong><div class="micro">${esc(ru.snapshot_key)}</div></div><div><strong>Sources</strong><div>${Number(ru.source_count||0)}</div></div><div><strong>Sealed</strong><div>${fmtDate(ru.sealed_at)}</div></div></div><div class="micro mt-1">Manifest SHA-256: ${esc(ru.manifest_sha256||'—')}</div>`:'<div class="empty">No sealed Record Universe exists yet.</div>';
+    const universeAction=`<button class="btn btn-primary btn-sm" data-action="lock-record-universe" ${canLock?'':'disabled'}>${ru?'Re-lock Record Universe':'Lock Record Universe'}</button>`;
+    const reconstructionForm=`<form id="reconstruction-form"><div class="form-grid"><div class="form-field"><label>Reconstruction type</label><select name="reconstruction_type"><option>GENERAL</option><option>RECORDS</option><option>OPERATIONS</option><option>TIMELINE</option><option>DISCREPANCY</option></select></div><div class="form-field full"><label>Reconstruction question / statement</label><textarea name="statement" required placeholder="Define the factual reconstruction question this work is intended to answer."></textarea></div></div><div class="form-actions"><button class="btn btn-primary" ${ready.ready?'':'disabled'}>Begin reconstruction</button></div></form>`;
+    const recTable=table(recs,[{label:'Created',render:r=>fmtDate(r.created_at)},{label:'Type',render:r=>badge(r.reconstruction_type)},{label:'Statement',render:r=>esc((r.statement||'').slice(0,220))},{label:'Status',render:r=>badge(r.status)},{label:'Action',render:r=>r.status==='DRAFT'? `<button class="btn btn-primary btn-sm" data-action="submit-reconstruction-review" data-id="${esc(r.reconstruction_id)}">Submit for review</button>`:'—'}],true);
+    return workspaceLayout('workspace','evidence','Records & reconstruction',c,
+      panel('Reconstruction readiness',readinessBody,'Authoritative preflight from the production case state.')+
+      panel('Record Universe',universeBody,'A reconstruction may only begin against a sealed, source-traceable universe.',universeAction)+
+      panel('Begin reconstruction',reconstructionForm,'The backend will refuse this action until every readiness gate is satisfied.')+
+      panel('Reconstruction register',recTable,'Drafts remain internal until sealed and routed to human review.')+
+      panel('Record State / review queue',form,'Internal review work remains separate from canonical reconstruction state.')+
+      panel('Queue',table(rows,[{label:'Type',render:r=>badge(r.queue_type)},{label:'Source',render:r=>esc(r.source_id||'—')},{label:'Summary',key:'summary'},{label:'Record State',render:r=>r.evidence_state?evidenceBadge(r.evidence_state):'—'},{label:'Status',render:r=>badge(r.status)}],true))
+    );
   }
   if(view==='narratives'){
     const rows=await q('review_narratives','*',x=>x.eq('case_id',c).order('created_at',{ascending:false}));
@@ -317,9 +359,16 @@ async function adminPage(view) {
     return workspaceLayout('admin','users','Users & roles','Roles are authorization-controlled; profile role is a read mirror, not the RLS authority.',panel('Accounts',table(rows,[{label:'User',render:r=>`<strong>${esc(r.display_name||'Unnamed')}</strong><div class="micro">${esc(r.id)}</div>`},{label:'Status',render:r=>badge(r.status)},{label:'Role',render:r=>`<select data-role-user="${r.id}">${['owner','admin','analyst','reviewer','client','read_only'].map(x=>`<option ${x===r.role?'selected':''}>${x}</option>`).join('')}</select>`},{label:'Action',render:r=>`<button class="btn btn-primary btn-sm" data-action="save-role" data-user="${r.id}">Save role</button>`}]),'Role changes use a security-definer RPC that re-checks admin authorization and prevents demotion of the last active owner.'));
   }
   if(view==='assignments'){
-    const [rows,users]=await Promise.all([q('case_assignments','*',x=>x.order('assigned_at',{ascending:false})),q('profiles','id,display_name,role',x=>x.in('role',['owner','admin','analyst','reviewer']))]);
-    const form=`<form id="assignment-form"><div class="form-grid"><div class="form-field"><label>Case ID</label><input name="case_id" required placeholder="REC-260906-01" /></div><div class="form-field"><label>Staff member</label><select name="staff_user_id" required>${users.map(u=>`<option value="${u.id}">${esc(u.display_name||u.id)} · ${esc(u.role)}</option>`).join('')}</select></div><div class="form-field"><label>Assignment role</label><select name="assignment_role"><option>analyst</option><option>reviewer</option><option>case_manager</option></select></div></div><div class="form-actions"><button class="btn btn-primary">Assign case</button></div></form>`;
-    return workspaceLayout('admin','assignments','Case assignment','Case IDs must already exist in the controlled ColettiOS registry.',panel('New assignment',form)+panel('Assignments',table(rows,[{label:'Case',key:'case_id'},{label:'Staff UUID',key:'staff_user_id'},{label:'Role',render:r=>badge(r.assignment_role)},{label:'Active',render:r=>badge(r.active?'active':'inactive')}])));
+    const [rows,users,catalogResult]=await Promise.all([
+      q('case_assignments','*',x=>x.order('assigned_at',{ascending:false})),
+      q('profiles','id,display_name,role',x=>x.in('role',['owner','admin','analyst','reviewer'])),
+      supabase.rpc('admin_case_assignment_catalog_v1')
+    ]);
+    if(catalogResult.error) throw catalogResult.error;
+    const cases=catalogResult.data||[];
+    const form=`<form id="assignment-form"><div class="form-grid"><div class="form-field"><label>Registered case</label><select name="case_id" required>${cases.map(c=>`<option value="${esc(c.case_id)}">${esc(c.case_id)} · ${esc(c.client_name||c.client_id||'Client')} · ${esc(titleCase(c.case_status))}</option>`).join('')}</select></div><div class="form-field"><label>Staff member</label><select name="staff_user_id" required>${users.map(u=>`<option value="${u.id}">${esc(u.display_name||u.id)} · ${esc(titleCase(u.role))}</option>`).join('')}</select></div><div class="form-field"><label>Case function</label><select name="assignment_role">${CASE_ASSIGNMENT_ROLES.map(([value,label])=>`<option value="${value}">${esc(label)}</option>`).join('')}</select></div></div><div class="form-actions"><button class="btn btn-primary" ${cases.length?'':'disabled'}>Assign case</button></div></form>`;
+    const registryNote=cases.length?'Only open registered cases are assignable here. Identity/authority role and job-on-this-case remain separate.':'No open registered cases are currently available for assignment.';
+    return workspaceLayout('admin','assignments','Case assignment','Assign staff from the canonical case registry; do not create case identity here.',panel('New assignment',form,registryNote)+panel('Assignments',table(rows,[{label:'Case',key:'case_id'},{label:'Staff UUID',key:'staff_user_id'},{label:'Function',render:r=>badge(CASE_ASSIGNMENT_ROLES.find(x=>x[0]===r.assignment_role)?.[1]||r.assignment_role)},{label:'Active',render:r=>badge(r.active?'active':'inactive')}])));
   }
   if(view==='audit'){
     const rows=await q('audit_events','*',x=>x.order('created_at',{ascending:false}).limit(250));
@@ -383,7 +432,7 @@ async function secureUpload(bucket,path,file){ const {error}=await supabase.stor
 
 async function handleSubmit(e) {
   const f=e.target; if(!(f instanceof HTMLFormElement)) return; const id=f.id; if(!id) return;
-  const known=['profile-form','intake-form','engagement-form','upload-form','message-form','meeting-form','support-form','evidence-form','narrative-form','document-request-form','case-note-form','qa-form','handoff-form','assignment-form','service-form','template-form','publish-report-form','referral-partner-form'];
+  const known=['profile-form','intake-form','engagement-form','upload-form','message-form','meeting-form','support-form','evidence-form','reconstruction-form','narrative-form','document-request-form','case-note-form','qa-form','handoff-form','assignment-form','service-form','template-form','publish-report-form','referral-partner-form'];
   if(!known.includes(id)) return; e.preventDefault(); const fd=new FormData(f); const button=f.querySelector('button[type="submit"],button:not([type])'); if(button)button.disabled=true;
   try {
     if(id==='profile-form'){
@@ -402,6 +451,8 @@ async function handleSubmit(e) {
       const {error}=await supabase.from('support_tickets').insert({user_id:state.user.id,case_id:state.activeCase||null,category:fd.get('category'),subject:fd.get('subject'),body:fd.get('body')}); if(error)throw error; toast('Support request opened.','success');
     } else if(id==='evidence-form'){
       const payload={case_id:state.activeCase,queue_type:fd.get('queue_type'),evidence_state:fd.get('evidence_state')||null,source_id:fd.get('source_id')||null,proposition_id:fd.get('proposition_id')||null,summary:fd.get('summary'),internal_notes:fd.get('internal_notes')||null,assignee_id:state.user.id}; const {error}=await supabase.from('evidence_work_items').insert(payload); if(error)throw error; toast('Evidence work item added.','success');
+    } else if(id==='reconstruction-form'){
+      const {data,error}=await supabase.rpc('begin_reconstruction_v1',{p_case_id:state.activeCase,p_reconstruction_type:fd.get('reconstruction_type'),p_statement:fd.get('statement')}); if(error)throw error; toast(`Reconstruction begun: ${data}`,'success');
     } else if(id==='narrative-form'){
       const {error}=await supabase.from('review_narratives').insert({case_id:state.activeCase,author_id:state.user.id,narrative:fd.get('narrative'),status:fd.get('status')}); if(error)throw error; toast('Review narrative saved.','success');
     } else if(id==='document-request-form'){
@@ -434,6 +485,8 @@ async function handleClick(e) {
     if(action==='signout'){ await supabase.auth.signOut(); await refreshAuth(); go('/home'); }
     if(action==='download-report'){ const {data,error}=await supabase.storage.from('published-reports').createSignedUrl(btn.dataset.path,60); if(error)throw error; window.open(data.signedUrl,'_blank','noopener'); }
     if(action==='save-role'){ const user=btn.dataset.user; const role=document.querySelector(`[data-role-user="${CSS.escape(user)}"]`)?.value; const {error}=await supabase.rpc('admin_set_user_role',{target_user_id:user,target_role:role}); if(error)throw error; toast('Role updated.','success'); await render(); }
+    if(action==='lock-record-universe'){ const {data,error}=await supabase.rpc('lock_record_universe_v1',{p_case_id:state.activeCase}); if(error)throw error; toast(`Record Universe locked: ${data}`,'success'); await render(); }
+    if(action==='submit-reconstruction-review'){ const {error}=await supabase.rpc('submit_reconstruction_for_review_v1',{p_reconstruction_id:btn.dataset.id}); if(error)throw error; toast('Reconstruction sealed and routed to human review.','success'); await render(); }
   } catch(err){console.error(err);toast(err.message||'Action failed.','error');}
 }
 async function handleChange(e) {
