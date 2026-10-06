@@ -11,13 +11,13 @@ type Job = {
   id: string; upload_id: string; case_id: string | null; status: string; route: string;
   suggested_taxonomy_key: string | null; suggested_source_type: string | null;
   suggested_source_role: string | null; suggested_client_label: string | null;
-  classification_confidence: number | null; extracted_metadata: Record<string, unknown> | null;
+  classification_confidence: number | null; bundle_state: string | null; extracted_metadata: Record<string, unknown> | null;
 };
 
 const MAX_FILE_BYTES = 40 * 1024 * 1024;
 const MAX_PDF_PAGES = 250;
 const MAX_ANALYSIS_CHARS = 1_200_000;
-const PROCESSOR_VERSION = "record_content_processor_v1.0.0";
+const PROCESSOR_VERSION = "record_content_processor_v1.0.1";
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "authorization, x-client-info, apikey, content-type",
@@ -265,6 +265,7 @@ async function processUpload(admin: any, upload: Upload, job: Job) {
     const segments = pageCount && pages.length ? proposeSegments(pages, upload.original_filename) : [];
 
     let versionFamily: string | null = null;
+    let versionCandidateJobId: string | null = null;
     if (upload.case_id && simhash && normalizedHash) {
       const { data: candidates } = await admin.from("record_intake_jobs")
         .select("id,upload_id,suggested_taxonomy_key,probable_version_family_key,extracted_metadata")
@@ -281,6 +282,7 @@ async function processUpload(admin: any, upload: Upload, job: Job) {
         } catch {}
       }
       if (closest && closestDistance <= 8) {
+        versionCandidateJobId = String(closest.id);
         versionFamily = closest.probable_version_family_key || `VF-${String(closest.id).replace(/-/g, "").slice(0, 16)}`;
       }
     }
@@ -295,7 +297,7 @@ async function processUpload(admin: any, upload: Upload, job: Job) {
 
     const bundleState = segments.length > 1
       ? "PROBABLE_BUNDLE"
-      : (job?.extracted_metadata?.bundle_state === "PROBABLE_BUNDLE" ? "PROBABLE_BUNDLE" : "SINGLE");
+      : (job.bundle_state === "PROBABLE_BUNDLE" ? "PROBABLE_BUNDLE" : "SINGLE");
 
     const metadata = {
       processor_version: PROCESSOR_VERSION,
@@ -308,6 +310,7 @@ async function processUpload(admin: any, upload: Upload, job: Job) {
       classification_basis: text.length ? "content_plus_metadata" : "metadata_only",
       segment_proposal_only: true,
       request_match_proposal_only: true,
+      probable_version_job_id: versionCandidateJobId,
     };
 
     const { error: rpcError } = await admin.rpc("apply_record_intake_analysis_v1", {
