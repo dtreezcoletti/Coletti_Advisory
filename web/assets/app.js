@@ -186,7 +186,7 @@ function signInPage() {
 
 const CLIENT_NAV=[['home','Overview'],['intake','Intake'],['preconsultation','Pre-Consultation'],['profile','Identity & Contact'],['engagement','Engagement'],['uploads','Secure Uploads'],['requests','Document Requests'],['timeline','Case Status'],['messages','Messages'],['schedule','Meetings'],['billing','Invoices & Payments'],['reports','Published Reports'],['support','Support']];
 const STAFF_NAV=[['home','Assigned Cases'],['intake','Intake Review'],['documents','Document Completeness'],['evidence','Records & Reconstruction'],['contradictions','Contradictions / Reconciliation'],['narratives','Review Narratives'],['requests','Client Requests & Deadlines'],['notes','Case Notes'],['qa','QA Checklist'],['publishing','Publishing Handoff']];
-const ADMIN_NAV=[['home','Command Center'],['users','Users & Roles'],['assignments','Case Assignment'],['audit','Audit Trail'],['access','Access Controls'],['services','Services & Pricing'],['procedures','Procedures & SOPs'],['templates','Templates'],['publications','Publication Controls'],['analytics','Analytics / KPIs'],['billing','Billing Overview'],['referrals','Referral Pipeline'],['capacity','Capacity / Workload'],['health','System Health'],['security','Security Alerts'],['backups','Backup / Recovery'],['settings','Settings']];
+const ADMIN_NAV=[['home','Command Center'],['consultations','Consultations'],['users','Users & Roles'],['assignments','Case Assignment'],['audit','Audit Trail'],['access','Access Controls'],['services','Services & Pricing'],['procedures','Procedures & SOPs'],['templates','Templates'],['publications','Publication Controls'],['analytics','Analytics / KPIs'],['billing','Billing Overview'],['referrals','Referral Pipeline'],['capacity','Capacity / Workload'],['health','System Health'],['security','Security Alerts'],['backups','Backup / Recovery'],['settings','Settings']];
 function caseSelector() {
   if(!state.caseIds.length) return '<span class="badge badge-neutral">No active case access</span>';
   return `<select id="case-selector" aria-label="Active case" style="width:auto;min-width:190px">${state.caseIds.map(id=>`<option value="${esc(id)}" ${id===state.activeCase?'selected':''}>${esc(id)}</option>`).join('')}</select>`;
@@ -471,6 +471,51 @@ async function adminPage(view) {
     ]);
     const body=`<div class="grid-4"><div class="card metric"><div class="metric-value">${intakes}</div><div class="metric-label">Intakes awaiting review</div></div><div class="card metric"><div class="metric-value">${handoffs}</div><div class="metric-label">Publication queue</div></div><div class="card metric"><div class="metric-value">${invoices}</div><div class="metric-label">Open invoices</div></div><div class="card metric"><div class="metric-value">${alerts}</div><div class="metric-label">Open security alerts</div></div></div>${panel('Control plane',`<div class="grid-3"><a class="card card-flat" href="#/admin/users"><h3>Users & roles</h3><p class="muted small">Role administration and access state.</p></a><a class="card card-flat" href="#/admin/audit"><h3>Audit trail</h3><p class="muted small">Operational mutation history.</p></a><a class="card card-flat" href="#/admin/health"><h3>System health</h3><p class="muted small">Operational, security, and backup state.</p></a></div>`,'Owner/admin controls remain separate from employee case-work screens.')}`;
     return workspaceLayout('admin','home','Command Center','Full-access operating view for Coletti & Co.',body);
+  }
+  if(view==='consultations'){
+    const qres=await supabase.rpc('admin_consultation_queue_v1'); if(qres.error)throw qres.error;
+    const rows=qres.data||[], owner=state.profile?.role==='owner';
+    let bookings=[]; if(owner){const b=await supabase.rpc('admin_unlinked_square_consultation_bookings_v1');if(b.error)throw b.error;bookings=b.data||[];}
+    const metrics=`<div class="grid-4">${[
+      ['Owner review',rows.filter(r=>r.stage==='OWNER_REVIEW').length],
+      ['Awaiting Square',rows.filter(r=>r.stage==='APPROVED_AWAITING_SQUARE_BOOKING').length],
+      ['Payment / email',rows.filter(r=>['APPOINTMENT_SCHEDULED_AWAITING_PAYMENT_SETUP','SQUARE_PAYMENT_LINK_PENDING','CONFIRMATION_EMAIL_PENDING','AWAITING_PAYMENT'].includes(r.stage)).length],
+      ['Paid & cleared',rows.filter(r=>r.stage==='CLEARED_FOR_CONSULTATION').length]
+    ].map(([l,v])=>`<div class="card metric"><div class="metric-value">${v}</div><div class="metric-label">${l}</div></div>`).join('')}</div>`;
+    const action=r=>{
+      if(!owner)return 'Owner action required';
+      if(r.stage==='OWNER_REVIEW')return `<div class="stack"><button class="btn btn-primary btn-sm" data-action="consultation-owner-decision" data-id="${r.consultation_id}" data-decision="APPROVED_FOR_CONSULTATION">Approve</button><button class="btn btn-ghost btn-sm" data-action="consultation-owner-decision" data-id="${r.consultation_id}" data-decision="NEEDS_MORE_INFORMATION">Need info</button><button class="btn btn-ghost btn-sm" data-action="consultation-owner-decision" data-id="${r.consultation_id}" data-decision="DECLINED_FOR_CONSULTATION">Decline</button></div>`;
+      if(r.invoice_id&&!r.payment_url)return `<button class="btn btn-primary btn-sm" data-action="issue-consultation-square-link" data-id="${r.consultation_id}" data-invoice="${r.invoice_id}">Issue Square link</button>`;
+      if(r.payment_url&&r.confirmation_email_state!=='SENT')return `<button class="btn btn-primary btn-sm" data-action="send-consultation-confirmation" data-id="${r.consultation_id}">Send confirmation</button>`;
+      if(r.payment_state==='PAID'&&!r.consultation_completed_at)return `<button class="btn btn-primary btn-sm" data-action="mark-consultation-completed" data-id="${r.consultation_id}">Mark complete</button>`;
+      return '-';
+    };
+    const queue=table(rows,[
+      {label:'Prospect',render:r=>`<strong>${esc(r.client_name||r.client_email||'Prospect')}</strong><div class="micro">${esc(r.client_email||'')}</div>`},
+      {label:'Stage',render:r=>badge(r.stage)},{label:'Appointment',render:r=>r.appointment_start?fmtDate(r.appointment_start):'-'},
+      {label:'Fee',render:r=>r.consultation_fee_cents?fmtMoney(r.consultation_fee_cents):'-'},
+      {label:'Payment',render:r=>badge(r.payment_state)},{label:'Email',render:r=>badge(r.confirmation_email_state)},
+      {label:'Qualification',render:r=>badge(r.qualification_decision)},{label:'Action',render:action}
+    ],true);
+    const cards=rows.filter(r=>['OWNER_REVIEW','NEEDS_MORE_INFORMATION'].includes(r.stage)).map(r=>{
+      const a=r.assignment||{}, list=v=>Array.isArray(v)?v.join('; '):'-';
+      return `<div class="card"><div class="flex-between"><h3>${esc(r.client_name||r.client_email||'Prospect')}</h3>${badge(r.stage)}</div>
+      <p class="small"><strong>Question:</strong> ${esc(a.engagement_question||'-')}</p><p class="small"><strong>Goal:</strong> ${esc(a.client_goal||'-')}</p>
+      <p class="small"><strong>Current understanding:</strong> ${esc(a.client_position||'-')}</p><p class="small"><strong>Proposition:</strong> ${esc(a.proposition_to_test||'-')}</p>
+      <p class="small"><strong>Recipient:</strong> ${esc(a.intended_recipient||'-')} | <strong>Expected records:</strong> ${esc(a.expected_record_count??'-')}</p>
+      <p class="small"><strong>Sources:</strong> ${esc(list(a.known_sources))}</p><p class="small"><strong>Entities:</strong> ${esc(list(a.known_entities))}</p>
+      <p class="small"><strong>Gaps:</strong> ${esc(list(a.known_gaps))}</p><p class="small"><strong>Conflicts:</strong> ${esc(list(a.known_conflicts))}</p>
+      <p class="small"><strong>Complexity factors:</strong> ${esc(a.complexity_factors||'-')}</p><p class="small"><strong>Preliminary scope:</strong> ${esc(a.preliminary_scope||'-')}</p>
+      <div class="notice notice-info">Client-provided assertions for screening only; not findings or final scope.</div>${owner?action(r):''}</div>`;
+    }).join('');
+    const approved=rows.filter(r=>r.stage==='APPROVED_AWAITING_SQUARE_BOOKING');
+    const bookingForm=owner&&approved.length&&bookings.length?`<form id="link-square-booking-form"><div class="form-grid"><div class="form-field"><label>Approved consultation</label><select name="consultation_id">${approved.map(r=>`<option value="${r.consultation_id}">${esc(r.client_name||r.client_email||r.consultation_id)}</option>`).join('')}</select></div><div class="form-field"><label>Square booking</label><select name="provider_booking_id">${bookings.map(b=>`<option value="${esc(b.provider_booking_id)}">${esc(fmtDate(b.start_at))} | ${esc(b.provider_booking_id)}</option>`).join('')}</select></div></div><div class="form-actions"><button class="btn btn-primary">Link Square appointment</button></div></form>`:'<div class="notice notice-info">Approved appointments are created in Square. Square-origin bookings appear here after the signed webhook is configured; Google Calendar remains the master calendar.</div>';
+    const pay=rows.filter(r=>r.stage==='APPOINTMENT_SCHEDULED_AWAITING_PAYMENT_SETUP');
+    const payForm=owner&&pay.length?`<form id="consultation-payment-form"><div class="form-grid"><div class="form-field"><label>Consultation</label><select name="consultation_id">${pay.map(r=>`<option value="${r.consultation_id}">${esc(r.client_name||r.client_email||r.consultation_id)} | ${esc(fmtDate(r.appointment_start))}</option>`).join('')}</select></div><div class="form-field"><label>Fee</label><input name="fee_dollars" type="number" min="1" step="0.01" required placeholder="Enter approved fee" /></div></div><div class="form-actions"><button class="btn btn-primary">Issue fee link & send confirmation</button></div></form>`:'<div class="empty">No appointment currently needs payment setup.</div>';
+    const post=rows.filter(r=>r.consultation_completed_at&&r.qualification_decision==='PENDING');
+    const postForm=owner&&post.length?`<form id="consultation-qualification-form"><div class="form-grid"><div class="form-field"><label>Completed consultation</label><select name="consultation_id">${post.map(r=>`<option value="${r.consultation_id}">${esc(r.client_name||r.client_email||r.consultation_id)}</option>`).join('')}</select></div><div class="form-field"><label>Decision</label><select name="qualification_decision"><option>QUALIFIED</option><option>NEEDS_RECORD_ASSESSMENT</option><option>NOT_QUALIFIED</option></select></div><div class="form-field"><label>Complexity</label><select name="complexity_level"><option value="">Not rated</option><option>LOW</option><option>MODERATE</option><option>HIGH</option><option>VERY_HIGH</option></select></div><div class="form-field full"><label>Decision reason</label><textarea name="decision_reason" required></textarea></div><div class="form-field full"><label>Complexity / scope notes</label><textarea name="complexity_notes"></textarea></div></div><div class="form-actions"><button class="btn btn-primary">Record qualification</button></div></form>`:'<div class="empty">No completed consultation is awaiting qualification.</div>';
+    return workspaceLayout('admin','consultations','Consultations','Owner approval, Square booking/payment, confirmation, financial clearance, and post-consultation qualification.',
+      metrics+panel('Queue',queue,'Approval for consultation is not client acceptance.')+(cards?panel('Pre-Consultation Assessment',cards):'')+panel('Square appointment',bookingForm)+panel('Fee & confirmation',payForm,'Full payment is required before the consultation may proceed.')+panel('Post-consultation qualification',postForm));
   }
   if(view==='users'){
     const rows=await q('profiles','*',x=>x.order('created_at',{ascending:false}));
