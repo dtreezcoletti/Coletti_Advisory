@@ -69,6 +69,11 @@ const destination=async(user)=>{
 };
 const finish=async(user)=>{
   const target=await destination(user);
+  const next=new URLSearchParams(location.search).get('next');
+  if(next==='consultation' && target.includes('/workspace/#/portal/home')){
+    location.replace(`${APP_ORIGIN}/workspace/#/portal/intake`);
+    return;
+  }
   location.replace(target.includes('#') ? target : target+'#/home');
 };
 const showRecovery=()=>{
