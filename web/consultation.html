@@ -32,8 +32,15 @@ const status=document.getElementById('consult-status');
 const show=(msg)=>{status.textContent=msg;status.classList.add('show')};
 const session=await supabase.auth.getSession();
 if(session.data?.session?.user){
-  button.textContent='Continue to Secure Consultation Intake →';
-  form.addEventListener('submit',(e)=>{e.preventDefault();location.href='/workspace/#/portal/intake';});
+  const user=session.data.session.user;
+  const needsSetup=user?.user_metadata?.entry_source==='public_consultation' && user?.user_metadata?.setup_completed!==true;
+  if(needsSetup){
+    button.textContent='Finish Secure Access Setup →';
+    form.addEventListener('submit',(e)=>{e.preventDefault();location.href='/login/?next=consultation';});
+  }else{
+    button.textContent='Continue to Secure Consultation Intake →';
+    form.addEventListener('submit',(e)=>{e.preventDefault();location.href='/workspace/#/portal/intake';});
+  }
 }else{
   form.addEventListener('submit',async(e)=>{
     e.preventDefault();button.disabled=true;status.classList.remove('show');
@@ -44,12 +51,12 @@ if(session.data?.session?.user){
       options:{
         emailRedirectTo:`${APP_ORIGIN}/login/?next=consultation`,
         shouldCreateUser:true,
-        data:{full_name:fullName,entry_source:'public_consultation'}
+        data:{full_name:fullName,entry_source:'public_consultation',setup_completed:false}
       }
     });
     button.disabled=false;
     if(error){console.error(error);show('The secure consultation link could not be sent. Please check the email address and try again.');return;}
-    show('Secure access link sent. Open the email from Coletti & Co. to continue into the protected consultation intake.');
+    show('Secure access email sent. Open the link to confirm your email and finish setup. After setup, you will continue directly to the protected consultation intake.');
     form.reset();
   });
 }
