@@ -620,13 +620,17 @@ async function secureUpload(bucket,path,file){ const {error}=await supabase.stor
 
 async function handleSubmit(e) {
   const f=e.target; if(!(f instanceof HTMLFormElement)) return; const id=f.id; if(!id) return;
-  const known=['profile-form','intake-form','engagement-form','upload-form','message-form','meeting-form','support-form','consultation-form','evidence-form','reconstruction-form','narrative-form','document-request-form','case-note-form','qa-form','handoff-form','assignment-form','service-form','template-form','publish-report-form','referral-partner-form'];
+  const known=['profile-form','intake-form','preconsultation-form','engagement-form','upload-form','message-form','meeting-form','support-form','consultation-form','evidence-form','reconstruction-form','narrative-form','document-request-form','case-note-form','qa-form','handoff-form','assignment-form','link-square-booking-form','consultation-payment-form','consultation-qualification-form','service-form','template-form','publish-report-form','referral-partner-form'];
   if(!known.includes(id)) return; e.preventDefault(); const fd=new FormData(f); const button=f.querySelector('button[type="submit"],button:not([type])'); if(button)button.disabled=true;
   try {
     if(id==='profile-form'){
       const {error}=await supabase.from('profiles').update({display_name:fd.get('display_name'),phone:fd.get('phone')||null,organization_name:fd.get('organization_name')||null}).eq('id',state.user.id); if(error)throw error; await refreshAuth(); toast('Profile updated.','success');
     } else if(id==='intake-form'){
       const payload={user_id:state.user.id,status:'SUBMITTED',service_requested:fd.get('service_requested'),matter_summary:fd.get('matter_summary'),referral_source:fd.get('referral_source')||null,contact:{email:state.user.email,display_name:state.profile?.display_name,phone:state.profile?.phone},submitted_at:new Date().toISOString()}; const {error}=await supabase.from('intake_submissions').insert(payload); if(error)throw error; toast('Intake submitted for review.','success');
+    } else if(id==='preconsultation-form'){
+      const lines=name=>String(fd.get(name)||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+      const payload={p_intake_id:fd.get('intake_id'),p_engagement_question:fd.get('engagement_question'),p_client_goal:fd.get('client_goal'),p_client_position:fd.get('client_position'),p_proposition_to_test:fd.get('proposition_to_test'),p_intended_recipient:fd.get('intended_recipient'),p_expected_record_count:Number(fd.get('expected_record_count')),p_known_sources:lines('known_sources'),p_known_entities:lines('known_entities'),p_known_gaps:lines('known_gaps'),p_known_conflicts:lines('known_conflicts'),p_complexity_factors:fd.get('complexity_factors'),p_preliminary_scope:fd.get('preliminary_scope')};
+      const {error}=await supabase.rpc('submit_preconsultation_assignment_v1',payload); if(error)throw error; toast('Pre-Consultation Assignment submitted for Owner review.','success');
     } else if(id==='engagement-form'){
       const payload={user_id:state.user.id,intake_id:fd.get('intake_id')||null,case_id:state.activeCase||null,acknowledgement_type:'SERVICE_BOUNDARY_ACK',document_key:'service_boundary_ack',document_version:'V1-2026-10',signature_name:fd.get('signature_name'),accepted:false,accepted_at:null,metadata:{application_acknowledgement:true,not_engagement_acceptance:true}}; const {error}=await supabase.from('engagement_acceptances').insert(payload); if(error)throw error; toast('Service-boundary acknowledgment recorded.','success');
     } else if(id==='upload-form'){
@@ -675,6 +679,17 @@ async function handleSubmit(e) {
       const {error}=await supabase.from('publication_handoffs').insert({case_id:state.activeCase,registry_report_id:fd.get('registry_report_id')||null,status:fd.get('status'),prepared_by:state.user.id,internal_notes:fd.get('internal_notes')||null}); if(error)throw error; toast('Publication handoff created.','success');
     } else if(id==='assignment-form'){
       const {error}=await supabase.from('case_assignments').insert({case_id:fd.get('case_id'),staff_user_id:fd.get('staff_user_id'),assignment_role:fd.get('assignment_role'),assigned_by:state.user.id}); if(error)throw error; await refreshCases(); toast('Case assignment created.','success');
+    } else if(id==='link-square-booking-form'){
+      const {error}=await supabase.rpc('admin_link_square_booking_v1',{p_consultation_id:fd.get('consultation_id'),p_provider_booking_id:fd.get('provider_booking_id')}); if(error)throw error; toast('Square appointment linked to the approved consultation.','success');
+    } else if(id==='consultation-payment-form'){
+      const fee=Math.round(Number(fd.get('fee_dollars'))*100); if(!Number.isSafeInteger(fee)||fee<=0)throw new Error('Enter a valid consultation fee.');
+      const consultationId=fd.get('consultation_id');
+      const prepared=await supabase.rpc('admin_prepare_consultation_invoice_v1',{p_consultation_id:consultationId,p_fee_cents:fee}); if(prepared.error)throw prepared.error;
+      const link=await supabase.functions.invoke('square-create-payment-link',{body:{invoice_id:prepared.data}}); if(link.error)throw link.error; if(!link.data?.payment_url)throw new Error('Square did not return a payment link.');
+      const email=await supabase.functions.invoke('consultation-confirmation-email',{body:{consultation_id:consultationId}}); if(email.error)throw email.error;
+      toast('Consultation fee link issued and confirmation email sent.','success');
+    } else if(id==='consultation-qualification-form'){
+      const {error}=await supabase.rpc('admin_complete_consultation_qualification_v1',{p_consultation_id:fd.get('consultation_id'),p_qualification_decision:fd.get('qualification_decision'),p_decision_reason:fd.get('decision_reason'),p_complexity_level:fd.get('complexity_level')||null,p_complexity_notes:fd.get('complexity_notes')||null}); if(error)throw error; toast('Post-consultation qualification recorded.','success');
     } else if(id==='service-form'){
       const {error}=await supabase.from('service_definitions').insert({service_key:fd.get('service_key'),name:fd.get('name'),summary:fd.get('summary'),scope_text:fd.get('scope_text')||null,delivery_text:fd.get('delivery_text')||null,public_visible:true,active:true}); if(error)throw error; await loadPublicData(); toast('Service definition added.','success');
     } else if(id==='template-form'){
