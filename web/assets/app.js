@@ -186,7 +186,7 @@ function signInPage() {
 
 const CLIENT_NAV=[['home','Overview'],['intake','Intake'],['profile','Identity & Contact'],['engagement','Engagement'],['uploads','Secure Uploads'],['requests','Document Requests'],['timeline','Case Status'],['messages','Messages'],['schedule','Meetings'],['billing','Invoices & Payments'],['reports','Published Reports'],['support','Support']];
 const STAFF_NAV=[['home','Assigned Cases'],['intake','Intake Review'],['documents','Document Completeness'],['evidence','Records & Reconstruction'],['contradictions','Contradictions / Reconciliation'],['narratives','Review Narratives'],['requests','Client Requests & Deadlines'],['notes','Case Notes'],['qa','QA Checklist'],['publishing','Publishing Handoff']];
-const ADMIN_NAV=[['home','Command Center'],['users','Users & Roles'],['assignments','Case Assignment'],['audit','Audit Trail'],['access','Access Controls'],['services','Services & Pricing'],['templates','Templates'],['publications','Publication Controls'],['analytics','Analytics / KPIs'],['billing','Billing Overview'],['referrals','Referral Pipeline'],['capacity','Capacity / Workload'],['health','System Health'],['security','Security Alerts'],['backups','Backup / Recovery'],['settings','Settings']];
+const ADMIN_NAV=[['home','Command Center'],['users','Users & Roles'],['assignments','Case Assignment'],['audit','Audit Trail'],['access','Access Controls'],['services','Services & Pricing'],['procedures','Procedures & SOPs'],['templates','Templates'],['publications','Publication Controls'],['analytics','Analytics / KPIs'],['billing','Billing Overview'],['referrals','Referral Pipeline'],['capacity','Capacity / Workload'],['health','System Health'],['security','Security Alerts'],['backups','Backup / Recovery'],['settings','Settings']];
 function caseSelector() {
   if(!state.caseIds.length) return '<span class="badge badge-neutral">No active case access</span>';
   return `<select id="case-selector" aria-label="Active case" style="width:auto;min-width:190px">${state.caseIds.map(id=>`<option value="${esc(id)}" ${id===state.activeCase?'selected':''}>${esc(id)}</option>`).join('')}</select>`;
@@ -470,6 +470,31 @@ async function adminPage(view) {
     const [services,pricing]=await Promise.all([q('service_definitions','*',x=>x.order('sort_order')),q('pricing_config','*',x=>x.order('created_at'))]);
     const form=`<form id="service-form"><div class="form-grid"><div class="form-field"><label>Service key</label><input name="service_key" required /></div><div class="form-field"><label>Name</label><input name="name" required /></div><div class="form-field full"><label>Summary</label><textarea name="summary" required></textarea></div><div class="form-field full"><label>Scope</label><textarea name="scope_text"></textarea></div><div class="form-field full"><label>Delivery</label><textarea name="delivery_text"></textarea></div></div><div class="form-actions"><button class="btn btn-primary">Add service</button></div></form>`;
     return workspaceLayout('admin','services','Services & pricing','Public service catalog and engagement pricing configuration.',panel('Service definitions',table(services,[{label:'Service',render:r=>`<strong>${esc(r.name)}</strong><div class="micro">${esc(r.service_key)}</div>`},{label:'Summary',render:r=>esc((r.summary||'').slice(0,180))},{label:'Public',render:r=>badge(r.public_visible?'yes':'no')},{label:'Active',render:r=>badge(r.active?'active':'inactive')}]))+panel('Add service',form)+panel('Pricing configuration',table(pricing,[{label:'Service',key:'service_key'},{label:'Label',key:'label'},{label:'Model',render:r=>badge(r.billing_model)},{label:'Public note',key:'public_note'}])));
+  }
+  if(view==='procedures'){
+    const {data,error}=await supabase.rpc('admin_sop_register_v1');
+    if(error) throw error;
+    const rows=data||[];
+    const approved=rows.filter(r=>r.sop_status==='APPROVED').length;
+    const drafts=rows.filter(r=>r.sop_status==='DRAFT').length;
+    const verified=rows.filter(r=>r.verified_against_live_workflow).length;
+    const body=`<div class="grid-3">
+      <div class="card metric"><div class="metric-value">${approved}</div><div class="metric-label">Approved SOPs</div></div>
+      <div class="card metric"><div class="metric-value">${drafts}</div><div class="metric-label">Draft SOPs</div></div>
+      <div class="card metric"><div class="metric-value">${verified}</div><div class="metric-label">Verified against live workflow</div></div>
+    </div>
+    <div class="notice notice-info mt-2"><strong>Authority boundary</strong><br/>Registration or technical verification does not approve a draft SOP. Drafts remain non-authoritative until explicitly approved through the governance process.</div>`;
+    return workspaceLayout('admin','procedures','Procedures & SOPs','Controlled procedure register with approval and implementation state kept separate.',
+      body+panel('SOP register',table(rows,[
+        {label:'Procedure',render:r=>`<strong>${esc(r.title)}</strong><div class="micro">${esc(r.artifact_key)}</div>`},
+        {label:'Domain',key:'owning_domain'},
+        {label:'Authority',render:r=>esc(r.authority||'—')},
+        {label:'Approval',render:r=>badge(r.sop_status)},
+        {label:'Implementation',render:r=>r.implementation_status?badge(r.implementation_status):'—'},
+        {label:'Live verified',render:r=>badge(r.verified_against_live_workflow?'yes':'no')},
+        {label:'Version',render:r=>`v${esc(r.version)}`}
+      ],true),'Approved constitutional procedures remain controlling over draft modular SOPs.')
+    );
   }
   if(view==='templates'){
     const rows=await q('template_catalog','*',x=>x.order('updated_at',{ascending:false}));
