@@ -771,6 +771,33 @@ async function handleClick(e) {
     if(action==='open-case-from-intake'){ const {data,error}=await supabase.rpc('admin_open_case_from_intake_v1',{p_intake_id:btn.dataset.id,p_case_prefix:'BRI',p_assignment_role:'case_manager'}); if(error)throw error; await refreshCases(); toast(`Case opened and assigned: ${data}`,'success'); await render(); }
     if(action==='lock-record-universe'){ const {data,error}=await supabase.rpc('lock_record_universe_v1',{p_case_id:state.activeCase}); if(error)throw error; toast(`Record Universe locked: ${data}`,'success'); await render(); }
     if(action==='submit-reconstruction-review'){ const {error}=await supabase.rpc('submit_reconstruction_for_review_v1',{p_reconstruction_id:btn.dataset.id}); if(error)throw error; toast('Reconstruction sealed and routed to human review.','success'); await render(); }
+    if(action==='preview-intake-upload'){
+      if(btn.dataset.job) await supabase.rpc('start_record_intake_review_v1',{p_job_id:btn.dataset.job});
+      const {data,error}=await supabase.storage.from(btn.dataset.bucket).createSignedUrl(btn.dataset.path,120);
+      if(error)throw error;
+      window.open(data.signedUrl,'_blank','noopener');
+    }
+    if(action==='confirm-intake-job'){
+      const id=btn.dataset.id;
+      const taxonomy=document.querySelector(`[data-intake-taxonomy="${CSS.escape(id)}"]`)?.value||null;
+      const role=document.querySelector(`[data-intake-role="${CSS.escape(id)}"]`)?.value||null;
+      const label=document.querySelector(`[data-intake-label="${CSS.escape(id)}"]`)?.value?.trim()||null;
+      const {data,error}=await supabase.rpc('confirm_record_intake_job_v1',{p_job_id:id,p_taxonomy_key:taxonomy,p_source_role:role,p_client_label:label});
+      if(error)throw error;
+      toast(`Source registered: ${data}`,'success'); await render();
+    }
+    if(action==='mark-intake-duplicate'){
+      const {error}=await supabase.rpc('mark_record_intake_duplicate_v1',{p_job_id:btn.dataset.id});
+      if(error)throw error;
+      toast('Duplicate upload resolved without creating another Source.','success'); await render();
+    }
+    if(action==='batch-register-green-intake'){
+      if(!state.activeCase)throw new Error('Select a case first.');
+      const {data,error}=await supabase.rpc('batch_register_green_intake_v1',{p_case_id:state.activeCase,p_limit:200});
+      if(error)throw error;
+      toast(`Green batch complete: ${Number(data?.registered||0)} registered, ${Number(data?.failed||0)} failed.`,Number(data?.failed||0)?'error':'success');
+      await render();
+    }
     if(action==='register-upload-source'){
       const sourceType=document.querySelector(`[data-source-type="${CSS.escape(btn.dataset.id)}"]`)?.value?.trim();
       const sourceRole=document.querySelector(`[data-source-role="${CSS.escape(btn.dataset.id)}"]`)?.value||'NATIVE_SOURCE';
