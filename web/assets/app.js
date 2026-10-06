@@ -260,8 +260,15 @@ async function portalPage(view) {
   }
   if(!c && !['support'].includes(view)) return workspaceLayout('portal',view,'Client Portal','A case has not been established yet.',noCase());
   if(view==='requests'){
-    const rows=await q('document_requests','*',x=>x.eq('case_id',c).order('created_at',{ascending:false}));
-    return workspaceLayout('portal','requests','Document requests',c,panel('Requested records',table(rows,[{label:'Request',render:r=>`<strong>${esc(r.title)}</strong>${r.description?`<div class="micro">${esc(r.description)}</div>`:''}`},{label:'Due',render:r=>fmtDate(r.due_date)},{label:'Status',render:r=>badge(r.status)}]),'Only client-visible requests appear in this portal.'));
+    const [rows,uploads]=await Promise.all([
+      q('document_requests','*',x=>x.eq('case_id',c).order('created_at',{ascending:false})),
+      q('upload_records','id,status,created_at',x=>x.eq('case_id',c).order('created_at',{ascending:false}))
+    ]);
+    const open=rows.filter(r=>!['SATISFIED','WAIVED'].includes(r.status)).length;
+    const underReview=rows.filter(r=>['UPLOADED','UNDER_REVIEW'].includes(r.status)).length;
+    const satisfied=rows.filter(r=>['SATISFIED','WAIVED'].includes(r.status)).length;
+    const summary=`<div class="grid-4"><div class="card metric"><div class="metric-value">${uploads.length}</div><div class="metric-label">Your files received</div></div><div class="card metric"><div class="metric-value">${open}</div><div class="metric-label">Requests outstanding</div></div><div class="card metric"><div class="metric-value">${underReview}</div><div class="metric-label">Under review</div></div><div class="card metric"><div class="metric-value">${satisfied}</div><div class="metric-label">Satisfied / waived</div></div></div><div class="notice notice-info mt-1">A file showing as received does not necessarily satisfy a specific request. Coletti & Co. confirms completeness after reviewing what was supplied.</div>`;
+    return workspaceLayout('portal','requests','Document requests',c,summary+panel('Requested records',table(rows,[{label:'Request',render:r=>`<strong>${esc(r.title)}</strong>${r.description?`<div class="micro">${esc(r.description)}</div>`:''}`},{label:'Due',render:r=>fmtDate(r.due_date)},{label:'Status',render:r=>badge(r.status)}]),'Only client-visible requests appear in this portal.'));
   }
   if(view==='timeline'){
     const rows=await q('case_status_events','*',x=>x.eq('case_id',c).order('occurred_at',{ascending:false}));
@@ -430,7 +437,12 @@ async function staffPage(view) {
         else if(Number(j.proposed_segment_count||0)>1)relationship=`<div class="small"><strong>${Number(j.proposed_segment_count)} logical documents proposed</strong><br/><span class="micro">Review page boundaries before registration.</span></div>`;
         else if(j.bundle_state==='PROBABLE_BUNDLE')relationship='<div class="small"><strong>Possible multi-document bundle</strong><br/><span class="micro">Boundary review required.</span></div>';
         else if(codes.length)relationship=`<div class="micro">${codes.map(titleCase).map(esc).join(' · ')}</div>`;
-        const matchText=suggestedMatches.length?`<div class="micro mt-1"><strong>Possible request:</strong> ${suggestedMatches.slice(0,2).map(m=>esc(requestById.get(m.request_id)?.title||'Record request')).join(' · ')}</div>`:'';
+        const matchText=suggestedMatches.length?`<div class="stack mt-1">${suggestedMatches.slice(0,2).map(m=>{
+          const title=esc(requestById.get(m.request_id)?.title||'Record request');
+          if(m.status==='CONFIRMED')return `<div class="micro"><strong>Matched request:</strong> ${title} ${badge('confirmed')}</div>`;
+          if(m.status==='REJECTED')return `<div class="micro"><strong>Rejected match:</strong> ${title}</div>`;
+          return `<div class="micro"><strong>Possible request:</strong> ${title}<div class="flex gap-1 mt-1"><button class="btn btn-ghost btn-sm" data-action="confirm-request-match" data-id="${m.id}">Confirm Match</button><button class="btn btn-ghost btn-sm" data-action="reject-request-match" data-id="${m.id}">Not This Request</button></div></div>`;
+        }).join('')}</div>`:'';
         return relationship+matchText;
       }},
       {label:'Decision',render:r=>{
@@ -445,7 +457,7 @@ async function staffPage(view) {
         const singleControls=`<select data-intake-taxonomy="${j.id}">${taxonomyOptions(j.suggested_taxonomy_key||'other_unclassified')}</select>
           <input data-intake-label="${j.id}" value="${esc(j.suggested_client_label||'')}" placeholder="Client-facing label" />
           <select data-intake-role="${j.id}">${roleOptions(j.suggested_source_role||'NATIVE_SOURCE')}</select>
-          <div class="flex gap-1"><button class="btn btn-primary btn-sm" data-action="confirm-intake-job" data-id="${j.id}">${j.bundle_state==='PROBABLE_BUNDLE'?'Treat as One Source':'Confirm & Register'}</button>${duplicateAction}</div>`;
+          <div class="flex gap-1"><button class="btn btn-primary btn-sm" data-action="confirm-intake-job" data-id="${j.id}">${j.probable_version_family_key?'Confirm Version & Register':j.bundle_state==='PROBABLE_BUNDLE'?'Treat as One Source':'Confirm & Register'}</button>${duplicateAction}</div>`;
         if(proposed.length<2)return `<div class="stack">${singleControls}</div>`;
         const segmentRows=proposed.map(seg=>`<div class="card card-flat" data-segment-row="${j.id}" data-segment-index="${seg.segment_index}">
           <div class="grid-2">
@@ -797,6 +809,16 @@ async function handleClick(e) {
     if(action==='open-case-from-intake'){ const {data,error}=await supabase.rpc('admin_open_case_from_intake_v1',{p_intake_id:btn.dataset.id,p_case_prefix:'BRI',p_assignment_role:'case_manager'}); if(error)throw error; await refreshCases(); toast(`Case opened and assigned: ${data}`,'success'); await render(); }
     if(action==='lock-record-universe'){ const {data,error}=await supabase.rpc('lock_record_universe_v1',{p_case_id:state.activeCase}); if(error)throw error; toast(`Record Universe locked: ${data}`,'success'); await render(); }
     if(action==='submit-reconstruction-review'){ const {error}=await supabase.rpc('submit_reconstruction_for_review_v1',{p_reconstruction_id:btn.dataset.id}); if(error)throw error; toast('Reconstruction sealed and routed to human review.','success'); await render(); }
+    if(action==='confirm-request-match'){
+      const {error}=await supabase.rpc('confirm_record_request_match_v1',{p_match_id:btn.dataset.id,p_request_status:'UNDER_REVIEW'});
+      if(error)throw error;
+      toast('Record request match confirmed and moved to review.','success'); await render();
+    }
+    if(action==='reject-request-match'){
+      const {error}=await supabase.rpc('reject_record_request_match_v1',{p_match_id:btn.dataset.id});
+      if(error)throw error;
+      toast('Suggested record request match rejected.','success'); await render();
+    }
     if(action==='reprocess-intake-content'){
       const {error}=await supabase.functions.invoke('record-intake-process',{body:{upload_id:btn.dataset.upload}});
       if(error)throw error;
