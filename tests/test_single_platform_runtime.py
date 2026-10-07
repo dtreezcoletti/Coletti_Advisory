@@ -24,7 +24,8 @@ def test_canonical_origin_and_auth_redirect_are_https_only():
     login = LOGIN.read_text(encoding="utf-8")
     assert "APP_ORIGIN = 'https://colettico.com'" in config
     assert "resetPasswordForEmail(email,{redirectTo:`${APP_ORIGIN}/login/`})" in login
-    assert "emailRedirectTo:`${APP_ORIGIN}/login/`" in login
+    assert "const loginRedirect=()=>`${APP_ORIGIN}/login/" in login
+    assert "emailRedirectTo:loginRedirect()" in login
     assert "location.origin}/login/" not in login
 
 
