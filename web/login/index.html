@@ -232,7 +232,7 @@ $('forgot').addEventListener('click',async()=>{
   clearNotice();
   const email=$('email').value.trim();
   if(!email){notice('Enter your email address first.');return}
-  const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:loginRedirect()});
+  const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:`${APP_ORIGIN}/login/`});
   if(error){console.error(error);notice('The password recovery email could not be sent.');return}
   notice('Password recovery email sent. Open the recovery link in that email to continue.');
 });
