@@ -42,7 +42,7 @@ def test_records_intake_ui_is_exception_driven():
         "confirm-intake-job",
         "mark-intake-duplicate",
         "preview-intake-upload",
-        "Content-aware document segmentation",
+        "Content-aware PDF analysis",
     ]
     for item in required:
         assert item in app
