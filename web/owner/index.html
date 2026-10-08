@@ -1,11 +1,23 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>Coletti & Co.</title></head>
+<head>
+  <meta charset="utf-8">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Coletti & Co. Owner Workspace</title>
+</head>
 <body>
-<p>Redirecting to the secure Coletti &amp; Co. workspace…</p>
+<p>Opening the secure owner workspace…</p>
 <script>
-  location.replace('/workspace/' + location.search + location.hash);
+  // Preserve the existing authenticated single-app architecture and chosen
+  // presentation surface; user identity and authorization are checked inside.
+  const target = new URL('/workspace/', location.origin);
+  const params = new URLSearchParams(location.search);
+  params.set('surface', 'owner');
+  target.search = params.toString();
+  target.hash = location.hash || '#/admin/home';
+  location.replace(target.href);
 </script>
-<noscript><a href="/workspace/">Open the secure workspace</a></noscript>
+<noscript><a href="/workspace/?surface=owner#/admin/home">Open the secure workspace</a></noscript>
 </body>
 </html>
