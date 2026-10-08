@@ -42,7 +42,9 @@ def test_owner_and_portal_paths_are_redirects_not_separate_apps():
     owner = OWNER.read_text(encoding="utf-8")
     portal = PORTAL.read_text(encoding="utf-8")
     workspace = WORKSPACE.read_text(encoding="utf-8")
-    assert "location.replace('/workspace/' + location.search + location.hash)" in owner
+    assert "new URL('/workspace/', location.origin)" in owner
+    assert "params.set('surface', 'owner')" in owner
+    assert "location.replace(target.href)" in owner
     assert "location.replace('/workspace/' + location.search + location.hash)" in portal
     assert 'data-portal="unified"' in workspace
     assert "/assets/app.js" in workspace

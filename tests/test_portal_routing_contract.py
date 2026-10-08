@@ -34,7 +34,14 @@ def test_legacy_role_entrypoints_redirect_to_unified_workspace():
     for relative in ("portal/index.html", "owner/index.html", "employee/index.html", "admin/index.html"):
         html = (WEB / relative).read_text(encoding="utf-8")
         assert "/workspace/" in html
-        assert "location.replace('/workspace/'" in html
+        if relative == "portal/index.html":
+            assert "location.replace('/workspace/'" in html
+        else:
+            # Existing Owner/Admin/Employee entrypoints preserve presentation
+            # context while using the same authenticated canonical workspace.
+            assert "new URL('/workspace/', location.origin)" in html
+            assert "location.replace(target.href)" in html
+            assert "params.set('surface'," in html
         assert "onrender.com" not in html
 
 
