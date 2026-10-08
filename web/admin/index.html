@@ -1,1 +1,23 @@
-<!doctype html><meta http-equiv="refresh" content="0;url=/workspace/"><script>location.replace('/workspace/'+location.search+location.hash)</script><p>Opening Coletti & Co. Admin Workspace…</p>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Coletti & Co. Admin Workspace</title>
+</head>
+<body>
+<p>Opening the secure admin workspace…</p>
+<script>
+  // Preserve the existing authenticated single-app architecture and chosen
+  // presentation surface; user identity and authorization are checked inside.
+  const target = new URL('/workspace/', location.origin);
+  const params = new URLSearchParams(location.search);
+  params.set('surface', 'admin');
+  target.search = params.toString();
+  target.hash = location.hash || '#/admin/home';
+  location.replace(target.href);
+</script>
+<noscript><a href="/workspace/?surface=admin#/admin/home">Open the secure workspace</a></noscript>
+</body>
+</html>
