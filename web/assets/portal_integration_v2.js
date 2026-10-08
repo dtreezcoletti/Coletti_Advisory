@@ -5,7 +5,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
 });
 
-const ENTRY_SURFACE = String(window.COLETTI_ENTRY_SURFACE || '').toLowerCase();
+// The legacy Owner/Admin/Employee entrypoints all route to this one app.
+// The requested presentation surface never grants authority: context() checks
+// the authenticated profile role before choosing any private workspace.
+const ENTRY_SURFACE = String(new URLSearchParams(location.search).get('surface') || window.COLETTI_ENTRY_SURFACE || '').toLowerCase();
 const STAFF_ROLES = new Set(['owner','admin','analyst','reviewer']);
 const ADMIN_ROLES = new Set(['owner','admin']);
 const COMPLETE_STATES = new Set(['COMPLETE','NOT_APPLICABLE']);
