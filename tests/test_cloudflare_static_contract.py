@@ -49,3 +49,10 @@ def test_cloudflare_preview_does_not_change_canonical_auth_origin():
     assert "onrender.com" not in config
     assert "sb_secret_" not in config
     assert "service_role" not in config
+
+
+def test_protected_database_activation_scripts_are_not_public_static_files():
+    assert not list(WEB.rglob("*.sql")), "SQL source must not ship as public static content"
+    preserved = WEB.parent / "docs/security-review/STAFF_REGISTRY_LOOKUP_ACTIVATION.sql"
+    assert preserved.is_file()
+    assert "REVIEW REQUIRED BEFORE PRODUCTION APPLICATION" in preserved.read_text(encoding="utf-8")
