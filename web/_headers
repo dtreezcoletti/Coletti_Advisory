@@ -1,0 +1,30 @@
+# Cloudflare Pages static asset response headers.
+# No dynamic request, authorization, or database state may be inferred from these headers.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+
+/login/*
+  Cache-Control: no-store
+
+/workspace/*
+  Cache-Control: no-store
+
+/owner/*
+  Cache-Control: no-store
+
+/admin/*
+  Cache-Control: no-store
+
+/employee/*
+  Cache-Control: no-store
+
+/portal/*
+  Cache-Control: no-store
+
+/recovery/*
+  Cache-Control: no-store
+
+/reset-password/*
+  Cache-Control: no-store
