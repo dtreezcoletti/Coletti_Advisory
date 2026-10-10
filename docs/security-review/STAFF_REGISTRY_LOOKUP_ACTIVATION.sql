@@ -13,7 +13,7 @@
 --   4. unassigned staff, suspended/demoted staff, client, anon are denied;
 --   5. no direct Registry table grants or write paths; audit read output.
 --
--- REVIEW REQUIRED. No live schema changes have been made by this file.
+-- REVIEW REQUIRED BEFORE PRODUCTION APPLICATION. No live schema changes have been made by this file.
 
 create or replace function public.staff_registry_lookup(
   p_query text,
