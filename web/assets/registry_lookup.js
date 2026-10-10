@@ -9,6 +9,8 @@ const STAFF_ROLES = new Set(['owner', 'admin', 'analyst', 'reviewer']);
 let lastClient = null;
 let profile = null;
 let requestGeneration = 0;
+let authRefreshGeneration = 0;
+let authRefreshScheduled = false;
 
 const esc = (value = '') => String(value ?? '').replace(/[&<>'"]/g, c => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
@@ -136,19 +138,44 @@ async function handleLookup(event) {
 }
 
 async function refresh() {
+  // Auth changes may race an in-flight session/profile read. The newest
+  // event always wins, especially when an account signs out or changes.
+  const generation = ++authRefreshGeneration;
   invalidateRequests();
-  const { data: sessionData } = await supabase.auth.getSession();
-  const user = sessionData.session?.user;
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (generation !== authRefreshGeneration) return;
+  const user = sessionData?.session?.user;
   profile = null;
-  if (!user) {
+  if (sessionError || !user) {
     hide();
     return;
   }
-  const { data } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
-  profile = data || null;
+  const { data, error } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
+  if (generation !== authRefreshGeneration) return;
+  profile = error ? null : (data || null);
   renderLauncher();
 }
 
+function scheduleAuthRefresh(event) {
+  // Supabase documents a deadlock when its async APIs are called directly
+  // in onAuthStateChange. Defer session/profile reads to a later task.
+  ++authRefreshGeneration;
+  if (event === 'SIGNED_OUT' || event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+    profile = null;
+    hide();
+  }
+  if (authRefreshScheduled) return;
+  authRefreshScheduled = true;
+  setTimeout(() => {
+    authRefreshScheduled = false;
+    void refresh().catch(error => {
+      profile = null;
+      hide();
+      console.error('Registry auth refresh failed', error);
+    });
+  }, 0);
+}
+
 window.addEventListener('hashchange', renderLauncher);
-supabase.auth.onAuthStateChange(refresh);
+supabase.auth.onAuthStateChange((event) => scheduleAuthRefresh(event));
 await refresh();
