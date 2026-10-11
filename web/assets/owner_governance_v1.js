@@ -21,8 +21,8 @@ async function ownerSession() {
   const { data } = await supabase.auth.getSession();
   const user = data?.session?.user;
   if (!user) return false;
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
-  return profile?.role === 'owner';
+  const { data: profile } = await supabase.from('profiles').select('role,status').eq('id', user.id).maybeSingle();
+  return profile?.role === 'owner' && profile?.status === 'ACTIVE';
 }
 
 function governanceNav() {
