@@ -150,9 +150,9 @@ async function refresh() {
     hide();
     return;
   }
-  const { data, error } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
+  const { data, error } = await supabase.from('profiles').select('role,status').eq('id', user.id).maybeSingle();
   if (generation !== authRefreshGeneration) return;
-  profile = error ? null : (data || null);
+  profile = error || data?.status !== 'ACTIVE' ? null : (data || null);
   renderLauncher();
 }
 
