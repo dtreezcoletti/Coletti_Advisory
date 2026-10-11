@@ -24,8 +24,9 @@ async function context() {
   const {data} = await supabase.auth.getSession();
   const user = data?.session?.user || null;
   if (!user) return {user:null, profile:null, role:null, surface:'client', caseId:null};
-  const {data:profile} = await supabase.from('profiles').select('id,role,display_name').eq('id',user.id).maybeSingle();
-  const role = profile?.role || 'client';
+  const {data:profile,error} = await supabase.from('profiles').select('id,role,display_name,status').eq('id',user.id).maybeSingle();
+  if (error || !profile?.role || profile.status !== 'ACTIVE') return {user:null, profile:null, role:null, surface:'client', caseId:null};
+  const role = profile.role;
   let surface = 'client';
   if (role === 'owner' && ENTRY_SURFACE === 'owner') surface = 'owner';
   else if (ADMIN_ROLES.has(role)) surface = ENTRY_SURFACE === 'employee' ? 'employee' : 'admin';
@@ -217,7 +218,15 @@ async function enhance() {
   } finally { rendering = false; }
 }
 
-function scheduleEnhance() { queueMicrotask(()=>void enhance()); }
+let enhanceScheduled=false;
+function scheduleEnhance() {
+  if(enhanceScheduled) return;
+  enhanceScheduled=true;
+  setTimeout(()=>{
+    enhanceScheduled=false;
+    void enhance().catch(error=>console.error('Workspace enhancement failed',error));
+  },0);
+}
 const observer = new MutationObserver(()=>scheduleEnhance());
 observer.observe(document.documentElement,{childList:true,subtree:true});
 window.addEventListener('hashchange',()=>{lastSignature='';scheduleEnhance();});
