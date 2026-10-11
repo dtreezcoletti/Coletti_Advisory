@@ -31,7 +31,7 @@ def test_role_verified_surface_hint_does_not_grant_access():
     assert "if (role === 'owner' && ENTRY_SURFACE === 'owner')" in code
     assert "else if (ADMIN_ROLES.has(role))" in code
     assert "else if (STAFF_ROLES.has(role))" in code
-    assert "supabase.from('profiles').select('id,role,display_name')" in code
+    assert "supabase.from('profiles').select('id,role,display_name,status')" in code
 
 
 def test_employee_entry_does_not_bypass_router_or_create_identity():
@@ -39,5 +39,5 @@ def test_employee_entry_does_not_bypass_router_or_create_identity():
     assert "portal_routing_v1.js" in shell
     assert "portal_integration_v2.js" in shell
     route = (WEB / "assets" / "portal_routing_v1.js").read_text(encoding="utf-8")
-    assert "if (!profile?.role)" in route
+    assert "if (!profile?.role || profile.status !== 'ACTIVE')" in route
     assert "WORKSPACE_AUTHORITY_UNRESOLVED" in route
