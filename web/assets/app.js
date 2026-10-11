@@ -83,7 +83,7 @@ async function refreshAuth() {
   if (!state.user) return;
   const { data:profile, error } = await supabase.from('profiles').select('*').eq('id',state.user.id).maybeSingle();
   if (error) { console.error(error); state.profile=null; throw new Error('WORKSPACE_AUTHORITY_UNRESOLVED'); }
-  if (!profile?.role) { state.profile=null; throw new Error('WORKSPACE_AUTHORITY_UNRESOLVED'); }
+  if (!profile?.role || profile.status !== 'ACTIVE') { state.profile=null; throw new Error('WORKSPACE_AUTHORITY_UNRESOLVED'); }
   state.profile=profile;
   await refreshCases();
 }
@@ -918,8 +918,34 @@ window.addEventListener('hashchange',render);
 document.addEventListener('submit',handleSubmit);
 document.addEventListener('click',handleClick);
 document.addEventListener('change',handleChange);
-supabase.auth.onAuthStateChange(async()=>{await refreshAuth();await render();});
+// Supabase async APIs must not run inside onAuthStateChange; the auth
+// callback may still hold the internal session lock. Reconcile next task.
+let authRefreshScheduled=false;
+function scheduleAuthRefresh(){
+  if(authRefreshScheduled) return;
+  authRefreshScheduled=true;
+  setTimeout(async()=>{
+    authRefreshScheduled=false;
+    try {
+      await refreshAuth();
+      await render();
+    } catch(error) {
+      console.error('Authorized workspace refresh failed',error);
+      state.session=null;
+      state.user=null;
+      state.profile=null;
+      state.caseIds=[];
+      state.activeCase=null;
+      localStorage.removeItem('coletti.activeCase');
+      location.replace('/login/');
+    }
+  },0);
+}
+supabase.auth.onAuthStateChange(()=>scheduleAuthRefresh());
 
 await loadPublicData();
-await refreshAuth();
-await render();
+try { await refreshAuth(); await render(); }
+catch(error) {
+  console.error('Initial workspace authorization failed',error);
+  location.replace('/login/');
+}
