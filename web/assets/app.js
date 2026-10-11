@@ -91,8 +91,12 @@ async function refreshCases() {
   if (!state.user) return;
   let ids=[];
   if (ADMIN_ROLES.includes(state.profile?.role)) {
-    const [a,m]=await Promise.all([q('case_assignments','case_id'),q('case_memberships','case_id')]).catch(()=>[[],[]]);
-    ids=[...a,...m].map(x=>x.case_id);
+    // The institutional case register also contains newly opened/unassigned
+    // cases. Assignments and client memberships are not a complete catalog.
+    // This existing RPC enforces Owner/Admin authorization server-side.
+    const {data,error}=await supabase.rpc('admin_case_assignment_catalog_v1');
+    if (error) throw error;
+    ids=(data||[]).map(x=>x.case_id);
   } else if (STAFF_ROLES.includes(state.profile?.role)) {
     ids=(await q('case_assignments','case_id',x=>x.eq('staff_user_id',state.user.id).eq('active',true))).map(x=>x.case_id);
   } else {
@@ -613,13 +617,13 @@ async function adminPage(view) {
   if(view==='assignments'){
     const [rows,users,catalogResult]=await Promise.all([
       q('case_assignments','*',x=>x.order('assigned_at',{ascending:false})),
-      q('profiles','id,display_name,role',x=>x.in('role',['owner','admin','analyst','reviewer'])),
+      q('profiles','id,display_name,role,status',x=>x.in('role',['owner','admin','analyst','reviewer']).eq('status','ACTIVE')),
       supabase.rpc('admin_case_assignment_catalog_v1')
     ]);
     if(catalogResult.error) throw catalogResult.error;
     const cases=catalogResult.data||[];
-    const form=`<form id="assignment-form"><div class="form-grid"><div class="form-field"><label>Registered case</label><select name="case_id" required>${cases.map(c=>`<option value="${esc(c.case_id)}">${esc(c.case_id)} · ${esc(c.client_name||c.client_id||'Client')} · ${esc(titleCase(c.case_status))}</option>`).join('')}</select></div><div class="form-field"><label>Staff member</label><select name="staff_user_id" required>${users.map(u=>`<option value="${u.id}">${esc(u.display_name||u.id)} · ${esc(titleCase(u.role))}</option>`).join('')}</select></div><div class="form-field"><label>Case function</label><select name="assignment_role">${CASE_ASSIGNMENT_ROLES.map(([value,label])=>`<option value="${value}">${esc(label)}</option>`).join('')}</select></div></div><div class="form-actions"><button class="btn btn-primary" ${cases.length?'':'disabled'}>Assign case</button></div></form>`;
-    const registryNote=cases.length?'Only open registered cases are assignable here. Identity/authority role and job-on-this-case remain separate.':'No open registered cases are currently available for assignment.';
+    const form=`<form id="assignment-form"><div class="form-grid"><div class="form-field"><label>Registered case</label><select name="case_id" required>${cases.map(c=>`<option value="${esc(c.case_id)}">${esc(c.case_id)} · ${esc(c.client_name||c.client_id||'Client')} · ${esc(titleCase(c.case_status))}</option>`).join('')}</select></div><div class="form-field"><label>Staff member</label><select name="staff_user_id" required>${users.map(u=>`<option value="${u.id}">${esc(u.display_name||u.id)} · ${esc(titleCase(u.role))}</option>`).join('')}</select></div><div class="form-field"><label>Case function</label><select name="assignment_role">${CASE_ASSIGNMENT_ROLES.map(([value,label])=>`<option value="${value}">${esc(label)}</option>`).join('')}</select></div></div><div class="form-actions"><button class="btn btn-primary" ${cases.length&&users.length?'':'disabled'}>Assign case</button></div></form>`;
+    const registryNote=!cases.length?'No open registered cases are currently available for assignment.':!users.length?'No active staff profiles are available. Staff must finish account confirmation and sign-in before assignment.':'Only open registered cases are assignable here. Staff must also have a confirmed, signed-in, active matching identity; the database checks this when saving. Identity role and case function remain separate.';
     return workspaceLayout('admin','assignments','Case assignment','Assign staff from the canonical case registry; do not create case identity here.',panel('New assignment',form,registryNote)+panel('Assignments',table(rows,[{label:'Case',key:'case_id'},{label:'Staff UUID',key:'staff_user_id'},{label:'Function',render:r=>badge(CASE_ASSIGNMENT_ROLES.find(x=>x[0]===r.assignment_role)?.[1]||r.assignment_role)},{label:'Active',render:r=>badge(r.active?'active':'inactive')}])));
   }
   if(view==='audit'){

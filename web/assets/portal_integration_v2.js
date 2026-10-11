@@ -70,14 +70,16 @@ async function ensureAdminCaseSelector(ctx) {
   const actions = document.querySelector('.workspace-actions');
   if (!actions) return;
   try {
-    const [{data:assignments,error:aError},{data:memberships,error:mError}] = await Promise.all([
-      supabase.from('case_assignments').select('case_id'),
-      supabase.from('case_memberships').select('case_id')
-    ]);
-    if (aError) throw aError;
-    if (mError) throw mError;
-    const ids=[...new Set([...(assignments||[]),...(memberships||[])].map(x=>x.case_id).filter(Boolean))].sort();
-    if (!ids.length) return;
+    // Use the same authoritative Owner/Admin catalog as the application.
+    // Assignment rows and client memberships omit new, unassigned cases.
+    const {data:cases,error}=await supabase.rpc('admin_case_assignment_catalog_v1');
+    if (error) throw error;
+    const ids=[...new Set((cases||[]).map(x=>x.case_id).filter(Boolean))].sort();
+    if (!ids.length) {
+      localStorage.removeItem('coletti.activeCase');
+      ctx.caseId=null;
+      return;
+    }
     let selected=localStorage.getItem('coletti.activeCase');
     if (!selected || !ids.includes(selected)) {
       selected=ids[0];

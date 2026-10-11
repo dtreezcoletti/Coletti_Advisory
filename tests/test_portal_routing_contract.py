@@ -114,8 +114,10 @@ def test_checkpoint_drillthrough_covers_full_case_sop():
 def test_admin_and_owner_surfaces_have_shared_case_context_switching():
     js = (WEB / "assets" / "portal_integration_v2.js").read_text(encoding="utf-8")
     assert "ensureAdminCaseSelector" in js
-    assert "case_assignments" in js
-    assert "case_memberships" in js
+    assert "supabase.rpc('admin_case_assignment_catalog_v1')" in js
+    assert "ADMIN_ROLES.has(ctx.role)" in js
+    assert "supabase.from('case_assignments')" not in js
+    assert "supabase.from('case_memberships')" not in js
     assert 'id="case-selector"' in js
     assert "coletti.activeCase" in js
 
