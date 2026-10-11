@@ -38,7 +38,7 @@ async function authenticatedRole() {
 
   const { data: profile, error } = await supabase
     .from('profiles')
-    .select('role')
+    .select('role,status')
     .eq('id', user.id)
     .maybeSingle();
 
@@ -46,7 +46,7 @@ async function authenticatedRole() {
     console.error('Portal routing profile lookup failed', error);
     return null;
   }
-  if (!profile?.role) throw new Error('WORKSPACE_AUTHORITY_UNRESOLVED');
+  if (!profile?.role || profile.status !== 'ACTIVE') throw new Error('WORKSPACE_AUTHORITY_UNRESOLVED');
   return profile.role;
 }
 
@@ -84,5 +84,5 @@ async function enforceRoleAwareLanding() {
 
 window.addEventListener('hashchange', () => void enforceRoleAwareLanding());
 window.addEventListener('DOMContentLoaded', () => void enforceRoleAwareLanding());
-supabase.auth.onAuthStateChange(() => queueMicrotask(() => void enforceRoleAwareLanding()));
-queueMicrotask(() => void enforceRoleAwareLanding());
+supabase.auth.onAuthStateChange(() => setTimeout(() => void enforceRoleAwareLanding(),0));
+setTimeout(() => void enforceRoleAwareLanding(),0);
