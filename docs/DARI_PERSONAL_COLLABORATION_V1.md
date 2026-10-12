@@ -1,5 +1,7 @@
 # DARI · Owner Personal Collaboration v1
 
+> **V2 design notice (2026-10-12):** [Adaptive Collaborative Learning v2.0](DARI_ADAPTIVE_COLLABORATIVE_LEARNING_V2.md) specifies a more person-first, low-interruption learning model. It is **DESIGNED ONLY**. The v1 candidate/confirmation-only database and UI behavior remain unchanged until a separate reviewed migration and release pass acceptance.
+
 **Scope:** Coletti & Co. Owner Profile > DARI · Getting to Know Me. Personal DARI / DOMUS only.
 **Applied Supabase migration:** 20261012221427, `dari_domus_personal_collaboration_v1` (Colettico).
 
