@@ -6,6 +6,7 @@ from typing import Any
 import streamlit as st
 
 from .analysis import build_summary
+from .dari_personal_profile import render_owner_learning
 from .models import Permission, ROLE_PERMISSIONS, Role
 from .publication import published_reports
 from .workspaces import workspace_label
@@ -323,6 +324,7 @@ def render_profile_menu(
                     "View, correct, and manage your authorized operating surfaces from your account. Protected or material changes continue to use their required approval/security gates."
                 )
                 _owner_control_buttons(navigate=navigate, key_prefix=key_prefix)
+                render_owner_learning(principal, key_prefix=f"{key_prefix}:dari")
         elif principal.role == Role.ADMIN:
             with rendered_tabs[4]:
                 st.markdown("**Administration shortcuts**")
