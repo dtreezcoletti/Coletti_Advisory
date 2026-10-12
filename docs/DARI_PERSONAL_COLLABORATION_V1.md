@@ -37,9 +37,9 @@ The existing application session's JWT, not a new login or admin key, is used by
 
 **Verified at database level, rollback-only tests (2026-10-12):** initial empty list, candidate withheld from context, confirm enables context, two-owner separation, cross-owner mutation denied, retire removes context, delete removes entry, signed-in Owner RPC behavior, direct client table access denied. No test profile records were retained.
 
-**Coded, not yet deployed:** Owner profile editor; owner-only role/session checks and controls.
+**Coded, not yet deployed:** Owner profile editor; owner-only role/session checks and controls; a DOMUS-only approved-preference context adapter that never calls a reasoning provider or changes institutional decisions.
 
-**Still required before Operational:** application unit tests/CI, deployed Owner authenticated UI acceptance, real Owner approve/reject/delete smoke, token expiry/logout behavior, DOMUS reasoning context adapter, policy against prompt injection, secure context lifecycle, cross-interface acceptance, release-manifest gating. Do not promote this to operational or infer that a private reasoning model is running.
+**Still required before Operational:** application unit tests/CI, deployed Owner authenticated UI acceptance, real Owner approve/reject/delete smoke, token expiry/logout behavior, DOMUS reasoning runtime integration (using the coded private adapter), policy against prompt injection, secure context lifecycle, cross-interface acceptance, release-manifest gating. Do not promote this to operational or infer that a private reasoning model is running.
 
 **Privacy note:** Owner profile text is private-schema access controlled; application-layer encryption of this new text has **not** been verified. Do not put sensitive autobiographical details into it yet.
 
