@@ -1,5 +1,7 @@
 # DARI Adaptive Collaborative Learning v2.0 — DESIGN ONLY
 
+> **Expanded design (2026-10-12):** [DARI Person-First Dual-Domain Intelligence + Delegated Autonomy v2.1](DARI_PERSON_FIRST_DUAL_DOMAIN_AUTONOMY_V2_1.md) establishes equal personal/business intelligence, a private Crossroads view, and bounded standing delegation with exception-first supervision. The present v2.0 learning/privacy rules remain controlling. Both documents are **DESIGNED ONLY**; production V1 behavior remains unchanged.
+
 Status: **DESIGNED / NOT IMPLEMENTED**. Owner selected **Adaptive** on 2026-10-12. This document supersedes v1's _mandatory confirmation for every preference_ as the **future intended design**, not as deployed code. Do not change `production_authorized` or the live release manifest because of this document.
 
 ## 1. Purpose and identity
