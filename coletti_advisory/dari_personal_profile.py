@@ -42,6 +42,38 @@ def _rpc(principal: Any, name: str, values: dict[str, Any]) -> Any:
     return supabase_auth._rpc(name, access_token=_owner_token(principal), payload=values)
 
 
+
+def confirmed_domus_context(principal: Any, *, realm: str) -> dict[str, Any]:
+    """Return only approved preferences to an authorized private DARI reasoner.
+
+    This is an adapter for future DOMUS reasoning integration, not an AI call.
+    It rejects OFFICIUM/case use even when invoked by an authenticated Owner.
+    """
+    if realm != "DOMUS" or principal.role != Role.OWNER:
+        raise PermissionError("Owner private learning cannot cross into OFFICIUM")
+    rows = _rpc(principal, "dari_personal_profile_context_v1", {})
+    if not isinstance(rows, list):
+        raise ValueError("Invalid approved personal-context payload")
+    preferences: list[dict[str, str]] = []
+    for row in rows[:30]:
+        if not isinstance(row, dict):
+            continue
+        category = str(row.get("category") or "")
+        statement = str(row.get("statement") or "")
+        key = str(row.get("profile_key") or "")
+        if category not in CATEGORIES.values() or not statement or not key:
+            continue
+        preferences.append(
+            {"key": key[:100], "category": category, "statement": statement[:1800]}
+        )
+    return {
+        "realm": "DOMUS",
+        "authority": "ADVISORY_ONLY",
+        "requires_human_approval": True,
+        "preferences": preferences,
+    }
+
+
 def render_owner_learning(principal: Any, *, key_prefix: str) -> None:
     """Review private DARI working preferences in the existing Owner profile menu.
 
