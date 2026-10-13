@@ -8,7 +8,7 @@
 **Controlling rule:** Existing Supabase release COLETTI-2026-09-24-008 is OWNER_ONLY_PRODUCTION, not external-client authorization. No registry release row, production flags, DNS, billing credentials, deployments, or protected user privileges are changed by this document.
 
 
-**Capacity and continuity addendum (2026-10-12):** [Human labor, solo case capacity, case complexity and subscription-independent DARI](COLETTIOS_V1_2027_CASE_CAPACITY_LABOR_AND_CHATGPT_CONTINUITY.md). This gives planning—not proven—ranges for 22h/week or 40h/week founder schedules, independent human QA, turnaround, hiring triggers, AI costs and ChatGPT plan-downgrade resilience. It is part of the pre-lock evidence plan, not permission to promise external delivery dates or activate services.
+**Capacity and continuity addendum (2026-10-12):** [Human labor, solo case capacity, case complexity and subscription-independent DARI](COLETTIOS_V1_2027_CASE_CAPACITY_LABOR_AND_CHATGPT_CONTINUITY.md). This now uses the Owner's controlling **45-hour workweek**, **28 founder hours per standard case** and approximately **117 founder case-production hours/month**, with three standard cases/month as the sustainable planning target and four as a fragile mathematical ceiling. Independent human QA is budgeted separately; all capacity and turnaround remain unproven until real-client acceptance. It is part of the pre-lock evidence plan, not permission to promise external delivery dates or activate services.
 
 ## 1. Scope and precedence
 
@@ -18,7 +18,7 @@ The program governs two source repositories plus the institutional Registry/Disp
 
 The owner wants fewer micro-approvals, deeper person-first DARI, no extra login, and equal personal/business intelligence. These are design goals; the current draft DOMUS V1 is confirmation-only and Owner-role scoped. Adaptive v2/v2.1 remains design-only.
 
-**Preserve explicit supersessions:** Commercial IMP-184 v3 is canonical Coletti & Co.-only scope, superseding IMP-167 mixed 60-SKU/Shopify plan and IMP-036. Consumer Shopify ventures and clothing are **outside the client-production critical path**. Old launch topology IMP-125 and old historical-promotion rows IMP-126–134 require supersession/retirement, not reimplementation. IMP-014 external notification architecture was tabled; this audit reopens it for DESIGN RECONCILIATION ONLY, not unauthorized production sends. IMP-012 four differentiation upgrades remain deferred until expressly rescheduled.
+**Preserve explicit supersessions:** Commercial IMP-184 v3 is canonical Coletti & Co.-only scope, superseding IMP-167 mixed 60-SKU/Shopify plan and IMP-036. Consumer Shopify ventures and clothing are **outside the client-production critical path**. Old launch topology IMP-125 and old historical-promotion rows IMP-126–134 require supersession/retirement, not reimplementation. IMP-014 external notification architecture was tabled; this audit reopens it for DESIGN RECONCILIATION ONLY, not unauthorized production sends. IMP-012 has only **two** still-deferred differentiation upgrades after the Owner explicitly required DARI Adversarial Review Pair and Professional Handoff Capsule for Unified V1.
 
 ## 2. Evidence snapshot, not operational inference
 
