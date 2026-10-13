@@ -117,6 +117,9 @@ All four new Resend templates were **created and published**. They have **not be
 
 ## 5. Communications Fabric — channel and identity contract
 
+**External telephony market deep dive (October 13, 2026):** [free/capped inbound number discovery, provider comparison, deferred-feature ledger and phased-budget C-FAB plan](COLETTIOS_V1_TELEPHONY_MARKET_OPTIONS_PHASED_COST_FREEZE_2026_10_13.md). New candidate LiveKit Build includes one free U.S. local inbound-only number, 50 inbound minutes and hard cutoff, 10–20 second possible cold start; not a dependable permanent production phone without tests. Free Vapi number is inbound-only and not portable, and its call usage is paid. Low-cost candidate providers include VoIP.ms, SignalWire, Plivo and Telnyx, with mobile/SMS compliance and account-eligibility caveats. No provider choice or spending approved by documenting this research.
+
+
 **Google Voice free-line compatibility candidate (2026-10-13):** [Observe-only Google Voice Gmail-notice adapter specification](COLETTIOS_V1_CFAB_GOOGLE_VOICE_OBSERVE_ONLY_ADAPTER.md). Permits only user-authorized Gmail intake of forwarded missed-call, voicemail, and SMS notices and DARI internal summaries/drafts with human response in official Voice UI; **no Voice automated sends, call forwarding to AI, APIs/scraping, carrier read receipts, or assumed business-grade support**. Resolve live C-FAB inbound `RECEIVED` default/check mismatch, endpoint types and role/assignment RLS before acceptance. Design only; no number, OAuth connector, migration, production release or cost commitment.
 
 
