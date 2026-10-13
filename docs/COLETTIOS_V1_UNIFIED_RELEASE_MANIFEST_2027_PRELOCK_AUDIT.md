@@ -117,6 +117,9 @@ All four new Resend templates were **created and published**. They have **not be
 
 ## 5. Communications Fabric — channel and identity contract
 
+**Google Voice free-line compatibility candidate (2026-10-13):** [Observe-only Google Voice Gmail-notice adapter specification](COLETTIOS_V1_CFAB_GOOGLE_VOICE_OBSERVE_ONLY_ADAPTER.md). Permits only user-authorized Gmail intake of forwarded missed-call, voicemail, and SMS notices and DARI internal summaries/drafts with human response in official Voice UI; **no Voice automated sends, call forwarding to AI, APIs/scraping, carrier read receipts, or assumed business-grade support**. Resolve live C-FAB inbound `RECEIVED` default/check mismatch, endpoint types and role/assignment RLS before acceptance. Design only; no number, OAuth connector, migration, production release or cost commitment.
+
+
 **Additional October 2026 scope:** [Issue #96 — recipient-specific viewed/acknowledged receipts, full populated template previews, optional DARI personal notes, and three-way business phone/SMS/voicemail provider comparison](https://github.com/dtreezcoletti/Coletti_Advisory/issues/96). These are acceptance requirements or provider decisions only; no live message tracking, phone number or DARI send authorization is implied.
 
 
