@@ -7,6 +7,9 @@
 
 **Controlling rule:** Existing Supabase release COLETTI-2026-09-24-008 is OWNER_ONLY_PRODUCTION, not external-client authorization. No registry release row, production flags, DNS, billing credentials, deployments, or protected user privileges are changed by this document.
 
+
+**Capacity and continuity addendum (2026-10-12):** [Human labor, solo case capacity, case complexity and subscription-independent DARI](COLETTIOS_V1_2027_CASE_CAPACITY_LABOR_AND_CHATGPT_CONTINUITY.md). This gives planning—not proven—ranges for 22h/week or 40h/week founder schedules, independent human QA, turnaround, hiring triggers, AI costs and ChatGPT plan-downgrade resilience. It is part of the pre-lock evidence plan, not permission to promise external delivery dates or activate services.
+
 ## 1. Scope and precedence
 
 One authoritative Supabase data and identity plane; one canonical browser application (Coletti_Advisory/web); private ColettiOS methodology/runtime; DARI as governed personal/business collaborative intelligence; Dispatcher as deterministic scheduler and work enforcement; approved provider connectors; a bounded-agent execution layer; versioned policies, staff roles, case assignments, and owner-controlled release.
