@@ -3,6 +3,8 @@
 **Audit snapshot:** 2026-10-12, America/Chicago
 **Document state:** PRE-LOCK PROPOSAL / EVIDENCE GAP REGISTER. **NOT THE AUTHORIZED PRODUCTION RELEASE MANIFEST.**
 **Target:** 90 days without planned feature development, with an extension to 180 days if production stability and support reserves permit. Security patches, provider compatibility updates, and incident fixes remain allowed.
+> **Mandatory scope change — October 12, 2026:** DARI Adversarial Review Pair and Professional Handoff Capsule are no longer deferred. Both are required and blocking in the expanded **ColettiOS Unified V1 2027**. This changes only the release *requirements*, not the live implementation or production authorization. Their [technical and acceptance specification](DARI_ADVERSARIAL_REVIEW_PAIR_AND_PROFESSIONAL_HANDOFF_CAPSULE_V1_ACCEPTANCE.md) governs implementation, tests and sign-off.
+
 **Controlling rule:** Existing Supabase release COLETTI-2026-09-24-008 is OWNER_ONLY_PRODUCTION, not external-client authorization. No registry release row, production flags, DNS, billing credentials, deployments, or protected user privileges are changed by this document.
 
 ## 1. Scope and precedence
@@ -60,12 +62,13 @@ G. **Release and security:** production RLS/SECURITY DEFINER actor tests, origin
 - Canonical Owner Web DARI chat (not Streamlit), live OpenAI backend, provider budget, person-first DOMUS with informed Adaptive opt-in, corrected/deleted memory behavior, sensitive-data encryption, My Life/My Company/Together view, isolation of personal context from OFFICIUM.
 - Scoped, authenticated ChatGPT OAuth/MCP plugin with minimum read-only tools, explicit opt-in selected-chat handoff and separation of personal/business grants. No passive full ChatGPT synchronization.
 - Six internal DARI specialist capabilities: Personal, Intake, Records, Quality, Report and Operations intelligence; one Dispatcher instead of separate competing agent schedulers. Do not add six user-facing apps.
+- **MANDATORY V1 scope override, October 12, 2026:** DARI Adversarial Review Pair (independent Primary/Challenge source-bounded reasoning and human-reviewed disagreement matrix) and Professional Handoff Capsule (recipient-verified, client-authorized, exact-version source/evidence/review/limitations package, expiring access and audit) are REQUIRED for the expanded unified V1. See [dedicated V1 acceptance contract](DARI_ADVERSARIAL_REVIEW_PAIR_AND_PROFESSIONAL_HANDOFF_CAPSULE_V1_ACCEPTANCE.md). Both block full Unified V1 promotion until accepted.
 - A0 discuss, A1 read/assess, A2 internal draft by default; A3 per-action bounded standing delegation only after explicit approval; protected decisions/publishing never inferred from memories. Run tracing, tool ACL, retries, idempotence, exception escalation, cost ceilings, prompt-injection tests.
 - Client and staff experience must not be held hostage to optional personal AI if Owner narrows external-client release scope. If all-inclusive freeze is mandatory, these become explicit P0 dependencies with corresponding schedule/financial consequences.
 
 ### P2 — Explicitly evaluated but default deferred unless vital for a P0/P1 workflow
 
-- Four IMP-012 upgrades still deferred: DARI Adversarial Review Pair; Professional Handoff Capsule; Claim-Level Model Consensus Ledger; Temporal Intelligence / "What We Knew Then". Evidence Passport and Case Time Machine are already released/partially implemented, with normal-path and timezone/version replay acceptance still required.
+- **Only TWO IMP-012 upgrades remain deferred:** Claim-Level Model Consensus Ledger and Temporal Intelligence / "What We Knew Then". DARI Adversarial Review Pair and Professional Handoff Capsule have been **explicitly added as mandatory V1 requirements** on October 12, 2026. Evidence Passport and Case Time Machine remain selected V1 requirements, with normal-path and timezone/version replay acceptance still required.
 - Advanced animated Case Map; speculative automated document discovery; industry-specific verticals; multiple independent LLM frameworks; consumer Shopify apparel and unrelated ventures; new separate portal or authentication; voice telephony/recording, two-way SMS/WhatsApp; native apps; speculative AI autonomy. Make interfaces extensible without a promise of features not accepted.
 - IMP-088 Dispatcher QoL Control Pack: currently APPROVED without observed operational detail; inventory against required UI features and explicitly INCLUDE or DEFER, never silently claim included.
 - IMP-123 18-area institutional closure: reconcile exact source records and 18-to-implementation mapping. Prior retrieved work tree of 16 stages is not automatically an exact substitution for the 18-area program.
@@ -151,7 +154,7 @@ Canonical source-bound ladder: Source -> Proposition -> Contradiction -> Reconci
 - IMP-145 and IMP-153 v2 Communications Fabric; IMP-162 mailbox MOP-EMAIL-001; IMP-014 tabled Dispatcher notification architecture — reconcile into ONE authoritative communication service.
 - IMP-169 Square/Google master consultation acceptance; IMP-183 production closure; IMP-187 SOP; IMP-191 controlled engagement contract; IMP-184 commercial v3 propagation.
 - IMP-097 traceability policy-to-code/database drift, IMP-101 temporal/generalization audit, IMP-069 First Truth, IMP-118 fitness, IMP-108 canonical IDs, IMP-129 proof/disproof matrix, IMP-110 controlled docket/document subsystem (not default general Core).
-- IMP-012 six differentiated upgrades: include Evidence Passport and Case Time Machine normal-path acceptance; leave other four explicitly deferred absent new approval.
+- IMP-012 six differentiated upgrades: **FOUR are now required for Unified V1**: Evidence Passport, Case Time Machine, DARI Adversarial Review Pair and Professional Handoff Capsule. The latter two are a user-directed scope override dated October 12, 2026, governed by [their acceptance contract](DARI_ADVERSARIAL_REVIEW_PAIR_AND_PROFESSIONAL_HANDOFF_CAPSULE_V1_ACCEPTANCE.md). **Only Claim-Level Model Consensus Ledger and Temporal Intelligence / "What We Knew Then" remain deferred**, absent another explicit override.
 - IMP-163 Social/Audience/Growth and founder pilot: decide minimal V1 referral/pilot conversion measurement without tying site launch to unrelated consumer catalog.
 - IMP-090 public Git-history remediation and issue #15: secrets/privacy archive remediation and risk disposition.
 - Owner DOMUS, PONS/PORTA, Estates General permission bridge; private founder case must not be promoted to production business records absent explicit human-controlled transfer.
@@ -187,7 +190,8 @@ For each item: ID, owner/domain, REQUIRED/OPTIONAL/DEFERRED/SUPERSEDED, current 
 5. source/case cross-tenant isolation or First Truth breach;
 6. missing restore/rollback proof or serious credentials/historical leakage not disposed;
 7. false 'operational' promotion from a repository merge, deployed function, cron success, or table count;
-8. published actions without protected human authority.
+8. published actions without protected human authority;
+9. incomplete or untested independent DARI Adversarial Review Pair or Professional Handoff Capsule, including third-party consent, exact approved snapshot, access expiry and independent human QA.
 
 ## 10. Explicit pre-lock decisions
 
@@ -197,7 +201,7 @@ Proposed choices, not yet executed:
 - **Comms:** Lark human mailbox if MOP-EMAIL-001 accepted; Resend for transactional sends; Portal for case messages; Calendar master for bookings; no mandatory SMS/phone automation absent tested provider.
 - **Agents:** six internal capabilities under DARI and Dispatcher, no separate applications; protected decisions remain gated.
 - **DARI scope:** Owner-directed choice whether person-first cross-interface ChatGPT/MCP must block client production or be a separately versioned, private release, both recorded with no false claim.
-- **Differentiation:** Evidence Passport and Case Time Machine are required to finish normal-path integration; four other named upgrades remain deferred.
+- **Differentiation:** Evidence Passport, Case Time Machine, DARI Adversarial Review Pair and Professional Handoff Capsule are mandatory V1, subject to the exact acceptance contract. **Only two** remaining upgrades are deferred: Claim-Level Model Consensus Ledger and Temporal Intelligence / "What We Knew Then".
 - **Commercial:** Coletti & Co. service/engagement workflow under IMP-184 v3; other consumer commerce separate.
 - **Freeze:** 90-day observation target; conditional extension to 180 days.
 - **Current document:** design/audit only, no authority to roll back, migrate, activate clients, alter DNS, configure billing/keys, send external notifications or issue new production manifest.
