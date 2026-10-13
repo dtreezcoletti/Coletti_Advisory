@@ -31,7 +31,7 @@ Source: live Supabase Colettico project, connected Resend, GitHub canonical repo
 - Auth/Profile: 3 profiles, 2 active Owner and 1 active Client; 0 active staff.
 - Provenance method tables: 9 Evidence Passport records, 9 methodology candidates, 7 propositions, 1 contradiction reconciliation, 0 reviews, 0 source_versions, 0 source_snapshots, 0 methodology_versions. Data existence is not universal live-case runtime proof.
 - Client messages: 1 portal_messages row; transactional email integration end-to-end not demonstrated.
-- Resend: verified sending domain colettico.com; receiving disabled, zero webhook registrations; six published templates: account/security, portal messages, records-action, report-ready, billing, operational exception. Do not change MX to Resend: IMP-162 requires MOP-EMAIL-001 for separate human mailbox.
+- Resend: verified sending domain colettico.com; receiving disabled, zero webhook registrations; **10 published templates**, including **four added October 12, 2026**: consultation confirmation (`coletti-consultation-confirmed`), engagement onboarding (`coletti-engagement-onboarding`), verified payment action (`coletti-payment-action`) and authorized professional handoff (`coletti-professional-handoff`). Earlier six: account/security, portal messages, records-action, report-ready, billing event, operational exception. **Publication is not event wiring or delivery acceptance.** Do not change MX to Resend: IMP-162 requires MOP-EMAIL-001 for separate human mailbox.
 - Cloudflare prior account inventory: active zone but no Workers/Pages deployment; Render still hosts static and Python services. No verified Render database-to-Supabase Core cutover or clean backup. Render expired/suspended database requires preservation determination before service retirement.
 - GitHub core master issue #52 and commercial IMP-118 acceptance issue #93 remain open; DARI draft PR #94 not merged. Existing website README defines canonical /login/ and /workspace/ routes; Streamlit Owner generations are legacy, not an alternative official portal.
 
@@ -99,6 +99,19 @@ Suggested capacity commitments:
 Reference official docs: https://supabase.com/docs/guides/cron ; https://developers.cloudflare.com/workers/configuration/cron-triggers/ . ChatGPT Plus task cap is separate and does not constrain ColettiOS rule counts.
 
 **Acceptance:** owner creates 20 diverse real rules in UI; event and scheduled checks; no more than one alert for duplicate signal; unauthorized cross-client and DOMUS access denied; expired/revoked token fails closed; webhook signature/replay rejection; outage/retry/recovery; simulated 250/1,000-load benchmark; system restarts without losing queued work; alert delivery and acknowledgement separately recorded; owner digest excludes unchanged records.
+
+### V1 template activation and provider status — October 12, 2026
+
+All four new Resend templates were **created and published**. They have **not been bound to authenticated application triggers or tested through actual provider deliveries**. Publication itself sent zero emails.
+
+| Resend alias | Exactly when it may send | Approval / safety gate |
+| --- | --- | --- |
+| `coletti-consultation-confirmed` | Square-origin appointment actually confirmed and reconciled with Calendar | Signed/replay-safe booking event, correct date/time/timezone; no optimistic confirmation |
+| `coletti-engagement-onboarding` | Human-accepted Client with onboarding portal and controlled requirements ready | Do not claim contract signed, payment complete or Case active until separately verified |
+| `coletti-payment-action` | Authoritative account ledger identifies an actually outstanding or failed payment needing action | Reconcile in-flight/recent payment; deduplicate; do not incorrectly demand a second payment |
+| `coletti-professional-handoff` | Client-directed recipient permission, fixed approved report/capsule and secure access already established | Explicit disclosure authorization and recipient verification; do not attach confidential case materials to transactional email |
+
+**Shared preconditions:** sanitize and allowlist `PORTAL_URL` to an approved authenticated domain; escape and validate all user-derived template variables; use idempotency per business event, case/recipient scoping, provider message ID and delivery/bounce/failure webhook reconciliation. Address incorrect/expired/deactivated recipients and consent/quiet hours. Sending domain is verified but Resend receiving and webhooks are unconfigured. No actual client communication is operationally proven by these template publishes. Full acceptance requires actual test events with negative role tests, no duplicate sends and audit readback.
 
 ## 5. Communications Fabric — channel and identity contract
 
