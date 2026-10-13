@@ -115,6 +115,10 @@ All four new Resend templates were **created and published**. They have **not be
 
 ## 5. Communications Fabric — channel and identity contract
 
+**Additional October 2026 scope:** [Issue #96 — recipient-specific viewed/acknowledged receipts, full populated template previews, optional DARI personal notes, and three-way business phone/SMS/voicemail provider comparison](https://github.com/dtreezcoletti/Coletti_Advisory/issues/96). These are acceptance requirements or provider decisions only; no live message tracking, phone number or DARI send authorization is implied.
+
+
+
 **Canonical communications model:** conversation/thread -> message/event -> actor/channel/domain/case relation -> outbound submission or inbound verified receipt -> delivery/status event -> read/acknowledge (when genuine) -> correspondence retention and authorized legal hold -> case/client timeline, activity index, reply or follow-up Dispatcher job.
 
 **HUMAN MAIL:** IMP-162 specifically proposes Lark mailbox cutover MOP-EMAIL-001 for the business identity. Test identity, login, mailbox access, existing mail preservation, SPF/DKIM/DMARC, MX cutover, sender and reply-to, incoming replies, forwarding and disaster fallback. Do not change MX blindly or confuse Resend receiving (currently disabled) with a human mailbox.
