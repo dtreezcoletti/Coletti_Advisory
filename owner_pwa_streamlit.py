@@ -141,4 +141,9 @@ if supabase_auth.current_access_token() is None:
         unsafe_allow_html=True,
     )
 
+from coletti_advisory.owner_execution_center import patch_execution_center
+
+# Read-through operational view; no new worker or production authority created.
+patch_execution_center(owner_console_runtime)
+
 run_reference_workspace(experience_shell)
