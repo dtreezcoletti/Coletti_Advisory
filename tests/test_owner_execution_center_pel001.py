@@ -27,7 +27,7 @@ def test_non_owner_cannot_read_execution_center(monkeypatch):
     messages = []
     monkeypatch.setattr(center.st, "error", lambda message: messages.append(message))
     center.render_execution_center(
-        principal=SimpleNamespace(role=Role.EMPLOYEE, authenticated=True),
+        principal=SimpleNamespace(role=Role.ANALYST, authenticated=True),
         engagement_id="synthetic",
         core=None,
     )
