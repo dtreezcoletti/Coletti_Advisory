@@ -8,6 +8,7 @@ import streamlit as st
 
 from .analysis import build_analytical_issues
 from .owner_console_live import OwnerControlPlaneClient, OwnerControlPlaneUnavailable
+from .owner_execution_lease_controls import render_owner_execution_worker
 from . import owner_console_ui as base
 from .publication import PublicationStatus
 
@@ -498,6 +499,7 @@ def render_live_dispatcher(core, principal, engagement_id: str) -> None:
     snapshot, error = _live_snapshot(core, principal, engagement_id)
     if not snapshot:
         st.warning(error or "Live Dispatcher state is unavailable.")
+        render_owner_execution_worker(principal)
         return
 
     counts = snapshot.get("counts") or {}
@@ -532,7 +534,7 @@ def render_live_dispatcher(core, principal, engagement_id: str) -> None:
                     if result.get("requires_human_approval"):
                         st.warning("This command is blocked behind a human approval gate before execution.")
 
-    tabs = st.tabs(("Tasks", "Project Control", "Calendar", "Reconciliation", "For Human"))
+    tabs = st.tabs(("Tasks", "Project Control", "Calendar", "Reconciliation", "For Human", "Execution Worker"))
     with tabs[0]:
         tasks = snapshot.get("tasks") or []
         if tasks:
@@ -566,6 +568,9 @@ def render_live_dispatcher(core, principal, engagement_id: str) -> None:
                 st.dataframe(values, use_container_width=True, hide_index=True)
             else:
                 st.caption("No items.")
+
+    with tabs[5]:
+        render_owner_execution_worker(principal)
 
 
 def render_owner_page_live(original_page, shell, page: str, **kwargs) -> None:
