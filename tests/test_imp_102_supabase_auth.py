@@ -96,7 +96,8 @@ def test_password_reset_uses_recovery_endpoint_without_account_disclosure(monkey
     assert calls[0][0].endswith("/auth/v1/recover")
     assert calls[0][2] == {
         "email": "owner@example.test",
-        "redirect_to": "https://owner.example.test/reset-password",
+        # Recovery links first land at the prefetch-safe owner origin.
+        "redirect_to": "https://owner.example.test",
     }
 
 
