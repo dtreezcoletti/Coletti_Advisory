@@ -68,6 +68,21 @@ def render_owner_execution_worker(principal: Any) -> None:
         st.warning("This control requires the authenticated Owner.")
         return
     try:
+        health = _rpc("cow_owner_execution_worker_health_v1", {})
+        if isinstance(health, dict):
+            workers = health.get("workers") or []
+            counts = health.get("jobs") or {}
+            st.caption("Live worker status, checked against authoritative Dispatcher records.")
+            if workers:
+                st.dataframe(workers, use_container_width=True, hide_index=True)
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Pending jobs", counts.get("pending", 0))
+            c2.metric("In progress", counts.get("leased", 0))
+            c3.metric("Completed", counts.get("succeeded", 0))
+    except OwnerLeaseControlUnavailable:
+        st.warning("Live worker health cannot be verified in this session.")
+
+    try:
         history = _rpc("cow_owner_execution_lease_status_v1", {})
     except OwnerLeaseControlUnavailable as exc:
         st.warning(str(exc))
