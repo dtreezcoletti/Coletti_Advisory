@@ -684,7 +684,7 @@ async function adminPage(view) {
     const [intakes, invoices, tickets, alerts, handoffs] = await Promise.all([
       count('intake_submissions',x=>x.in('status',['SUBMITTED','IN_REVIEW'])), count('invoices',x=>x.in('status',['OPEN','PAST_DUE'])), count('support_tickets',x=>x.in('status',['OPEN','IN_PROGRESS','WAITING_ON_CLIENT'])), count('security_alerts',x=>x.eq('status','OPEN')), count('publication_handoffs',x=>x.in('status',['READY_FOR_REVIEW','APPROVED']))
     ]);
-    const body=`<div class="grid-4"><div class="card metric"><div class="metric-value">${intakes}</div><div class="metric-label">Intakes awaiting review</div></div><div class="card metric"><div class="metric-value">${handoffs}</div><div class="metric-label">Publication queue</div></div><div class="card metric"><div class="metric-value">${invoices}</div><div class="metric-label">Open invoices</div></div><div class="card metric"><div class="metric-value">${alerts}</div><div class="metric-label">Open security alerts</div></div></div>${panel('Control plane',`<div class="grid-3"><a class="card card-flat" href="#/admin/users"><h3>Users & roles</h3><p class="muted small">Role administration and access state.</p></a><a class="card card-flat" href="#/admin/audit"><h3>Audit trail</h3><p class="muted small">Operational mutation history.</p></a><a class="card card-flat" href="#/admin/health"><h3>System health</h3><p class="muted small">Operational, security, and backup state.</p></a></div>`,'Owner/admin controls remain separate from employee case-work screens.')}`;
+    const body=`<div class="grid-4">${[['Intakes awaiting review',intakes,'#/admin/consultations'],['Publication queue',handoffs,'#/admin/publications'],['Open invoices',invoices,'#/admin/billing'],['Open security alerts',alerts,'#/admin/security']].map(([label,value,href])=>`<a class="card metric" style="display:block;color:inherit;text-decoration:none" href="${href}" aria-label="Open ${esc(label)}"><div class="metric-value">${value}</div><div class="metric-label">${esc(label)} →</div></a>`).join('')}</div>${panel('Control plane',`<div class="grid-3"><a class="card card-flat" href="#/admin/users"><h3>Users & roles</h3><p class="muted small">Role administration and access state.</p></a><a class="card card-flat" href="#/admin/audit"><h3>Audit trail</h3><p class="muted small">Operational mutation history.</p></a><a class="card card-flat" href="#/admin/health"><h3>System health</h3><p class="muted small">Operational, security, and backup state.</p></a></div>`,'Owner/admin controls remain separate from employee case-work screens.')}`;
     return workspaceLayout('admin','home','Command Center','Full-access operating view for Coletti & Co.',body);
   }
   if(view==='consultations'){
@@ -692,12 +692,18 @@ async function adminPage(view) {
     const rows=qres.data||[], owner=state.profile?.role==='owner';
     let bookings=[]; if(owner){const b=await supabase.rpc('admin_unlinked_square_consultation_bookings_v1');if(b.error)throw b.error;bookings=b.data||[];}
     const metrics=`<div class="grid-4">${[
-      ['Owner review',rows.filter(r=>r.stage==='OWNER_REVIEW').length],
-      ['Awaiting Square',rows.filter(r=>r.stage==='APPROVED_AWAITING_SQUARE_BOOKING').length],
-      ['Payment / email',rows.filter(r=>['APPOINTMENT_SCHEDULED_AWAITING_PAYMENT_SETUP','SQUARE_PAYMENT_LINK_PENDING','CONFIRMATION_EMAIL_PENDING','AWAITING_PAYMENT'].includes(r.stage)).length],
-      ['Paid & cleared',rows.filter(r=>r.stage==='CLEARED_FOR_CONSULTATION').length]
-    ].map(([l,v])=>`<div class="card metric"><div class="metric-value">${v}</div><div class="metric-label">${l}</div></div>`).join('')}</div>`;
-    const action=r=>{
+      ['Owner review',rows.filter(r=>r.stage==='OWNER_REVIEW').length,'review'],
+      ['Awaiting Square',rows.filter(r=>r.stage==='APPROVED_AWAITING_SQUARE_BOOKING').length,'square'],
+      ['Payment / email',rows.filter(r=>['APPOINTMENT_SCHEDULED_AWAITING_PAYMENT_SETUP','SQUARE_PAYMENT_LINK_PENDING','CONFIRMATION_EMAIL_PENDING','AWAITING_PAYMENT'].includes(r.stage)).length,'payment'],
+      ['Paid & cleared',rows.filter(r=>r.stage==='CLEARED_FOR_CONSULTATION').length,'cleared']
+    ].map(([l,v,key])=>`<a class="card metric" style="display:block;color:inherit;text-decoration:none" href="#/admin/consultations/${key}" aria-label="View ${esc(l)} consultations"><div class="metric-value">${v}</div><div class="metric-label">${l} →</div></a>`).join('')}</div>`;
+    const stageFilter=route().split('/')[3]||'all';
+    const filteredRows=rows.filter(r=>stageFilter==='all'||
+      (stageFilter==='review'&&r.stage==='OWNER_REVIEW')||
+      (stageFilter==='square'&&r.stage==='APPROVED_AWAITING_SQUARE_BOOKING')||
+      (stageFilter==='payment'&&['APPOINTMENT_SCHEDULED_AWAITING_PAYMENT_SETUP','SQUARE_PAYMENT_LINK_PENDING','CONFIRMATION_EMAIL_PENDING','AWAITING_PAYMENT'].includes(r.stage))||
+      (stageFilter==='cleared'&&r.stage==='CLEARED_FOR_CONSULTATION'));
+        const action=r=>{
       if(!owner)return 'Owner action required';
       if(r.stage==='OWNER_REVIEW')return `<div class="stack"><button class="btn btn-primary btn-sm" data-action="consultation-owner-decision" data-id="${r.consultation_id}" data-decision="APPROVED_FOR_CONSULTATION">Approve</button><button class="btn btn-ghost btn-sm" data-action="consultation-owner-decision" data-id="${r.consultation_id}" data-decision="NEEDS_MORE_INFORMATION">Need info</button><button class="btn btn-ghost btn-sm" data-action="consultation-owner-decision" data-id="${r.consultation_id}" data-decision="DECLINED_FOR_CONSULTATION">Decline</button></div>`;
       if(r.invoice_id&&!r.payment_url)return `<button class="btn btn-primary btn-sm" data-action="issue-consultation-square-link" data-id="${r.consultation_id}" data-invoice="${r.invoice_id}">Issue Square link</button>`;
@@ -705,7 +711,7 @@ async function adminPage(view) {
       if(r.payment_state==='PAID'&&!r.consultation_completed_at)return `<button class="btn btn-primary btn-sm" data-action="mark-consultation-completed" data-id="${r.consultation_id}">Mark complete</button>`;
       return '-';
     };
-    const queue=table(rows,[
+    const queue=table(filteredRows,[
       {label:'Prospect',render:r=>`<strong>${esc(r.client_name||r.client_email||'Prospect')}</strong><div class="micro">${esc(r.client_email||'')}</div>`},
       {label:'Stage',render:r=>badge(r.stage)},{label:'Appointment',render:r=>r.appointment_start?fmtDate(r.appointment_start):'-'},
       {label:'Fee',render:r=>r.consultation_fee_cents?fmtMoney(r.consultation_fee_cents):'-'},
@@ -730,7 +736,7 @@ async function adminPage(view) {
     const post=rows.filter(r=>r.consultation_completed_at&&r.qualification_decision==='PENDING');
     const postForm=owner&&post.length?`<form id="consultation-qualification-form"><div class="form-grid"><div class="form-field"><label>Completed consultation</label><select name="consultation_id">${post.map(r=>`<option value="${r.consultation_id}">${esc(r.client_name||r.client_email||r.consultation_id)}</option>`).join('')}</select></div><div class="form-field"><label>Decision</label><select name="qualification_decision"><option>QUALIFIED</option><option>NEEDS_RECORD_ASSESSMENT</option><option>NOT_QUALIFIED</option></select></div><div class="form-field"><label>Complexity</label><select name="complexity_level"><option value="">Not rated</option><option>LOW</option><option>MODERATE</option><option>HIGH</option><option>VERY_HIGH</option></select></div><div class="form-field full"><label>Decision reason</label><textarea name="decision_reason" required></textarea></div><div class="form-field full"><label>Complexity / scope notes</label><textarea name="complexity_notes"></textarea></div></div><div class="form-actions"><button class="btn btn-primary">Record qualification</button></div></form>`:'<div class="empty">No completed consultation is awaiting qualification.</div>';
     return workspaceLayout('admin','consultations','Consultations','Owner approval, Square booking/payment, confirmation, financial clearance, and post-consultation qualification.',
-      metrics+panel('Queue',queue,'Approval for consultation is not client acceptance.')+(cards?panel('Pre-Consultation Assessment',cards):'')+panel('Square appointment',bookingForm)+panel('Fee & confirmation',payForm,'Full payment is required before the consultation may proceed.')+panel('Post-consultation qualification',postForm));
+      metrics+'<div class="mt-2"><a class="btn btn-ghost btn-sm" href="#/admin/consultations">Show all consultations</a></div>'+panel(`Queue · ${titleCase(stageFilter)} (${filteredRows.length})`,queue,'Approval for consultation is not client acceptance.')+(cards?panel('Pre-Consultation Assessment',cards):'')+panel('Square appointment',bookingForm)+panel('Fee & confirmation',payForm,'Full payment is required before the consultation may proceed.')+panel('Post-consultation qualification',postForm));
   }
   if(view==='users'){
     const rows=await q('profiles','*',x=>x.order('created_at',{ascending:false}));
