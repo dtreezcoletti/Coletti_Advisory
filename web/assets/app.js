@@ -190,7 +190,7 @@ function signInPage() {
 
 const CLIENT_NAV=[['home','Overview'],['intake','Intake'],['preconsultation','Pre-Consultation'],['profile','Identity & Contact'],['engagement','Engagement'],['uploads','Secure Uploads'],['requests','Document Requests'],['timeline','Case Status'],['messages','Messages'],['schedule','Meetings'],['billing','Invoices & Payments'],['reports','Published Reports'],['support','Support']];
 const STAFF_NAV=[['home','Assigned Cases'],['intake','Intake Review'],['documents','Document Completeness'],['evidence','Records & Reconstruction'],['contradictions','Contradictions / Reconciliation'],['narratives','Review Narratives'],['requests','Client Requests & Deadlines'],['notes','Case Notes'],['qa','QA Checklist'],['publishing','Publishing Handoff']];
-const ADMIN_NAV=[['home','Command Center'],['consultations','Consultations'],['records','Records Intake'],['users','Users & Roles'],['assignments','Case Assignment'],['audit','Audit Trail'],['access','Access Controls'],['services','Services & Pricing'],['procedures','Procedures & SOPs'],['templates','Templates'],['publications','Publication Controls'],['analytics','Analytics / KPIs'],['billing','Billing Overview'],['referrals','Referral Pipeline'],['capacity','Capacity / Workload'],['health','System Health'],['security','Security Alerts'],['backups','Backup / Recovery'],['settings','Settings']];
+const ADMIN_NAV=[['home','Command Center'],['consultations','Consultations'],['cases','Case Register'],['contracts','Contracts'],['records','Records Intake'],['users','Users & Roles'],['assignments','Case Assignment'],['audit','Audit Trail'],['access','Access Controls'],['services','Services & Pricing'],['procedures','Procedures & SOPs'],['templates','Templates'],['publications','Publication Controls'],['analytics','Analytics / KPIs'],['billing','Billing Overview'],['referrals','Referral Pipeline'],['capacity','Capacity / Workload'],['health','System Health'],['security','Security Alerts'],['backups','Backup / Recovery'],['settings','Settings']];
 function caseSelector() {
   if(!state.caseIds.length) return '<span class="badge badge-neutral">No active case access</span>';
   return `<select id="case-selector" aria-label="Active case" style="width:auto;min-width:190px">${state.caseIds.map(id=>`<option value="${esc(id)}" ${id===state.activeCase?'selected':''}>${esc(id)}</option>`).join('')}</select>`;
@@ -554,7 +554,130 @@ async function staffPage(view) {
   return '';
 }
 
+function linkedCase(id) {
+  if(!id) return '<span class="muted">Not registered</span>';
+  return `<a href="#/admin/case/${encodeURIComponent(id)}" aria-label="Open complete case ${esc(id)}"><strong>${esc(id)}</strong> ↗</a>`;
+}
+
+function procedureBody(value) {
+  if(value == null) return '<div class="notice notice-warning">Procedure text is not registered. This is a record, not an approved complete document.</div>';
+  if(Array.isArray(value)) return `<ol class="stack">${value.map(item=>`<li>${procedureBody(item)}</li>`).join('')}</ol>`;
+  if(typeof value==='object') return `<div class="stack">${Object.entries(value).map(([key,item])=>`<section class="card card-flat"><h3>${esc(titleCase(key))}</h3>${procedureBody(item)}</section>`).join('')}</div>`;
+  return `<p style="white-space:pre-wrap">${esc(value)}</p>`;
+}
+
+async function ownerSopDetailView() {
+  const key=decodeURIComponent(route().split('/')[3] || '');
+  if(!key) return workspaceLayout('admin','procedures','Procedure','Select a procedure in the register.',empty('No procedure selected.'));
+  const {data,error}=await supabase.rpc('admin_sop_detail_v1',{p_artifact_key:key});
+  if(error) throw error;
+  const body=`<a class="btn btn-ghost btn-sm" href="#/admin/procedures">← Procedure register</a>
+    <div class="card mt-2"><p><strong>${esc(data.artifact_key)}</strong> · v${esc(data.version)} · ${badge(data.status)}</p>
+    <p class="small muted">Domain: ${esc(data.owning_domain)} · Authority: ${esc(data.authority||'Unspecified')} · Approved by: ${esc(data.approved_by||'Not approved')}</p></div>
+    ${panel('Registered procedure content',procedureBody(data.content),'Displays the authoritative registered record content. Linked source documents are shown only when a secure, verified original is available.')}
+    ${panel('Source and authority',`<p><strong>Record:</strong> ${esc(data.record_key||'—')}</p><p><strong>Source reference:</strong> ${esc(data.source_ref||'Not recorded')}</p><p><strong>Authoritative document location:</strong> ${esc(data.authoritative_uri||'No retrievable original linked')}</p>`)}
+    <div class="notice notice-info">Reading a draft does not approve it. This page does not authorize publication or change the registered procedure.</div>`;
+  return workspaceLayout('admin','procedures',data.title,'Controlled procedure · read-only',body);
+}
+
+async function ownerCasesView() {
+  const {data,error}=await supabase.rpc('admin_case_register_v1');
+  if(error)throw error;
+  const cases=data||[];
+  const active=cases.filter(c=>!['ARCHIVED','CLOSED'].includes(String(c.status||'').toUpperCase()));
+  const archived=cases.filter(c=>['ARCHIVED','CLOSED'].includes(String(c.status||'').toUpperCase()));
+  function cards(rows) {
+    return rows.length?`<div class="stack">${rows.map(c=>`<a class="card card-flat" style="display:block;text-decoration:none;color:inherit" href="#/admin/case/${encodeURIComponent(c.case_id)}">
+      <strong>${esc(c.case_prefix || c.case_id.split('-')[0])} · ${esc(c.case_id)}</strong> ${badge(c.status)}
+      <div class="small muted">${esc(c.client_name||c.client_id||'Client not linked')} · ${fmtDate(c.opened_on)}${c.synthetic?' · Synthetic test fixture':''}</div>
+      <div class="small">Open case dossier →</div></a>`).join('')}</div>`:empty('No cases in this classification.');
+  }
+  return workspaceLayout('admin','cases','Case register','Every registered case can be opened here. Archived cases stay out of assignment queues.',
+    panel(`Open cases (${active.length})`,cards(active))+
+    panel(`Archived / closed cases (${archived.length})`,cards(archived),'Synthetic regression records are preserved for audit, not reassigned.'));
+}
+
+async function ownerCaseDetailView() {
+  const id=decodeURIComponent(route().split('/')[3]||'');
+  if(!id) return workspaceLayout('admin','cases','Case dossier','No case selected.',empty('Choose a registered case.'));
+  const {data,error}=await supabase.rpc('admin_case_detail_v1',{p_case_id:id});
+  if(error)throw error;
+  const c=data.case || {},rows=(field)=>data[field]||[];
+  const sourceRows=rows('sources');
+  const uploads=rows('uploads');
+  const sourceTable=table(sourceRows,[
+    {label:'Registered source',render:s=>`<strong>${esc(s.filename||'Unnamed source')}</strong><div class="micro">${esc(s.source_id)}</div>`},
+    {label:'Type',key:'source_type'},
+    {label:'Authenticity',render:s=>badge(s.authenticity_status||'NOT_TESTED')},
+    {label:'Status',render:s=>badge(s.status)}
+  ]);
+  const uploadTable=table(uploads,[
+    {label:'Uploaded document',render:u=>`<strong>${esc(u.filename||'File')}</strong><div class="micro">${esc(u.source_id||'Source registration pending')}</div>`},
+    {label:'Received',render:u=>fmtDate(u.created_at)},
+    {label:'Status',render:u=>badge(u.status)},
+    {label:'Open',render:u=>(u.storage_bucket&&u.storage_path)?`<button class="btn btn-ghost btn-sm" data-action="case-upload-preview" data-bucket="${esc(u.storage_bucket)}" data-path="${esc(u.storage_path)}">Secure view</button>`:'Not linked'}
+  ]);
+  const structured=(field,title,columns)=>panel(`${title} (${rows(field).length})`,table(rows(field),columns));
+  const body=`<a class="btn btn-ghost btn-sm" href="#/admin/cases">← Case register</a>
+    <div class="card mt-2"><strong>${esc(c.case_prefix || id.split('-')[0])} · ${esc(id)}</strong> ${badge(c.status)}
+      <p class="small muted">${esc(c.client_name||c.client_id||'Client not linked')} · Opened ${fmtDate(c.opened_on)}</p>
+      ${c.synthetic?'<div class="notice notice-info">Synthetic regression case. Archived fixtures are read-only and not eligible for new assignments.</div>':''}
+    </div>
+    ${panel(`Registered sources (${sourceRows.length})`,sourceTable,'Source inventory is not proof that the original file bytes are stored or downloadable.')}
+    ${panel(`Submitted uploads (${uploads.length})`,uploadTable,'Only files in the authorized private storage bucket can be opened securely.')}
+    ${structured('intakes','Intake records',[{label:'Submission',render:r=>esc(r.id)},{label:'Service',key:'service_requested'},{label:'Status',render:r=>badge(r.status)}])}
+    ${structured('requests','Document requests',[{label:'Request',key:'title'},{label:'Status',render:r=>badge(r.status)},{label:'Due',render:r=>fmtDate(r.due_date)}])}
+    ${structured('issues','Case issues',[{label:'Issue',key:'title'},{label:'Code',key:'issue_code'},{label:'Status',render:r=>badge(r.status)}])}
+    ${structured('events','Chronology',[{label:'Event',key:'title'},{label:'When',render:r=>fmtDate(r.event_at)},{label:'Status',render:r=>badge(r.status)}])}
+    ${structured('obligations','Obligations',[{label:'Item',key:'title'},{label:'Status',render:r=>badge(r.performance_status)},{label:'Due',render:r=>fmtDate(r.due_at)}])}
+    ${structured('assignments','Assignments',[{label:'Staff',key:'staff'},{label:'Function',key:'role'},{label:'Active',render:r=>badge(r.active?'yes':'no')}])}
+    ${structured('contracts','Contracts',[{label:'Contract',key:'title'},{label:'Version',key:'version'},{label:'Status',render:r=>badge(r.status)}])}
+    ${structured('published_reports','Published reports',[{label:'Report',key:'title'},{label:'Published',render:r=>fmtDate(r.published_at)},{label:'State',render:r=>badge(r.revoked_at?'revoked':'published')}])}
+    ${structured('notes','Private case notes',[{label:'Type',key:'note_type'},{label:'Note',render:r=>esc(r.body||'')},{label:'Added',render:r=>fmtDate(r.created_at)}])}`;
+  return workspaceLayout('admin','cases',`Case · ${id}`,'Authorized Owner/Admin dossier · read-only',body);
+}
+
+async function ownerContractsView() {
+  const rows=await q('contract_records','*',x=>x.order('updated_at',{ascending:false}).limit(200));
+  const body=panel(`Controlled contracts (${rows.length})`,table(rows,[
+    {label:'Contract',render:r=>`<strong>${esc(r.title)}</strong><div class="small muted">${esc(r.contract_type)} · ${esc(r.counterparty||'Counterparty unspecified')}</div>`},
+    {label:'Case',render:r=>linkedCase(r.case_id)},
+    {label:'Version',key:'version'},
+    {label:'Status',render:r=>badge(r.status)},
+    {label:'Updated',render:r=>fmtDate(r.updated_at)}
+  ]),'Drafts, approvals, execution and superseded versions must remain separately traceable.');
+  return workspaceLayout('admin','contracts','Contracts & agreements','Controlled back-office contract register. No automatic signature or approval.',body+
+    '<div class="notice notice-warning">This list displays linked operational contract records. An empty register does not mean the company has no governance agreements; authoritative texts must be linked through controlled document registration.</div>');
+}
+
+async function ownerKpiView() {
+  const category=decodeURIComponent(route().split('/')[3]||'');
+  const config={
+    intakes:['intake_submissions',q=>q.order('created_at',{ascending:false}).limit(200),
+      [{label:'Intake',render:r=>esc(r.id)},{label:'Service',key:'service_requested'},{label:'Status',render:r=>badge(r.status)},{label:'Case',render:r=>linkedCase(r.case_id)}]],
+    memberships:['case_memberships',q=>q.eq('active',true).limit(200),
+      [{label:'Case',render:r=>linkedCase(r.case_id)},{label:'Access',key:'access_level'},{label:'Status',render:r=>badge(r.active?'active':'inactive')}]],
+    uploads:['upload_records',q=>q.order('created_at',{ascending:false}).limit(200),
+      [{label:'File',key:'original_filename'},{label:'Case',render:r=>linkedCase(r.case_id)},{label:'Status',render:r=>badge(r.status)}]],
+    evidence:['evidence_work_items',q=>q.in('status',['OPEN','IN_REVIEW']).limit(200),
+      [{label:'Record work',key:'summary'},{label:'Case',render:r=>linkedCase(r.case_id)},{label:'Status',render:r=>badge(r.status)}]],
+    reports:['published_reports',q=>q.is('revoked_at',null).limit(200),
+      [{label:'Report',key:'title'},{label:'Case',render:r=>linkedCase(r.case_id)},{label:'Published',render:r=>fmtDate(r.published_at)}]],
+    invoices:['invoices',q=>q.eq('status','PAID').limit(200),
+      [{label:'Invoice',key:'invoice_number'},{label:'Case',render:r=>linkedCase(r.case_id)},{label:'Amount',render:r=>fmtMoney(r.amount_cents)}]]
+  }[category];
+  if(!config) return workspaceLayout('admin','analytics','Analytics details','Choose a KPI.',empty('Unknown KPI.'));
+  const rows=await q(config[0],'*',config[1]);
+  return workspaceLayout('admin','analytics',`KPI · ${titleCase(category)}`,'Source records behind the selected KPI.',
+    `<a class="btn btn-ghost btn-sm" href="#/admin/analytics">← All KPIs</a>${panel(`Records (${rows.length}${rows.length===200?'+':''})`,table(rows,config[2]),'Maximum 200 rows displayed; this view is not an audit extract.')}`);
+}
+
 async function adminPage(view) {
+  if(view==='sop') return ownerSopDetailView();
+  if(view==='cases') return ownerCasesView();
+  if(view==='case') return ownerCaseDetailView();
+  if(view==='contracts') return ownerContractsView();
+  if(view==='kpi') return ownerKpiView();
   if(view==='records'){ go('/workspace/documents'); return ''; }
 
   if(!requireAdmin()) return '';
@@ -622,9 +745,9 @@ async function adminPage(view) {
     ]);
     if(catalogResult.error) throw catalogResult.error;
     const cases=catalogResult.data||[];
-    const form=`<form id="assignment-form"><div class="form-grid"><div class="form-field"><label>Registered case</label><select name="case_id" required>${cases.map(c=>`<option value="${esc(c.case_id)}">${esc(c.case_id)} · ${esc(c.client_name||c.client_id||'Client')} · ${esc(titleCase(c.case_status))}</option>`).join('')}</select></div><div class="form-field"><label>Staff member</label><select name="staff_user_id" required>${users.map(u=>`<option value="${u.id}">${esc(u.display_name||u.id)} · ${esc(titleCase(u.role))}</option>`).join('')}</select></div><div class="form-field"><label>Case function</label><select name="assignment_role">${CASE_ASSIGNMENT_ROLES.map(([value,label])=>`<option value="${value}">${esc(label)}</option>`).join('')}</select></div></div><div class="form-actions"><button class="btn btn-primary" ${cases.length&&users.length?'':'disabled'}>Assign case</button></div></form>`;
+    const form=`<form id="assignment-form"><div class="form-grid"><div class="form-field"><label>Registered case</label><select name="case_id" required>${cases.map(c=>`<option value="${esc(c.case_id)}">${esc(c.case_id.split('-')[0])} · ${esc(c.case_id)} · ${esc(c.client_name||c.client_id||'Client')} · ${esc(titleCase(c.case_status))}</option>`).join('')}</select></div><div class="form-field"><label>Staff member</label><select name="staff_user_id" required>${users.map(u=>`<option value="${u.id}">${esc(u.display_name||u.id)} · ${esc(titleCase(u.role))}</option>`).join('')}</select></div><div class="form-field"><label>Case function</label><select name="assignment_role">${CASE_ASSIGNMENT_ROLES.map(([value,label])=>`<option value="${value}">${esc(label)}</option>`).join('')}</select></div></div><div class="form-actions"><button class="btn btn-primary" ${cases.length&&users.length?'':'disabled'}>Assign case</button></div></form>`;
     const registryNote=!cases.length?'No open registered cases are currently available for assignment.':!users.length?'No active staff profiles are available. Staff must finish account confirmation and sign-in before assignment.':'Only open registered cases are assignable here. Staff must also have a confirmed, signed-in, active matching identity; the database checks this when saving. Identity role and case function remain separate.';
-    return workspaceLayout('admin','assignments','Case assignment','Assign staff from the canonical case registry; do not create case identity here.',panel('New assignment',form,registryNote)+panel('Assignments',table(rows,[{label:'Case',key:'case_id'},{label:'Staff UUID',key:'staff_user_id'},{label:'Function',render:r=>badge(CASE_ASSIGNMENT_ROLES.find(x=>x[0]===r.assignment_role)?.[1]||r.assignment_role)},{label:'Active',render:r=>badge(r.active?'active':'inactive')}])));
+    return workspaceLayout('admin','assignments','Case assignment','Assign staff from the canonical case registry; do not create case identity here.',panel('Manual assignment (exception / override)',form,registryNote)+panel('Assignments',table(rows,[{label:'Case',render:r=>linkedCase(r.case_id)},{label:'Staff UUID',key:'staff_user_id'},{label:'Function',render:r=>badge(CASE_ASSIGNMENT_ROLES.find(x=>x[0]===r.assignment_role)?.[1]||r.assignment_role)},{label:'Active',render:r=>badge(r.active?'active':'inactive')}])));
   }
   if(view==='audit'){
     const rows=await q('audit_events','*',x=>x.order('created_at',{ascending:false}).limit(250));
@@ -641,26 +764,28 @@ async function adminPage(view) {
   if(view==='procedures'){
     const {data,error}=await supabase.rpc('admin_sop_register_v1');
     if(error) throw error;
-    const rows=data||[];
-    const approved=rows.filter(r=>r.sop_status==='APPROVED').length;
-    const drafts=rows.filter(r=>r.sop_status==='DRAFT').length;
-    const verified=rows.filter(r=>r.verified_against_live_workflow).length;
+    const allRows=data||[];
+    const filter=(route().split('/')[3]||'ALL').toUpperCase();
+    const rows=allRows.filter(r=>filter==='ALL'||(filter==='VERIFIED'?r.verified_against_live_workflow:r.sop_status===filter));
+    const approved=allRows.filter(r=>r.sop_status==='APPROVED').length;
+    const drafts=allRows.filter(r=>r.sop_status==='DRAFT').length;
+    const verified=allRows.filter(r=>r.verified_against_live_workflow).length;
     const body=`<div class="grid-3">
-      <div class="card metric"><div class="metric-value">${approved}</div><div class="metric-label">Approved SOPs</div></div>
-      <div class="card metric"><div class="metric-value">${drafts}</div><div class="metric-label">Draft SOPs</div></div>
-      <div class="card metric"><div class="metric-value">${verified}</div><div class="metric-label">Verified against live workflow</div></div>
+      <a class="card metric" style="display:block;color:inherit;text-decoration:none" href="#/admin/procedures/APPROVED" aria-label="Open approved SOP list"><div class="metric-value">${approved}</div><div class="metric-label">Approved SOPs →</div></a>
+      <a class="card metric" style="display:block;color:inherit;text-decoration:none" href="#/admin/procedures/DRAFT" aria-label="Open draft SOP list"><div class="metric-value">${drafts}</div><div class="metric-label">Draft SOPs →</div></a>
+      <a class="card metric" style="display:block;color:inherit;text-decoration:none" href="#/admin/procedures/VERIFIED" aria-label="Open verified SOP list"><div class="metric-value">${verified}</div><div class="metric-label">Verified against live workflow →</div></a>
     </div>
     <div class="notice notice-info mt-2"><strong>Authority boundary</strong><br/>Registration or technical verification does not approve a draft SOP. Drafts remain non-authoritative until explicitly approved through the governance process.</div>`;
     return workspaceLayout('admin','procedures','Procedures & SOPs','Controlled procedure register with approval and implementation state kept separate.',
-      body+panel('SOP register',table(rows,[
-        {label:'Procedure',render:r=>`<strong>${esc(r.title)}</strong><div class="micro">${esc(r.artifact_key)}</div>`},
+      body+panel(`SOP register · ${filter} (${rows.length})`,table(rows,[
+        {label:'Procedure',render:r=>`<a href="#/admin/sop/${encodeURIComponent(r.artifact_key)}"><strong>${esc(r.title)}</strong> ↗</a><div class="micro">${esc(r.artifact_key)}</div>`},
         {label:'Domain',key:'owning_domain'},
         {label:'Authority',render:r=>esc(r.authority||'—')},
         {label:'Approval',render:r=>badge(r.sop_status)},
         {label:'Implementation',render:r=>r.implementation_status?badge(r.implementation_status):'—'},
         {label:'Live verified',render:r=>badge(r.verified_against_live_workflow?'yes':'no')},
         {label:'Version',render:r=>`v${esc(r.version)}`}
-      ],true),'Approved constitutional procedures remain controlling over draft modular SOPs.')
+      ],true),'Select any procedure to read its registered text. <a href="#/admin/procedures">Show all</a>')
     );
   }
   if(view==='templates'){
@@ -675,7 +800,7 @@ async function adminPage(view) {
   }
   if(view==='analytics'){
     const metrics=await Promise.all([count('intake_submissions'),count('case_memberships',x=>x.eq('active',true)),count('upload_records'),count('evidence_work_items',x=>x.in('status',['OPEN','IN_REVIEW'])),count('published_reports',x=>x.is('revoked_at',null)),count('invoices',x=>x.eq('status','PAID'))]);
-    return workspaceLayout('admin','analytics','Analytics / KPIs','Operational counts only; not financial statements or audited metrics.',`<div class="grid-3">${[['Intakes',metrics[0]],['Active client-case memberships',metrics[1]],['Uploads received',metrics[2]],['Open evidence work items',metrics[3]],['Published reports',metrics[4]],['Paid invoices',metrics[5]]].map(([l,v])=>`<div class="card metric"><div class="metric-value">${v}</div><div class="metric-label">${esc(l)}</div></div>`).join('')}</div>`);
+    return workspaceLayout('admin','analytics','Analytics / KPIs','Operational counts only; not financial statements or audited metrics.',`<div class="grid-3">${[['Intakes',metrics[0],'intakes'],['Active client-case memberships',metrics[1],'memberships'],['Uploads received',metrics[2],'uploads'],['Open evidence work items',metrics[3],'evidence'],['Published reports',metrics[4],'reports'],['Paid invoices',metrics[5],'invoices']].map(([l,v,k])=>`<a class="card metric" style="display:block;color:inherit;text-decoration:none" href="#/admin/kpi/${k}" aria-label="Open ${esc(l)} records"><div class="metric-value">${v}</div><div class="metric-label">${esc(l)} →</div></a>`).join('')}</div>`);
   }
   if(view==='billing'){
     const rows=await q('invoices','*',x=>x.order('created_at',{ascending:false}).limit(200));
@@ -801,6 +926,7 @@ async function handleClick(e) {
   const btn=e.target.closest('[data-action]'); if(!btn)return; const action=btn.dataset.action;
   try {
     if(action==='signout'){ await supabase.auth.signOut(); await refreshAuth(); go('/home'); }
+    if(action==='case-upload-preview'){ const {data,error}=await supabase.storage.from(btn.dataset.bucket).createSignedUrl(btn.dataset.path,60); if(error)throw error; window.open(data.signedUrl,'_blank','noopener'); }
     if(action==='download-report'){ const {data,error}=await supabase.storage.from('published-reports').createSignedUrl(btn.dataset.path,60); if(error)throw error; window.open(data.signedUrl,'_blank','noopener'); }
     if(action==='save-role'){ const user=btn.dataset.user; const role=document.querySelector(`[data-role-user="${CSS.escape(user)}"]`)?.value; const {error}=await supabase.rpc('admin_set_user_role',{target_user_id:user,target_role:role}); if(error)throw error; toast('Role updated.','success'); await render(); }
 
