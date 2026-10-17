@@ -673,14 +673,13 @@ async function ownerKpiView() {
 }
 
 async function adminPage(view) {
+  if(!requireAdmin()) return '';
   if(view==='sop') return ownerSopDetailView();
   if(view==='cases') return ownerCasesView();
   if(view==='case') return ownerCaseDetailView();
   if(view==='contracts') return ownerContractsView();
   if(view==='kpi') return ownerKpiView();
   if(view==='records'){ go('/workspace/documents'); return ''; }
-
-  if(!requireAdmin()) return '';
   if(view==='home'){
     const [intakes, invoices, tickets, alerts, handoffs] = await Promise.all([
       count('intake_submissions',x=>x.in('status',['SUBMITTED','IN_REVIEW'])), count('invoices',x=>x.in('status',['OPEN','PAST_DUE'])), count('support_tickets',x=>x.in('status',['OPEN','IN_PROGRESS','WAITING_ON_CLIENT'])), count('security_alerts',x=>x.eq('status','OPEN')), count('publication_handoffs',x=>x.in('status',['READY_FOR_REVIEW','APPROVED']))
@@ -777,7 +776,7 @@ async function adminPage(view) {
     </div>
     <div class="notice notice-info mt-2"><strong>Authority boundary</strong><br/>Registration or technical verification does not approve a draft SOP. Drafts remain non-authoritative until explicitly approved through the governance process.</div>`;
     return workspaceLayout('admin','procedures','Procedures & SOPs','Controlled procedure register with approval and implementation state kept separate.',
-      body+panel(`SOP register · ${filter} (${rows.length})`,table(rows,[
+      body+'<div class="mt-2"><a class="btn btn-ghost btn-sm" href="#/admin/procedures">Show all procedures</a></div>'+panel(`SOP register · ${filter} (${rows.length})`,table(rows,[
         {label:'Procedure',render:r=>`<a href="#/admin/sop/${encodeURIComponent(r.artifact_key)}"><strong>${esc(r.title)}</strong> ↗</a><div class="micro">${esc(r.artifact_key)}</div>`},
         {label:'Domain',key:'owning_domain'},
         {label:'Authority',render:r=>esc(r.authority||'—')},
