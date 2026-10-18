@@ -231,3 +231,17 @@ def render_live_owner_operations(principal: Any, page: str) -> bool:
     if page == "Capacity":
         st.warning("Assignments do not prove capacity. Capacity planning remains unverified.")
     return True
+
+def patch_live_owner_operations(owner_runtime: Any) -> None:
+    """Install one final Owner renderer for verified institutional sources."""
+    if getattr(owner_runtime, "_live_owner_operations_patched", False):
+        return
+    previous_render = owner_runtime._render_owner_page
+
+    def render(shell: Any, page: str, **kwargs: Any) -> Any:
+        if render_live_owner_operations(kwargs["principal"], page):
+            return None
+        return previous_render(shell, page, **kwargs)
+
+    owner_runtime._render_owner_page = render
+    owner_runtime._live_owner_operations_patched = True
