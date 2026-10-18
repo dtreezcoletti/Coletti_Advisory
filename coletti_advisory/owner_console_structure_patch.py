@@ -69,6 +69,19 @@ def _structured_sidebar(owner_ui, principal, engagement_id: str) -> str:
     for group_index, (group, items) in enumerate(OWNER_SIDEBAR_GROUPS):
         if group_index:
             st.sidebar.divider()
+        if group == "THE COLLEGIUM":
+            # Keep all nine departments in one mobile-friendly collapsible rail.
+            with st.sidebar.expander(group, expanded=any(label == active for label, _ in items)):
+                for label, icon in items:
+                    if st.button(
+                        f"{icon}   {label.split(' · ', 1)[-1]}",
+                        key=f"owner-nav:{group}:{label}",
+                        type="primary" if active == label else "secondary",
+                        use_container_width=True,
+                    ):
+                        st.session_state[page_key] = label
+                        st.rerun()
+            continue
         st.sidebar.caption(group)
         for label, icon in items:
             if st.sidebar.button(
@@ -121,21 +134,38 @@ def _live_morning_cards(owner_live_ui, snapshot: Mapping[str, Any]) -> list[tupl
 
 
 def _render_morning(owner_ui, principal, cards: list[tuple[str, str]], *, start_page: bool) -> None:
-    # Contract guard: the execution zone must contain exactly the seven approved cards in order.
     if tuple(title for title, _body in cards) != MORNING_CARD_TITLES:
         raise RuntimeError("Owner morning brief structure drifted from the approved seven-card contract")
 
-    blocks = "".join(
-        f"<div class='oc-day-block'><strong>{owner_ui._esc(title)}</strong><p>{owner_ui._esc(body)}</p></div>"
-        for title, body in cards
-    )
     st.markdown(
-        f"<section class='oc-day'><div class='oc-kicker'>{'Start My Day' if start_page else 'My Workspace'}</div>"
+        f"<div class='oc-kicker'>{'Start My Day' if start_page else 'My Workspace'}</div>"
         f"<h1>{owner_ui._esc(owner_ui._greeting())}, {owner_ui._esc(owner_ui._first_name(principal))}.</h1>"
-        "<div style='font-family:var(--oc-serif);font-size:1.08rem'>What needs me today.</div>"
-        f"<div class='oc-day-grid'>{blocks}</div></section>",
+        "<div style='font-family:var(--oc-serif);font-size:1.08rem'>What needs me today.</div>",
         unsafe_allow_html=True,
     )
+    # Every summary tile has a real route; HTML-only cards previously looked
+    # interactive but could not open their source records.
+    targets = {
+        "Since Yesterday": "Implementation",
+        "Due Today": "Dispatcher",
+        "Decisions": "Decisions",
+        "Carryover": "Dispatcher",
+        "Blockers": "System Health",
+        "Capacity": "Capacity",
+        "Success Definition": "My Workspace",
+    }
+    columns = st.columns(4)
+    for index, (title, body) in enumerate(cards):
+        with columns[index % len(columns)]:
+            with st.container(border=True):
+                st.markdown(f"**{title}**")
+                st.caption(body)
+                target = targets[title]
+                if st.button(
+                    f"Open {title} →", key=f"owner-card:{start_page}:{title}",
+                    use_container_width=True,
+                ):
+                    _goto(principal, target)
 
     if start_page:
         if st.button("Acknowledge & enter My Workspace →", type="primary", use_container_width=True, key="ack_start_my_day_structured"):

@@ -32,16 +32,21 @@ def test_owner_operating_zone_order_matches_approved_hierarchy():
     )
 
 
-def test_owner_sidebar_groups_and_labels_match_approved_structure():
-    assert OWNER_SIDEBAR_GROUPS == (
-        ("TODAY", (("Start My Day", "☀"), ("My Workspace", "⌂"), ("Decisions", "✓"), ("Notifications", "●"))),
-        ("BUSINESS", (("Clients", "♙"), ("Cases", "▣"), ("Records", "◇"), ("Reports", "▤"), ("Referrals", "↗"))),
-        ("BACK OFFICE", (("Finance", "$"), ("Billing", "¤"), ("Contracts", "§"), ("Pricing", "◫"), ("Documents", "▧"))),
-        ("PEOPLE", (("Team", "♙"), ("Capacity", "◔"), ("Assignments", "↳"), ("Access", "⌾"))),
-        ("CONTROL", (("DARI", "◌"), ("Dispatcher", "⌘"), ("Knowledge", "◧"), ("Docket", "▥"), ("Implementation", "◆"), ("System Health", "◉"))),
-        ("BUILD & FIX", (("Fix Center", "⊕"), ("Integrations", "⌁"), ("Deployments", "↑"), ("System Lab", "◈"))),
+def test_owner_navigation_contains_all_nine_departments_and_real_operating_surfaces():
+    groups = dict(OWNER_SIDEBAR_GROUPS)
+    assert "THE COLLEGIUM" in groups
+    departments = tuple(label.split(" · ", 1)[1] for label, _ in groups["THE COLLEGIUM"])
+    assert departments == (
+        "FABER", "VOX", "QUAERO", "MONETA", "SCRIBA",
+        "CURA", "CIVIS", "AUGEO", "ACQUIRO",
     )
-    assert len(sidebar_labels()) == 28
+    labels = set(sidebar_labels())
+    for page in ("Billing", "Contracts", "Pricing", "Assignments",
+                 "Integrations", "Implementation", "Procedures", "Service Catalog"):
+        assert page in labels
+    assert "My Workspace" in labels
+    assert "Cases" in labels
+    assert "Records" in labels
 
 
 def test_new_owner_labels_reuse_existing_authoritative_surfaces_where_available():

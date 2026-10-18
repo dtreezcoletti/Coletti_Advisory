@@ -42,6 +42,8 @@ OWNER_SIDEBAR_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
             ("Contracts", "§"),
             ("Pricing", "◫"),
             ("Documents", "▧"),
+            ("Service Catalog", "▦"),
+            ("Procedures", "≡"),
         ),
     ),
     (
@@ -54,10 +56,25 @@ OWNER_SIDEBAR_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ),
     ),
     (
+        "THE COLLEGIUM",
+        (
+            ("Collegium · FABER", "⚙"),
+            ("Collegium · VOX", "◈"),
+            ("Collegium · QUAERO", "⌕"),
+            ("Collegium · MONETA", "¤"),
+            ("Collegium · SCRIBA", "▤"),
+            ("Collegium · CURA", "◇"),
+            ("Collegium · CIVIS", "♙"),
+            ("Collegium · AUGEO", "↗"),
+            ("Collegium · ACQUIRO", "◎"),
+        ),
+    ),
+    (
         "CONTROL",
         (
             ("DARI", "◌"),
             ("Dispatcher", "⌘"),
+            ("Workers", "⚙"),
             ("Knowledge", "◧"),
             ("Docket", "▥"),
             ("Implementation", "◆"),
@@ -78,7 +95,7 @@ OWNER_SIDEBAR_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
 OPERATING_ZONES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Start My Day", ("Start My Day", "Decisions", "Notifications")),
     ("Business Operations", ("Clients", "Cases", "Records", "Reports", "Referrals")),
-    ("Back Office", ("Finance", "Billing", "Contracts", "Pricing", "Documents")),
+    ("Back Office", ("Finance", "Billing", "Contracts", "Pricing", "Documents", "Service Catalog", "Procedures")),
     ("People & Administration", ("Team", "Capacity", "Assignments", "Access")),
     ("Company Control", ("DARI", "Dispatcher", "Knowledge", "Docket", "Implementation", "System Health")),
     ("Build & Fix", ("Fix Center", "Integrations", "Deployments", "System Lab")),

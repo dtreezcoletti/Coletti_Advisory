@@ -142,8 +142,13 @@ if supabase_auth.current_access_token() is None:
     )
 
 from coletti_advisory.owner_execution_center import patch_execution_center
+from coletti_advisory.owner_live_operations import patch_live_owner_operations
 
 # Read-through operational view; no new worker or production authority created.
 patch_execution_center(owner_console_runtime)
+
+# Canonical live-source router runs after legacy presentation patches.
+# It replaces placeholder routes without changing protected access controls.
+patch_live_owner_operations(owner_console_runtime)
 
 run_reference_workspace(experience_shell)
