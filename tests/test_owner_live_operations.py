@@ -39,4 +39,4 @@ def test_rows_preserve_source_values_and_never_mutate_inputs():
 def test_owner_role_and_authentication_are_both_required():
     assert _is_owner(SimpleNamespace(role=Role.OWNER, authenticated=True))
     assert not _is_owner(SimpleNamespace(role=Role.OWNER, authenticated=False))
-    assert not _is_owner(SimpleNamespace(role=Role.EMPLOYEE, authenticated=True))
+    assert not _is_owner(SimpleNamespace(role=Role.ANALYST, authenticated=True))
