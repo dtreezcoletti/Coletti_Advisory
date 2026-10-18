@@ -74,6 +74,7 @@ OWNER_SIDEBAR_GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         (
             ("DARI", "◌"),
             ("Dispatcher", "⌘"),
+            ("Workers", "⚙"),
             ("Knowledge", "◧"),
             ("Docket", "▥"),
             ("Implementation", "◆"),
