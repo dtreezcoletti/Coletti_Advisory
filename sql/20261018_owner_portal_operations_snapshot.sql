@@ -43,6 +43,33 @@ begin
       'scope_class', x.scope_class, 'last_successful_sync', x.last_successful_sync,
       'last_attempt', x.last_attempt, 'last_error', x.last_error, 'updated_at', x.updated_at
     ) order by x.provider, x.service) from registry.external_integrations x), '[]'::jsonb),
+    'referrals', coalesce((select pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+      'id', i.id, 'referral_source', i.referral_source, 'status', i.status,
+      'service_requested', i.service_requested, 'case_id', i.case_id,
+      'created_at', i.created_at
+    ) order by i.created_at desc) from public.intake_submissions i
+    where nullif(pg_catalog.btrim(i.referral_source), '') is not null), '[]'::jsonb),
+    'artifacts', coalesce((select pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+      'artifact_id', a.artifact_id, 'artifact_key', a.artifact_key, 'artifact_type', a.artifact_type,
+      'title', a.title, 'status', a.status, 'version', a.version,
+      'storage_provider', a.storage_provider, 'updated_at', a.updated_at
+    ) order by a.updated_at desc) from registry.artifacts a), '[]'::jsonb),
+    'releases', coalesce((select pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+      'release_key', r.release_key, 'release_status', r.release_status,
+      'environment', r.environment, 'production_authorized', r.production_authorized,
+      'human_approval_required', r.human_approval_required, 'accepted_at', r.accepted_at,
+      'created_at', r.created_at
+    ) order by r.created_at desc) from registry.release_manifests r), '[]'::jsonb),
+    'control_drift', coalesce((select pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+      'drift_id', d.drift_id, 'control_id', d.control_id, 'drift_type', d.drift_type,
+      'expected_state', d.expected_state, 'observed_state', d.observed_state,
+      'severity', d.severity, 'status', d.status, 'detected_at', d.detected_at
+    ) order by d.detected_at desc) from registry.control_drift_records d), '[]'::jsonb),
+    'workers', coalesce((select pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+      'device_id', w.device_id, 'enabled', w.enabled, 'expected_mode', w.expected_mode,
+      'first_seen_at', w.first_seen_at, 'last_seen_at', w.last_seen_at,
+      'worker_version', w.worker_version
+    ) order by w.device_id) from dispatcher.workers w), '[]'::jsonb),
     'sops', coalesce((select pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
       'sop_id', p.sop_id, 'owning_domain', p.owning_domain, 'status', p.status,
       'approved_at', p.approved_at, 'updated_at', p.updated_at
