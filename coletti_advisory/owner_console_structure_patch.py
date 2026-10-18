@@ -69,6 +69,19 @@ def _structured_sidebar(owner_ui, principal, engagement_id: str) -> str:
     for group_index, (group, items) in enumerate(OWNER_SIDEBAR_GROUPS):
         if group_index:
             st.sidebar.divider()
+        if group == "THE COLLEGIUM":
+            # Keep all nine departments in one mobile-friendly collapsible rail.
+            with st.sidebar.expander(group, expanded=any(label == active for label, _ in items)):
+                for label, icon in items:
+                    if st.button(
+                        f"{icon}   {label.split(' · ', 1)[-1]}",
+                        key=f"owner-nav:{group}:{label}",
+                        type="primary" if active == label else "secondary",
+                        use_container_width=True,
+                    ):
+                        st.session_state[page_key] = label
+                        st.rerun()
+            continue
         st.sidebar.caption(group)
         for label, icon in items:
             if st.sidebar.button(
