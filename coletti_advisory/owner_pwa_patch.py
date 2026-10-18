@@ -107,14 +107,23 @@ def patch_owner_private_workspace(owner_runtime, owner_ui) -> None:
         if principal.role == Role.OWNER and page in OWNER_PRIVATE_PAGES:
             return render_private_page(page)
 
-        # The mobile owner deployment is intentionally not the client-data
-        # production plane. Prevent real source ingestion until that separate
-        # production storage gate is explicitly opened.
-        if principal.role == Role.OWNER and app_mode == "owner" and page in {"Records", "Record Ingestion"}:
-            st.title("Records")
-            st.warning("Real record ingestion is locked in the Owner PWA deployment.")
-            st.caption("Use this app for owner operations, Dispatcher, DARI, private planning, and continuity testing. Client/source uploads remain behind the separate production storage authorization gate.")
-            return None
+        # No blanket Owner-PWA ingestion prohibition. Genuine, authenticated
+        # case storage can be used when the durable source and private Core are
+        # actually configured. The personal Owner workspace is never a client
+        # ingestion target; authorization and downstream gates remain enforced.
+        if principal.role == Role.OWNER and page in {"Records", "Record Ingestion"}:
+            if not getattr(principal, "authenticated", False):
+                st.error("Record ingestion requires an authenticated Owner session.")
+                return None
+            if app_mode == "owner" and (
+                kwargs.get("storage_backend") != "gcs"
+                or kwargs.get("core_backend") != "http"
+                or kwargs.get("engagement_id") == OWNER_WORKSPACE_ID
+            ):
+                st.title("Records")
+                st.warning("Live ingestion requires an authorized case, durable encrypted storage, and the authenticated Core service.")
+                st.caption("This is a missing production dependency, not a permanent PWA restriction.")
+                return None
 
         return original_render(shell, page, **kwargs)
 
