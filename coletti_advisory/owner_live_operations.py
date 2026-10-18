@@ -98,11 +98,16 @@ def _render_assign_action(principal: Any) -> None:
         with st.form("live-owner-assignment"):
             case_id = st.text_input("Case identifier")
             staff_id = st.text_input("Staff account UUID")
-            role = st.selectbox(
-                "Case role",
-                ("Case Manager", "Analyst", "Human Reviewer", "Fresh Eyes",
-                 "QA", "Publication Preparer", "Delivery Coordinator"),
-            )
+            roles = {
+                "Case Manager": "case_manager",
+                "Analyst": "analyst",
+                "Human Reviewer": "reviewer",
+                "Fresh Eyes": "fresh_eyes_reviewer",
+                "QA": "qa_reviewer",
+                "Publication Preparer": "publication_preparer",
+                "Delivery Coordinator": "delivery_coordinator",
+            }
+            role_label = st.selectbox("Case role", tuple(roles))
             reason = st.text_area("Reason", max_chars=2000)
             confirm = st.checkbox("I authorize this case-role change.")
             submit = st.form_submit_button("Request authorized assignment", type="primary")
@@ -126,7 +131,7 @@ def _render_assign_action(principal: Any) -> None:
                     payload={
                         "p_case_id": case_id.strip(),
                         "p_staff_user_id": parsed,
-                        "p_assignment_role": role,
+                        "p_assignment_role": roles[role_label],
                         "p_reason": reason.strip(),
                         "p_deactivate_existing_role_matches": False,
                     },
