@@ -33,7 +33,13 @@ PAGE_SOURCE = {
     "Assignments": ("assignments", "Authorized case assignments"),
     "Integrations": ("integrations", "Provider and connection records"),
     "Procedures": ("sops", "Governed standard operating procedures"),
-    "Documents": ("contracts", "Contracts and institutional document records"),
+    "Documents": ("artifacts", "Institutional artifact and document register"),
+    "Referrals": ("referrals", "Inquiries with an attributed referral source"),
+    "Deployments": ("releases", "Authoritative release manifests; live provider health is separate"),
+    "Fix Center": ("control_drift", "Recorded control exceptions and drift"),
+    "Knowledge": ("sops", "Institutional procedures and records"),
+    "Finance": ("invoices", "Registered invoices; does not constitute a complete financial ledger"),
+    "Workers": ("workers", "Registered Dispatcher workers and last observation"),
     "Capacity": ("assignments", "Assigned personnel; not a verified capacity forecast"),
 }
 
@@ -224,6 +230,12 @@ def render_live_owner_operations(principal: Any, page: str) -> bool:
     _data_table("Source records", data.get(key), page=page)
     if page == "Assignments":
         _render_assign_action(principal)
+    if page == "Finance":
+        _data_table("Service price configurations", data.get("pricing"), page="Pricing")
+    if page == "Deployments":
+        st.warning("Release records do not establish that a provider deployment is currently healthy.")
+    if page == "Workers":
+        st.warning("A worker registration is not proof of a recent authenticated heartbeat or a valid execution lease.")
     if page == "Contracts":
         if st.button("Open authoritative governance Docket"):
             _navigate(principal, "Docket")
