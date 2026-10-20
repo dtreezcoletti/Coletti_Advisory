@@ -1,0 +1,11 @@
+name = "colettios-owner-mcp-staging"
+main = "src/index.ts"
+compatibility_date = "2026-10-20"
+workers_dev = true
+
+[vars]
+DEPLOYMENT_STAGE = "staging"
+
+# Do not include Supabase keys, tokens, Owner IDs, or live credentials in this file.
+# Configure SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, MCP_RESOURCE_URL,
+# EXPECTED_OWNER_SUB and ALLOWED_OAUTH_CLIENT_ID as staging bindings/secrets.
