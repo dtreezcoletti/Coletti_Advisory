@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 
 import requests
 from urllib.error import HTTPError, URLError
@@ -261,8 +262,24 @@ def run_reference_workspace(shell) -> None:
         st.stop()
 
     experience = shell._experience(principal)
+    # Keep reads within this authenticated Streamlit session. A short-lived
+    # snapshot avoids hammering Core on every widget rerun; never share across
+    # users or engagements, and never reuse it after logout/session changes.
+    cache_key = (principal.user_id, getattr(principal, "session_id", None),
+                 engagement_id, app_mode, core_backend)
+    cached = st.session_state.get("_owner_manifest_snapshot")
+    now = time.monotonic()
+    if (isinstance(cached, dict) and cached.get("key") == cache_key
+            and now - cached.get("fetched_at", 0) < 60):
+        manifest = cached["manifest"]
+    else:
+        manifest = None
     try:
-        manifest = core.manifest(engagement_id)
+        if manifest is None:
+            manifest = core.manifest(engagement_id)
+            st.session_state["_owner_manifest_snapshot"] = {
+                "key": cache_key, "fetched_at": now, "manifest": manifest,
+            }
     except requests.exceptions.HTTPError as exc:
         status = exc.response.status_code if exc.response is not None else None
         if status == 429:
