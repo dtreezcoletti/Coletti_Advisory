@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+
+import requests
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
@@ -259,7 +261,28 @@ def run_reference_workspace(shell) -> None:
         st.stop()
 
     experience = shell._experience(principal)
-    manifest = core.manifest(engagement_id)
+    try:
+        manifest = core.manifest(engagement_id)
+    except requests.exceptions.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else None
+        if status == 429:
+            st.warning(
+                "ColettiOS Core is temporarily limiting requests. "
+                "Please wait a few minutes before trying again. "
+                "No changes have been made to your records."
+            )
+        else:
+            st.error(
+                "ColettiOS Core could not load this workspace. "
+                "Please try again later or contact the administrator."
+            )
+        st.stop()
+    except requests.exceptions.RequestException:
+        st.error(
+            "ColettiOS Core is temporarily unavailable. "
+            "The workspace cannot be loaded safely right now."
+        )
+        st.stop()
     internal_user = experience in {"employee", "owner"}
     reports = shell.app.build_report_bundle(manifest) if internal_user else {}
     records = shell.app._load_publication_records(publication_store, principal, engagement_id)
