@@ -43,6 +43,10 @@ function dollars(cents:number){ return new Intl.NumberFormat("en-US",{style:"cur
 function appointmentLabel(startAt:string,timeZone:string){
   return new Intl.DateTimeFormat("en-US",{timeZone,dateStyle:"full",timeStyle:"short"}).format(new Date(startAt));
 }
+
+function sanitizeTagValue(value:string):string {
+  return value.replace(/[^A-Za-z0-9_-]/g,"_").slice(0,256);
+}
 Deno.serve(async(request)=>{
   if(request.method==="OPTIONS") return new Response(null,{status:204,headers:{
     "access-control-allow-origin":"*","access-control-allow-headers":"authorization, x-client-info, apikey, content-type","access-control-allow-methods":"POST, OPTIONS"
@@ -124,7 +128,16 @@ Deno.serve(async(request)=>{
     "Coletti & Co.",
     "Discretion in our work. Integrity in our word."
   ].join("\n");
-  const payload:any={from,to:[recipient],subject,text};
+  const payload:any={
+    from,
+    to:[recipient],
+    subject,
+    text,
+    tags:[
+      {name:"department",value:"consultations"},
+      {name:"record_id",value:sanitizeTagValue(String(consultation.id))}
+    ]
+  };
   if(replyTo) payload.reply_to=replyTo;
 
   const send=await fetchJson("https://api.resend.com/emails",{
