@@ -73,6 +73,36 @@ async function fetchJson(url: string, init: RequestInit): Promise<{ response: Re
   return { response, body };
 }
 
+async function dispatchConsultationConfirmation(
+  supabaseUrl: string,
+  jwt: string,
+  invoiceId: string,
+): Promise<{ attempted: boolean; status: string }> {
+  const lookup = await fetchJson(
+    `${supabaseUrl}/rest/v1/consultation_workflows?invoice_id=eq.${encodeURIComponent(invoiceId)}&select=id,confirmation_email_state&limit=1`,
+    { method: "GET", headers: userHeaders(jwt) },
+  );
+  if (!lookup.response.ok) return { attempted: false, status: "lookup_failed" };
+  const consultation = lookup.body?.[0];
+  if (!consultation) return { attempted: false, status: "not_linked" };
+  if (consultation.confirmation_email_state === "SENT") {
+    return { attempted: false, status: "already_sent" };
+  }
+
+  const sent = await fetchJson(
+    `${supabaseUrl}/functions/v1/consultation-confirmation-email`,
+    {
+      method: "POST",
+      headers: userHeaders(jwt),
+      body: JSON.stringify({ consultation_id: consultation.id }),
+    },
+  );
+  return {
+    attempted: true,
+    status: sent.response.ok ? "sent_or_reused" : `deferred_${sent.response.status}`,
+  };
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response(null, {
@@ -141,11 +171,17 @@ Deno.serve(async (request) => {
     invoice.provider_order_id &&
     invoice.provider_payment_link_id
   ) {
+    const confirmationDispatch = await dispatchConsultationConfirmation(
+      supabaseUrl,
+      jwt,
+      invoice.id,
+    );
     return jsonResponse({
       invoice_id: invoice.id,
       payment_url: invoice.payment_url,
       provider: "square",
       reused: true,
+      confirmation_dispatch: confirmationDispatch,
     });
   }
 
@@ -237,6 +273,12 @@ Deno.serve(async (request) => {
     );
   }
 
+  const confirmationDispatch = await dispatchConsultationConfirmation(
+    supabaseUrl,
+    jwt,
+    invoice.id,
+  );
+
   return jsonResponse({
     invoice_id: invoice.id,
     invoice_number: invoice.invoice_number,
@@ -245,5 +287,6 @@ Deno.serve(async (request) => {
     provider_payment_link_id: link.id,
     payment_url: link.url,
     reused: false,
+    confirmation_dispatch: confirmationDispatch,
   });
 });
