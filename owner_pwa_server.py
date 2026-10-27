@@ -150,7 +150,7 @@ async def password_reset_request(request):
         response = requests.post(
             f"{_supabase_url()}/auth/v1/recover",
             headers={"apikey": _supabase_key(), "Content-Type": "application/json"},
-            json={"email": email, "redirect_to": f"{origin}/reset-password"},
+            json={"email": email, "redirect_to": origin},
             timeout=20,
         )
     except requests.RequestException:
